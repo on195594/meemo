@@ -228,6 +228,44 @@ var vue = new Vue({
         shortcut.add('Ctrl+f', function () { $('#searchBarInput').focus(); }, {});
 
         this.main();
+
+        $('#login-form-link').click(function(e) {
+            $("#login-form").delay(100).fadeIn(100);
+            $("#register-form").fadeOut(100);
+            $('#register-form-link').removeClass('active');
+            $(this).addClass('active');
+            e.preventDefault();
+        });
+        $('#register-form-link').click(function(e) {
+            $("#register-form").delay(100).fadeIn(100);
+            $("#login-form").fadeOut(100);
+            $('#login-form-link').removeClass('active');
+            $(this).addClass('active');
+            e.preventDefault();
+        });
+
+        $('#login-form').submit(function (e) {
+            e.preventDefault();
+            var username = $('#login-username').val();
+            var password = $('#login-password').val();
+            Core.session.login(username, password, function (error) {
+                if (error) return alert('Login failed');
+                vue.main();
+            });
+        });
+
+        $('#register-form').submit(function (e) {
+            e.preventDefault();
+            var username = $('#register-username').val();
+            var email = $('#register-email').val();
+            var displayName = $('#register-displayName').val();
+            var password = $('#register-password').val();
+            Core.session.register(username, email, displayName, password, function (error) {
+                if (error) return alert('Registration failed');
+                alert('Registration successful, please login');
+                $('#login-form-link').click();
+            });
+        });
     }
 });
 

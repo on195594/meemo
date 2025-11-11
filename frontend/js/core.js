@@ -320,22 +320,23 @@ function SessionApi() {}
 SessionApi.prototype.login = function (username, password, callback) {
     superagent.post(g_server + '/api/login').send({ username: username, password: password }).end(function (error, result) {
         if (error && !error.response) return callback(error);
+        if (result.status !== 200) return callback(new Error('Login failed'));
+        callback(null);
+    });
+};
+
+SessionApi.prototype.register = function (username, email, displayName, password, callback) {
+    superagent.post(g_server + '/api/register').send({ username: username, email: email, displayName: displayName, password: password }).end(function (error, result) {
+        if (error && !error.response) return callback(error);
         if (result.status !== 201) return callback(error);
-
-        g_token = result.body.token;
-        localStorage.token = g_token;
-
-        callback(null, result.body.user);
+        callback(null);
     });
 };
 
 SessionApi.prototype.logout = function () {
-    superagent.get(url('/api/logout')).end(function (error, result) {
+    superagent.post(url('/api/logout')).end(function (error, result) {
         if (error && !error.response) console.error(error);
         if (result.status !== 200) console.error('Logout failed.', result.status, result.text);
-
-        g_token = '';
-        delete localStorage.token;
 
         window.Guacamoly.Core.onLogout();
     });

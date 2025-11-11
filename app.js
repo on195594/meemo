@@ -38,14 +38,9 @@ var memoryUpload = multer({ storage: multer.memoryStorage({}) }).any();
 
 router.del = router.delete;
 
-router.get ('/api/login', function (req, res) {
-    res.oidc.login({
-        returnTo: '/',
-        authorizationParams: {
-            redirect_uri: `${APP_ORIGIN}/api/callback`,
-        }
-    });
-});
+router.post('/api/register', routes.register);
+router.post('/api/login', routes.login);
+router.post('/api/logout', routes.logout);
 
 router.post('/api/things', routes.auth, routes.add);
 router.get ('/api/things', routes.auth, routes.getAll);

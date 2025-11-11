@@ -4,6 +4,9 @@
 
 exports = module.exports = {
     auth,
+    login,
+    logout,
+    register,
     profile,
     getAll,
     get,
@@ -54,7 +57,7 @@ function healthcheck(req, res, next) {
 }
 
 async function auth(req, res, next) {
-    if (!req.oidc.isAuthenticated() && !req.query.token) return next(new HttpError(401, 'Unauthorized'));
+    if (!req.session.username && !req.oidc.isAuthenticated() && !req.query.token) return next(new HttpError(401, 'Unauthorized'));
 
     if (req.query.token) {
         tokens.get(req.query.token, function (error, result) {
@@ -77,7 +80,7 @@ async function auth(req, res, next) {
 
             next();
         });
-    } else {
+    } else if (req.oidc.isAuthenticated()) {
         let user;
         try {
             user = {
@@ -96,7 +99,43 @@ async function auth(req, res, next) {
         req.user = user;
 
         next();
+    } else {
+        req.user = {
+            id: req.session.username,
+            username: req.session.username
+        };
+        next();
     }
+}
+
+function login(req, res, next) {
+    if (!req.body.username || !req.body.password) return next(new HttpError(400, 'missing username or password'));
+
+    users.verify(req.body.username, req.body.password, function (error) {
+        if (error && error.code === UserError.NOT_FOUND) return next(new HttpError(404, error.message));
+        if (error && error.code === UserError.NOT_AUTHORIZED) return next(new HttpError(401, error.message));
+        if (error) return next(new HttpError(500, error));
+
+        req.session.username = req.body.username;
+        next(new HttpSuccess(200, {}));
+    });
+}
+
+function logout(req, res, next) {
+    req.session.destroy(function(err) {
+        if (err) return next(new HttpError(500, err));
+        next(new HttpSuccess(200, {}));
+    });
+}
+
+function register(req, res, next) {
+    if (!req.body.username || !req.body.password || !req.body.email || !req.body.displayName) return next(new HttpError(400, 'missing username, password, email or displayName'));
+
+    users.create(req.body.username, req.body.email, req.body.displayName, req.body.password, function (error) {
+        if (error && error.code === 'user exists') return next(new HttpError(409, error.message));
+        if (error) return next(new HttpError(500, error));
+        next(new HttpSuccess(201, {}));
+    });
 }
 
 function profile(req, res, next) {
