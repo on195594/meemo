@@ -9,7 +9,7 @@ services:
     environment:
       - CLOUDRON_MONGODB_URL=mongodb://mongodb:27017/meemo
       - CLOUDRON_APP_ORIGIN=http://localhost
-      - LOCAL_AUTH_FILE=/users.json
+      - CLOUDRON_LOCAL_AUTH_FILE=/users.json
     ports:
       - 3000:3000/tcp
     depends_on:
