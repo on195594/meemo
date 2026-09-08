@@ -1,0 +1,66 @@
+<script type="text/template" id="modal-settings-template">
+  <div class="modal fade" tabindex="-1" role="dialog">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          <h4>Settings</h4>
+        </div>
+        <div class="modal-body settings">
+          <form class="form-horizontal" @submit.prevent="save()">
+            <div class="form-group">
+              <label class="col-xs-3 control-label">Title</label>
+              <div class="col-xs-8">
+                <input type="text" class="form-control" v-model="title" placeholder="Title" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="col-xs-3 control-label">Display</label>
+              <div class="col-xs-8">
+                <input type="checkbox" v-model="wide" id="settingsCheckboxWideNotes"/>
+                <label class="control-label" for="settingsCheckboxWideNotes">Wide notes</label>
+              </div>
+              <div class="col-xs-8 col-xs-offset-3">
+                <input type="checkbox" v-model="wideNavbar" id="settingsCheckboxWideNavbar"/>
+                <label class="control-label" for="settingsCheckboxWideNavbar">Wide toolbar</label>
+              </div>
+              <div class="col-xs-8 col-xs-offset-3">
+                <input type="checkbox" v-model="publicBackground" id="settingsCheckboxPublicBackground"/>
+                <label class="control-label" for="settingsCheckboxPublicBackground">Show background image on public feed</label>
+              </div>
+              <div class="col-xs-8 col-xs-offset-3">
+                <input type="checkbox" v-model="showTagSidebar" id="settingsCheckboxTagSidebar"/>
+                <label class="control-label" for="settingsCheckboxTagSidebar">Show most used tags in sidebar</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="col-xs-3 control-label">Behavior</label>
+              <div class="col-xs-8">
+                <input type="checkbox" v-model="keepPositionAfterEdit" id="settingsCheckboxKeepPos"/>
+                <label class="control-label" for="settingsCheckboxKeepPos">Keep scroll position after edit</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="col-xs-3 control-label">Background</label>
+              <div class="col-xs-8">
+                <div class="image-picker" @click="backgroundImageFileTrigger()" v-bind:style="{ backgroundImage: backgroundImage }" title="Click to set background image">
+                  <div class="placeholder" v-show="!backgroundImageDataUrl">Click to set background image</div>
+                </div>
+                <input type="file" class="hide" id="backgroundImageInput" @change="backgroundImageFileChanged($event)" accept="image/*"/>
+                <div v-show="backgroundImageError" class="text-error">{{ backgroundImageError }}</div>
+                <a href="#" @click.stop.prevent="removeBackgroundImage()" v-show="backgroundImageDataUrl">Clear background image</a>
+              </div>
+            </div>
+            <input type="submit" class="hide" />
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-default" data-dismiss="modal">Cancel</button>
+          <button class="btn btn-success" @click="save()"><i class="spinner alt" v-show="busy"></i> Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</script>
+
+<script type="text/javascript"><%- include('modal-settings.js') %></script>

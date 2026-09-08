@@ -1,0 +1,76 @@
+<script type="text/template" id="modal-cheatsheet-template">
+  <div class="modal fade">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          <h4>Markdown Cheatsheet</h4>
+        </div>
+        <div class="modal-body">
+          <pre>
+Emphasis:
+*italic*
+**bold**
+~~strikethrough~~
+
+Heading:
+# heading
+## heading2
+### heading3
+
+Horizontal line:
+___
+
+
+Blockquotes:
+> Quotes
+>> more Quotes
+
+
+Lists:
+* blabla
+* more of this awesomeness
+* fantastic stuff
+
+1. one
+2. two
+3. three
+
+
+Emojis:
+:-)
+:fish:
+
+Code:
+```
+function () {
+    alert('Hello World');
+}
+```
+
+Text Colors:
+choose the color with :<color>: and reset after that with :clear:
+Example :blue: Blue text :clear: regular text color
+
+Tables:
+| Tables        | Are           | Cool  |
+| ------------- |:-------------:| -----:|
+| col 3 is      | right-aligned | $1600 |
+| col 2 is      | centered      |   $12 |
+| zebra stripes | are neat      |    $1 |
+
+Checkboxes:
+[ ] Select this
+[x] And select that
+
+          </pre>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</script>
+
+<script type="text/javascript"><%- include('modal-cheatsheet.js') %></script>

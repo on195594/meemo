@@ -1,15 +1,16 @@
-version: '3'
 services:
   meemo:
-    image: qmcgaw/meemo
+    build: .
+    image: on195594/meemo:local
     container_name: meemo
     volumes:
-      - ./users.json:/users.json
-      - ./data:/data
+      - ./users.json:/app/data/.users.json
+      - ./data:/app/data/storage
     environment:
       - CLOUDRON_MONGODB_URL=mongodb://mongodb:27017/meemo
-      - CLOUDRON_APP_ORIGIN=http://localhost
-      - CLOUDRON_LOCAL_AUTH_FILE=/users.json
+      - CLOUDRON_APP_ORIGIN=http://localhost:3000
+      - CLOUDRON_LOCAL_AUTH_FILE=/app/data/.users.json
+      - ATTACHMENT_DIR=/app/data/storage
     ports:
       - 3000:3000/tcp
     depends_on:
@@ -18,7 +19,7 @@ services:
       - backend
     restart: always
   mongodb:
-    image: mongo
+    image: mongo:5.0.20
     container_name: meemo_mongo
     volumes:
       - ./database:/data/db

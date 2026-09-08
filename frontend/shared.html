@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title></title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+    <link type="image/png" rel="shortcut icon" href="/favicon.png">
+
+    <!-- Bootstrap -->
+    <link type="text/css" rel="stylesheet" href="/3rdparty/css/bootstrap.min.css?<%= revision %>">
+
+    <!-- Font Awesome -->
+    <link type="text/css" rel="stylesheet" href="/3rdparty/css/font-awesome.min.css?<%= revision %>">
+
+    <link type="text/css" rel="stylesheet" href="/index.min.css?<%= revision %>"/>
+
+  </head>
+  <body id="application">
+
+    <div class="container-fluid navigation shadow">
+      <div class="row content">
+        <div class="col-xs-3">
+          <a class="btn btn-default" href="/">Meemo</a>
+        </div>
+        <div class="col-xs-6 text-center">
+          <h2 v-cloak>{{ publicProfile.username }}</h2>
+        </div>
+        <div class="col-xs-3 text-right">
+          <a class="btn btn-default" href="https://meemo.minimal-space.de" target="_blank">About</a>
+        </div>
+      </div>
+    </div>
+
+    <div v-show="busy" v-cloak>
+      <br/>
+      <br/>
+      <br/>
+      <center><i class="spinner"></i></center>
+    </div>
+
+    <div class="container" v-show="!busy && error" v-cloak>
+      <div class="row">
+        <div class="col-md-8 col-md-offset-2">
+          <center>
+            <br/>
+            <br/>
+            <br/>
+            <p>{{ error }}</p>
+          </center>
+        </div>
+      </div>
+    </div>
+
+    <div class="container main" v-show="!busy && !error" v-cloak>
+      <div class="row">
+        <div class="col-md-10 col-md-offset-1">
+          <div class="well">
+            <div class="card-actions">
+              {{ thing.createdAt | prettyDateOffset }}
+            </div>
+            <div class="card-content">
+              <div class="thing-content">{{{ thing.richContent | markdown }}}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="text/javascript" src="/3rdparty/jquery.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/bootstrap.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/vue.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/shortcut.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/twemoji.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/markdown-it.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/markdown-it-emoji.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/superagent.js?<%= revision %>"></script>
+
+    <!-- https://github.com/jitbit/HtmlSanitizer -->
+    <script type="text/javascript" src="/3rdparty/js/HtmlSanitizer.js?<%= revision %>"></script>
+
+    <script type="text/javascript" src="/js/core.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/js/util.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/js/shared.js?<%= revision %>"></script>
+
+  </body>
+</html>

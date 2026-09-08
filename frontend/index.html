@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title></title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+    <link type="image/png" rel="shortcut icon" href="/favicon.png">
+
+    <!-- Bootstrap -->
+    <link type="text/css" rel="stylesheet" href="/3rdparty/css/bootstrap.min.css?<%= revision %>">
+
+    <!-- Font Awesome -->
+    <link type="text/css" rel="stylesheet" href="/3rdparty/css/font-awesome.min.css?<%= revision %>">
+
+    <link type="text/css" rel="stylesheet" href="/index.min.css?<%= revision %>"/>
+
+  </head>
+  <body id="application" @click="$refs.navbar.hideTags()">
+
+    <navigation-bar :active-view="mainView" :tags="tags" :profile="profile" :search="search" :settings="settings" :archived="archived" v-ref:navbar></navigation-bar>
+
+    <modal-settings id="modalSettings"></modal-settings>
+    <modal-browser-extensions id="modalExtensions"></modal-browser-extensions>
+    <modal-import id="modalImport"></modal-import>
+    <modal-cheatsheet id="modalCheatSheet"></modal-cheatsheet>
+
+    <div v-if="mainView === 'loader'" v-cloak>
+      <view-loading></view-loading>
+    </div>
+
+    <div v-if="mainView === 'login'" v-cloak>
+      <view-login></view-login>
+    </div>
+
+    <div v-show="mainView === 'content'" @drop="dropOrPasteHandler" @dragover="dragOver" v-cloak>
+      <div :class="{ 'container': !settings.wide, 'container-fluid': settings.wide }">
+        <div class="row">
+          <div class="col-md-1 hidden-xs hidden-sm" v-show="settings.showTagSidebar">
+            <tag-sidebar :tags="tags"></tag-sidebar>
+          </div>
+          <div class="feed" :class="{ 'col-md-10': !settings.wide, 'col-md-offset-1': (!settings.wide && !settings.showTagSidebar), 'col-md-11': (settings.wide && settings.showTagSidebar), 'col-md-12': (settings.wide && !settings.showTagSidebar) }">
+            <div class="well" :class="{ edit: !!thingContent }" @click="giveAddFocus()" v-show="!archived">
+              <div class="card-content align-right">
+                <input id="addAttachment" type="file" @change="attachmentChanged($event)" class="hide" multiple>
+                <div class="card-actions" v-show="thingContent">
+                  <span>
+                    <button class="btn btn-default" title="Insert Image" @click="triggerAttachmentUpload()"><i class="fa fa-image"></i></button>
+                    &nbsp;
+                    <a class="btn btn-default" title="Cheatsheet" href="#modalCheatSheet" data-toggle="modal"><i class="fa fa-keyboard-o"></i></a>
+                    &nbsp;
+                    <button class="btn btn-default" @click="addThing()" title="Add (Ctrl+S)"><i class="fa fa-check"></i></button>
+                    <div class="progress" v-show="uploadProgress > -1"><div class="progress-bar" role="progressbar" style="min-width: 12em; width: {{ uploadProgress }}%">Uploading files...{{ uploadProgress }}%</div></div>
+                  </span>
+                </div>
+                <textarea id="addTextarea" class="new-thing" placeholder="Add something..." v-model="thingContent" :class="{ active: !!thingContent }" v-show="!busyAdd" @drop="dropOrPasteHandler" @dragover="preventEventBubble" @paste="dropOrPasteHandler"></textarea>
+                <div class="propose-tags">
+                  <div class="item" v-for="tag in tags | proposeTags thingContent '#addTextarea' true 1">
+                    <a href="#" @click.prevent="activateProposedTag(tag)">#{{ tag.name }}</a>
+                  </div>
+                </div>
+                <div v-show="busyAdd"><center><i class="spinner large"></i><br/><br/></center></div>
+              </div>
+            </div>
+            <div v-show="archived">
+                <h3 style="margin-top: 0">Archive</h3>
+             </div>
+            <div v-show="!busyThings">
+              <div v-show="things.length === 0" class="align-center">Nothing found</div>
+              <thing v-for="item in things" :thing="item" :profile="profile" track-by="id"></thing>
+              <view-loading :active="busyFetchMore"></view-loading>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="guacamoly-settings-node" class="hide"></div>
+
+    <script type="text/javascript" src="/3rdparty/jquery.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/bootstrap.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/vue.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/shortcut.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/twemoji.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/markdown-it.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/markdown-it-emoji.min.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/3rdparty/js/superagent.js?<%= revision %>"></script>
+
+    <!-- https://github.com/jitbit/HtmlSanitizer -->
+    <script type="text/javascript" src="/3rdparty/js/HtmlSanitizer.js?<%= revision %>"></script>
+
+    <script type="text/javascript" src="/js/core.js?<%= revision %>"></script>
+
+    <%- include('templates/navigation-bar.html') %>
+    <%- include('templates/tag-sidebar.html') %>
+    <%- include('templates/modal-settings.html') %>
+    <%- include('templates/modal-browser-extensions.html') %>
+    <%- include('templates/modal-cheatsheet.html') %>
+    <%- include('templates/modal-import.html') %>
+    <%- include('templates/view-login.html') %>
+    <%- include('templates/view-loading.html') %>
+    <%- include('templates/thing.html') %>
+
+    <script type="text/javascript" src="/js/util.js?<%= revision %>"></script>
+    <script type="text/javascript" src="/js/index.js?<%= revision %>"></script>
+
+  </body>
+</html>

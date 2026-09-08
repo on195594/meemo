@@ -1,3 +1,10 @@
-data
-database
+node_modules/
+public/
+attachments/
+storage/
+data/
+database/
 users.json
+.users.json
+webextension-chrome.zip
+webextension-firefox.xpi

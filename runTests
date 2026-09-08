@@ -1,0 +1,24 @@
+#!/bin/bash
+
+set -eu
+
+# create the same mongo server version as cloudron has
+CONTAINER_NAME="mongo-server-meemo-test"
+trap 'docker rm --force "${CONTAINER_NAME}" >/dev/null 2>&1 || true' EXIT
+
+docker rm --force ${CONTAINER_NAME} || true
+
+echo "Starting ${CONTAINER_NAME}..."
+docker run --name ${CONTAINER_NAME} -d mongo:3.6-xenial
+
+export MONGODB_IP=`docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${CONTAINER_NAME}`
+
+echo "Waiting for MongoDB server to be ready..."
+while ! docker exec ${CONTAINER_NAME} mongo --eval "print(\"waited for connection\")"; do
+    sleep 1
+done
+
+export CLOUDRON_MONGODB_URL="mongodb://${MONGODB_IP}:27017/meemo"
+echo "export CLOUDRON_MONGODB_URL=\"mongodb://${MONGODB_IP}:27017/meemo\""
+
+./node_modules/.bin/mocha --exit src/test/*-test.js

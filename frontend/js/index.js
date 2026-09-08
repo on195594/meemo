@@ -1,0 +1,410 @@
+(function () {
+'use strict';
+
+var Core = window.Guacamoly.Core;
+
+// poor man's async in the global namespace
+window.asyncForEach = function asyncForEach(items, handler, callback) {
+    var cur = 0;
+
+    if (items.length === 0) return callback();
+
+    (function iterator() {
+        handler(items[cur], function (error) {
+            if (error) return callback(error);
+            if (cur >= items.length-1) return callback();
+            ++cur;
+
+            iterator();
+        });
+    })();
+};
+
+// Tag propasal filter
+Vue.getCurrentSearchWord = function (search, inputElement) {
+    var cursorPos = $(inputElement)[0] ? $(inputElement)[0].selectionStart : -1;
+    var word = '';
+
+    if (cursorPos === -1) return '';
+
+    for (var i = 0; i < search.length; ++i) {
+        // break if we went beyond and we hit a space
+        if (i >= cursorPos && (search[i] === ' ' || search[i] === '\n')) break;
+
+        if (search[i] === ' ' || search[i] === '\n') word = '';
+        else word += search[i];
+    }
+
+    return word;
+};
+
+function proposeTags(options, search, inputSelector, requireHash, threshold) {
+    var raw = Vue.getCurrentSearchWord(search, $(inputSelector));
+
+    if (requireHash && raw[0] !== '#') return [];
+
+    var word = raw.replace(/^#/, '');
+
+    if (threshold && threshold > word.length) return [];
+
+    return options.filter(function (o) {
+        return o.name.indexOf(word) >= 0;
+    });
+}
+
+Vue.filter('proposeTags', proposeTags);
+Vue.filter('proposeTagsThingsEdit', function (options, search, id) {
+    return proposeTags(options, search, $('#textarea-' + id), true, 1);
+});
+
+function popularTags(options, amount) {
+    amount = amount || 15;
+
+    return options.slice().sort(function (a, b) { return b.usage - a.usage; }).slice(0, amount);
+}
+
+Vue.filter('popularTags', popularTags);
+
+var vue = new Vue({
+    el: '#application',
+    data: {
+        Core: window.Guacamoly.Core,
+        tags: [],
+        things: [],
+        busyAdd: false,
+        busyThings: true,
+        busyFetchMore: false,
+        search: '',
+        archived: false,
+        sticky: false,
+        profile: {},
+        settings: {},
+        mainView: '',
+        thingContent: '',
+        thingAttachments: [],
+        uploadProgress: -1
+    },
+    methods: {
+        giveAddFocus: function () {
+            $('#addTextarea').focus();
+        },
+        addThing: function () {
+            var that = this;
+
+            this.busyAdd = true;
+
+            Core.things.add(this.thingContent, this.thingAttachments, function (error, thing) {
+                that.busyAdd = false;
+
+                if (error) return console.error(error);
+                that.thingContent = '';
+                that.thingAttachments = [];
+                that.things.unshift(thing);
+
+                that.refreshTags();
+            });
+        },
+        refreshTags: function (callback) {
+            var that = this;
+
+            Core.tags.get(function (error, tags) {
+                if (error) return console.error(error);
+
+                that.tags = tags;
+
+                if (callback) callback();
+            });
+        },
+        refresh: function (search) {
+            var that = this;
+
+            this.busyThings = true;
+
+            window.location.href = '/#search?' + (search ? encodeURIComponent(search) : '');
+
+            Core.things.get(search || '', this.archived, function (error, data) {
+                if (error) return console.error(error);
+
+                that.things = data;
+                that.busyThings = false;
+            });
+        },
+        triggerAttachmentUpload: function () {
+            $('#addAttachment').click();
+        },
+        attachmentChanged: function (event) {
+            var that = this;
+
+            var count = event.target.files.length;
+            var stepSize = 100 / count;
+            var currentIndex = 0;
+
+            this.uploadProgress = 1;
+
+            asyncForEach(event.target.files, function (file, callback) {
+                var formData = new FormData();
+                formData.append('file', file);
+
+                that.$root.Core.things.uploadFile(formData, function (progress) {
+                    var tmp = Math.ceil(stepSize * currentIndex + (stepSize * progress));
+                    that.uploadProgress = tmp > 100 ? 100 : tmp;
+                }, function (error, result) {
+                    if (error) return callback(error);
+
+                    currentIndex++;
+
+                    that.thingContent += ' [' + result.fileName + '] ';
+                    that.thingAttachments.push(result);
+
+                    callback();
+                });
+            }, function (error) {
+                if (error) console.error('Error uploading file.', error);
+
+                that.uploadProgress = -1;
+            });
+        },
+        activateProposedTag: function (tag) {
+            var word = Vue.getCurrentSearchWord(this.thingContent, $('#addTextarea'));
+            if (!word) console.log('nothing to add');
+
+            var cursorPosition = $('#addTextarea')[0].selectionStart;
+
+            this.thingContent = this.thingContent.replace(new RegExp(word, 'g'), function (match, offset) {
+                return ((cursorPosition - word.length) === offset) ? ('#' + tag.name) : match;
+            });
+
+            Vue.nextTick(function () { $('#addTextarea').focus(); });
+        },
+        // prevent from bubbling up to the main drop handler to allow textarea drops and paste
+        preventEventBubble: function (event) {
+            event.cancelBubble = true;
+        },
+        dragOver: function (event) {
+            event.preventDefault();
+        },
+        dropOrPasteHandler: dropOrPasteHandler,
+        main: function () {
+            var that = this;
+
+            this.mainView = 'loader';
+
+            Core.session.profile(function (error, profile) {
+                if (error) return console.error(error);
+
+                that.profile = profile.user;
+
+                Core.settings.get(function (error, settings) {
+                    if (error) return console.error(error);
+
+                    // set initial settings
+                    that.settings = settings;
+
+                    if (settings.title) window.document.title = settings.title;
+                    if (settings.backgroundImageDataUrl) window.document.body.style.backgroundImage = 'url("' + settings.backgroundImageDataUrl + '")';
+
+                    that.refreshTags(function () {
+                        that.mainView = 'content';
+
+                        window.setTimeout(function () { $('#searchBarInput').focus(); }, 0);
+
+                        hashChangeHandler();
+
+                        // add global object for browser extensions
+                        document.getElementById('guacamoly-settings-node').textContent = JSON.stringify({
+                            origin: Core.origin(),
+                            token: Core.token(),
+                            title: settings.title
+                        });
+                    });
+                });
+            });
+        }
+    },
+    ready: function () {
+        // Register event handlers
+        shortcut.add('Ctrl+s', this.addThing.bind(this), { target: 'addTextarea' });
+        shortcut.add('Ctrl+Enter', this.addThing.bind(this), { target: 'addTextarea' });
+        shortcut.add('Ctrl+f', function () { $('#searchBarInput').focus(); }, {});
+
+        this.main();
+
+        $('#login-form-link').click(function(e) {
+            $("#login-form").delay(100).fadeIn(100);
+            $("#register-form").fadeOut(100);
+            $('#register-form-link').removeClass('active');
+            $(this).addClass('active');
+            e.preventDefault();
+        });
+        $('#register-form-link').click(function(e) {
+            $("#register-form").delay(100).fadeIn(100);
+            $("#login-form").fadeOut(100);
+            $('#login-form-link').removeClass('active');
+            $(this).addClass('active');
+            e.preventDefault();
+        });
+
+        $('#login-form').submit(function (e) {
+            e.preventDefault();
+            var username = $('#login-username').val();
+            var password = $('#login-password').val();
+            Core.session.login(username, password, function (error) {
+                if (error) return alert('Login failed');
+                vue.main();
+            });
+        });
+
+        $('#register-form').submit(function (e) {
+            e.preventDefault();
+            var username = $('#register-username').val();
+            var email = $('#register-email').val();
+            var displayName = $('#register-displayName').val();
+            var password = $('#register-password').val();
+            Core.session.register(username, email, displayName, password, function (error) {
+                if (error) return alert('Registration failed');
+                alert('Registration successful, please login');
+                $('#login-form-link').click();
+            });
+        });
+    }
+});
+
+function hashChangeHandler() {
+    var action = window.location.hash.split('?')[0];
+    var params = window.location.hash.indexOf('?') > 0 ? decodeURIComponent(window.location.hash.slice(window.location.hash.indexOf('?') + 1)) : null;
+
+    if (action === '#search') {
+        if (params !== null) vue.search = params;
+        vue.refresh(vue.search);
+    } else {
+        window.location.href = '/#search?';
+    }
+}
+
+function scrollHandler() {
+    // add 1 full pixel to be on the safe side for zoom settings, where pixel values might be floats
+    if ($(window).height() + $(window).scrollTop() + 1 >= $(document).height()) {
+        // prevent from refetching while in progress
+        if (vue.busyFetchMore) return;
+
+        vue.busyFetchMore = true;
+
+        Core.things.fetchMore(function (error, result) {
+            vue.busyFetchMore = false;
+
+            if (error) return console.error(error);
+
+            vue.things = vue.things.concat(result);
+        });
+    }
+}
+
+function dropOrPasteHandler(event) {
+    event.cancelBubble = false;
+
+    var data;
+    if (event.type === 'paste') data = event.clipboardData.items;
+    else if (event.type === 'drop') data = event.dataTransfer.items;
+    else return;
+
+    for (var i = 0; i < data.length; ++i) {
+        if (data[i].kind === 'string') {
+            // stop if we got a string on a textarea native handling is better
+            if (event.target.localName === 'textarea') continue;
+
+            if (data[i].type.match('^text/plain')) {
+                data[i].getAsString(function (s) {
+                    vue.thingContent = vue.thingContent + s;
+                });
+
+                event.cancelBubble = true;
+                event.preventDefault();
+            } else {
+                console.log('Drop type', data[i].type, 'not supported.');
+            }
+        } else if (data[i].kind === 'file') {
+            var formData = new FormData();
+            var file = data[i].getAsFile();
+
+            // find unused filename
+            var j = 0;
+            var name = file.name;
+            while (vue.thingContent.indexOf(name) !== -1) {
+                name = j + '_' + file.name;
+                ++j;
+            }
+            formData.append('file', file, name);
+
+            Core.things.uploadFile(formData, function () {}, function (error, result) {
+                if (error) console.error(error);
+
+                vue.thingContent += ' [' + result.fileName + '] ';
+                vue.thingAttachments.push(result);
+            });
+
+            event.cancelBubble = true;
+            event.preventDefault();
+        } else {
+            console.error('Unknown drop type', data[i].kind, data[i].type);
+        }
+    }
+}
+
+function reset() {
+    vue.mainView = 'login';
+    vue.things = [];
+    vue.tags = [];
+    vue.search = '';
+    vue.settings = {};
+
+    window.document.title = 'Meemo';
+    window.document.body.style.backgroundImage = '';
+}
+
+Core.onAuthFailure = reset;
+Core.onLogout = reset;
+
+Core.settings.onChanged(function (data) {
+    vue.settings.title = data.title || 'Meemo';
+    vue.settings.backgroundImageDataUrl = data.backgroundImageDataUrl;
+    vue.settings.wide = data.wide;
+    vue.settings.wideNavbar = data.wideNavbar;
+    vue.settings.keepPositionAfterEdit = data.keepPositionAfterEdit;
+    vue.settings.publicBackground = data.publicBackground;
+    vue.settings.showTagSidebar = data.showTagSidebar;
+
+    window.document.title = data.title;
+
+    if (data.backgroundImageDataUrl) window.document.body.style.backgroundImage = 'url("' + data.backgroundImageDataUrl + '")';
+    else window.document.body.style.backgroundImage = '';
+});
+
+Core.things.onDeleted(function (thing) {
+    // remove if found
+    for (var i = 0; i < vue.things.length; ++i) {
+        if (vue.things[i].id === thing.id) {
+            vue.things.splice(i, 1);
+            return;
+        }
+    }
+});
+
+Core.things.onEdited(function (thing) {
+    if ((thing.archived && !vue.archived) || (!thing.archived && vue.archived)) {
+        // remove if found
+        for (var i = 0; i < vue.things.length; ++i) {
+            if (vue.things[i].id === thing.id) {
+                vue.things.splice(i, 1);
+                return;
+            }
+        }
+    } else {
+        // move to first spot
+        vue.things.splice(0, 0, vue.things.splice(vue.things.indexOf(thing), 1)[0]);
+    }
+});
+
+window.addEventListener('hashchange', hashChangeHandler, false);
+window.addEventListener('scroll', scrollHandler, false);
+
+})();
