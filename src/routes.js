@@ -23,6 +23,7 @@ exports = module.exports = {
     healthReady,
     fileAdd,
     fileGet,
+    HttpError: HttpError,
 
     public: {
         users: publicUsers,
@@ -41,6 +42,7 @@ var assert = require('assert'),
     fs = require('fs'),
     logic = require('./logic.js'),
     mkdirp = require('mkdirp'),
+    ObjectId = require('mongodb').ObjectId,
     path = require('path'),
     rss = require('rss'),
     settings = require('./database/settings.js'),
@@ -382,18 +384,60 @@ function fileAdd(req, res, next) {
     });
 }
 
-function fileGet(req, res, next) {
-    var authenticatedUserId = req.session.username;
+function isSafePathSegment(segment) {
+    if (typeof segment !== 'string' || !segment) return false;
+    if (path.basename(segment) !== segment) return false;
+    if (segment === '.' || segment === '..') return false;
+    return true;
+}
 
-    if (authenticatedUserId && authenticatedUserId === req.params.userId) {
-        return res.sendFile(req.params.identifier, { root: path.join(config.attachmentDir, authenticatedUserId) });
+function fileGet(req, res, next) {
+    var userId = req.params.userId;
+    var thingId = req.params.thingId;
+    var identifier = req.params.identifier;
+
+    if (!isSafePathSegment(userId) || !isSafePathSegment(identifier)) {
+        return next(new HttpError(400, 'invalid parameters'));
     }
 
-    logic.getPublic(req.params.userId, req.params.thingId, function (error) {
-        if (error === 'not allowed') return next(new HttpError(403, 'not allowed'));
-        if (error) return next(new HttpError(500, error));
+    if (!ObjectId.isValid(thingId)) {
+        return next(new HttpError(404, 'not found'));
+    }
 
-        res.sendFile(req.params.identifier, { root: path.join(config.attachmentDir, req.params.userId) });
+    logic.get(userId, thingId, function (error, thing) {
+        if (error) {
+            if (error.message === 'not found') return next(new HttpError(404, 'not found'));
+            return next(new HttpError(500, error));
+        }
+
+        if (!thing) {
+            return next(new HttpError(404, 'not found'));
+        }
+
+        var attachments = Array.isArray(thing.attachments) ? thing.attachments : [];
+        var attachmentExists = attachments.some(function (att) {
+            return att && att.identifier === identifier;
+        });
+
+        if (!attachmentExists) {
+            return next(new HttpError(404, 'attachment not found'));
+        }
+
+        var isOwner = req.session && req.session.username && (req.session.username === userId);
+        var isPublicOrShared = Boolean(thing.public || thing.shared);
+
+        if (!isOwner && !isPublicOrShared) {
+            return next(new HttpError(403, 'not allowed'));
+        }
+
+        var userRoot = path.join(config.attachmentDir, userId);
+        res.sendFile(identifier, { root: userRoot }, function (sendError) {
+            if (sendError) {
+                if (!res.headersSent) {
+                    return next(new HttpError(404, 'file not found'));
+                }
+            }
+        });
     });
 }
 
@@ -424,8 +468,8 @@ function publicGetAll(req, res, next) {
     });
 }
 
-function publicGetFile(req, res) {
-    res.sendFile(req.params.fileId, { root: path.join(config.attachmentDir, req.params.userId) });
+function publicGetFile(req, res, next) {
+    return next(new HttpError(404, 'not found'));
 }
 
 function publicUsers(req, res, next) {

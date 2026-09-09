@@ -1,8 +1,8 @@
 node_modules/
 public/
-attachments/
-storage/
-data/
-database/
+/attachments/
+/storage/
+/data/
+/database/
 users.json
 .users.json
