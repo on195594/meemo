@@ -7,6 +7,7 @@ exports = module.exports = {
 
     profile,
     list,
+    count,
     create,
     verify,
 };
@@ -108,4 +109,11 @@ function list(callback) {
     });
 
     callback(null, result);
+}
+
+function count(callback) {
+    list(function (error, users) {
+        if (error) return callback(error);
+        callback(null, users.length);
+    });
 }

@@ -17,11 +17,13 @@ var expect = require('expect.js'),
 
 describe('Users', function () {
     function setup(done) {
+        process.env.USERS_FILE = usersFilePath;
         fs.rmSync(usersFilePath, { force: true });
         config._clearDatabase(done);
     }
 
     function cleanup(done) {
+        process.env.USERS_FILE = usersFilePath;
         fs.rmSync(usersFilePath, { force: true });
         config._clearDatabase(done);
     }

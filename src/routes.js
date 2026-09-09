@@ -109,13 +109,57 @@ function logout(req, res, next) {
 }
 
 function register(req, res, next) {
-    if (!req.body.username || !req.body.password || !req.body.email || !req.body.displayName) return next(new HttpError(400, 'missing username, password, email or displayName'));
+    var username = req.body.username;
+    var password = req.body.password;
+    var email = req.body.email;
+    var displayName = req.body.displayName;
 
-    users.create(req.body.username, req.body.email, req.body.displayName, req.body.password, function (error) {
-        if (error && error.code === 'user exists') return next(new HttpError(409, error.message));
-        if (error) return next(new HttpError(500, error));
-        next(new HttpSuccess(201, {}));
-    });
+    if (typeof username !== 'string' || typeof password !== 'string' || typeof email !== 'string' || typeof displayName !== 'string') {
+        return next(new HttpError(400, 'missing username, password, email or displayName'));
+    }
+
+    username = username.trim().toLowerCase();
+    if (!/^[a-z0-9_\-]{3,32}$/.test(username)) {
+        return next(new HttpError(400, 'username must be 3-32 characters and contain only letters, numbers, underscores, and hyphens'));
+    }
+
+    if (password.length < 8 || password.length > 128) {
+        return next(new HttpError(400, 'password must be between 8 and 128 characters'));
+    }
+
+    email = email.trim();
+    if (email.length > 128 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return next(new HttpError(400, 'invalid email address'));
+    }
+
+    displayName = displayName.trim();
+    if (displayName.length < 1 || displayName.length > 64) {
+        return next(new HttpError(400, 'displayName must be between 1 and 64 characters'));
+    }
+
+    var registrationMode = process.env.REGISTRATION_MODE || (process.env.NODE_ENV === 'production' ? 'first-user' : 'open');
+
+    if (registrationMode === 'disabled') {
+        return next(new HttpError(403, 'Registration is disabled'));
+    }
+
+    function doCreate() {
+        users.create(username, email, displayName, password, function (error) {
+            if (error && error.code === 'user exists') return next(new HttpError(409, error.message));
+            if (error) return next(new HttpError(500, error));
+            next(new HttpSuccess(201, {}));
+        });
+    }
+
+    if (registrationMode === 'first-user') {
+        users.count(function (error, count) {
+            if (error) return next(new HttpError(500, error));
+            if (count > 0) return next(new HttpError(403, 'Registration is closed (first-user only)'));
+            doCreate();
+        });
+    } else {
+        doCreate();
+    }
 }
 
 function profile(req, res, next) {
