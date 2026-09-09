@@ -9,6 +9,10 @@ const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
 const SESSION_SECRET = process.env.SESSION_SECRET || require('crypto').randomBytes(32).toString('hex');
 
 if (!process.env.SESSION_SECRET) {
+    if (process.env.NODE_ENV === 'production') {
+        console.error('FATAL: SESSION_SECRET is required when NODE_ENV=production');
+        process.exit(1);
+    }
     console.warn('SESSION_SECRET is not set. A random secret was generated for this process; existing sessions will be invalidated after restart.');
 }
 
@@ -68,6 +72,8 @@ router.get ('/api/rss/:userId', routes.public.getRSS);
 router.get ('/api/users', routes.public.users);
 router.get ('/api/users/:userId', routes.public.profile);
 
+router.get ('/api/health/live', routes.healthLive);
+router.get ('/api/health/ready', routes.healthReady);
 router.get ('/api/healthcheck', routes.healthcheck);
 
 // page overlay for pretty public streams
@@ -113,6 +119,21 @@ MongoClient.connect(config.databaseUrl, { useUnifiedTopology: true }, function (
 
         console.log('App listening at http://%s:%s', host, port);
 
-        setInterval(logic.cleanupTags, 1000 * 60);
+        var cleanupInterval = setInterval(logic.cleanupTags, 1000 * 60);
+
+        function shutdown(signal) {
+            console.log('Received %s, starting graceful shutdown...', signal);
+            clearInterval(cleanupInterval);
+            server.close(function () {
+                console.log('HTTP server closed');
+                client.close(false, function () {
+                    console.log('MongoDB connection closed');
+                    process.exit(0);
+                });
+            });
+        }
+
+        process.on('SIGTERM', function () { shutdown('SIGTERM'); });
+        process.on('SIGINT', function () { shutdown('SIGINT'); });
     });
 });

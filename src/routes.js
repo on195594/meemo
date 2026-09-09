@@ -19,6 +19,8 @@ exports = module.exports = {
     exportThings,
     importThings,
     healthcheck,
+    healthLive,
+    healthReady,
     fileAdd,
     fileGet,
 
@@ -49,7 +51,32 @@ var assert = require('assert'),
     HttpError = require('connect-lastmile').HttpError,
     HttpSuccess = require('connect-lastmile').HttpSuccess;
 
+function healthLive(req, res, next) {
+    next(new HttpSuccess(200, { status: 'ok' }));
+}
+
+function healthReady(req, res, next) {
+    if (!config.db) {
+        return next(new HttpError(503, 'Database not connected'));
+    }
+
+    config.db.command({ ping: 1 }, function (err) {
+        if (err) return next(new HttpError(503, 'Database ping failed: ' + (err.message || err)));
+
+        mkdirp(config.attachmentDir, function (mkdirErr) {
+            if (mkdirErr) return next(new HttpError(503, 'Attachment directory inaccessible'));
+
+            fs.access(config.attachmentDir, fs.constants.R_OK | fs.constants.W_OK, function (accessErr) {
+                if (accessErr) return next(new HttpError(503, 'Attachment directory not writable'));
+
+                next(new HttpSuccess(200, { status: 'ready' }));
+            });
+        });
+    });
+}
+
 function healthcheck(req, res, next) {
+    res.setHeader('X-Deprecated', '/api/healthcheck is deprecated, use /api/health/live or /api/health/ready');
     next(new HttpSuccess(200, {}));
 }
 
