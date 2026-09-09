@@ -23,6 +23,7 @@ exports = module.exports = {
     healthReady,
     fileAdd,
     fileGet,
+    detectImageType,
     HttpError: HttpError,
 
     public: {
@@ -37,8 +38,8 @@ exports = module.exports = {
 };
 
 var assert = require('assert'),
-    checksum = require('checksum'),
     config = require('./config.js'),
+    crypto = require('crypto'),
     fs = require('fs'),
     logic = require('./logic.js'),
     mkdirp = require('mkdirp'),
@@ -356,31 +357,87 @@ function exportThings(req, res, next) {
 }
 
 function importThings(req, res, next) {
-    if (!req.files || !req.files[0]) return next(new HttpError('400', 'missing file'));
+    var file = req.file || (req.files && req.files[0]);
+    if (!file || !file.path) return next(new HttpError(400, 'missing file'));
 
-    logic.importThings(req.user.id, req.files[0].path, function (error) {
+    var tempFilePath = file.path;
+
+    function cleanupTemp() {
+        if (fs.existsSync(tempFilePath)) {
+            try { fs.unlinkSync(tempFilePath); } catch (e) {}
+        }
+    }
+
+    logic.importThings(req.user.id, tempFilePath, function (error) {
+        cleanupTemp();
+
         if (error) return next(new HttpError(400, error));
 
         next(new HttpSuccess(200, {}));
     });
 }
 
+function detectImageType(buffer) {
+    if (!buffer || buffer.length < 12) return null;
+    // JPEG: FF D8 FF
+    if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+        return 'image/jpeg';
+    }
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+        return 'image/png';
+    }
+    // GIF: GIF87a or GIF89a (47 49 46 38)
+    if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) {
+        return 'image/gif';
+    }
+    // WEBP: RIFF....WEBP (52 49 46 46 .... 57 45 42 50)
+    if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+        buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+        return 'image/webp';
+    }
+    return null;
+}
+
+function getSafeExtension(detectedType) {
+    if (detectedType === 'image/jpeg') return '.jpg';
+    if (detectedType === 'image/png') return '.png';
+    if (detectedType === 'image/gif') return '.gif';
+    if (detectedType === 'image/webp') return '.webp';
+    return '.bin';
+}
+
 function fileAdd(req, res, next) {
-    if (!req.files || !req.files[0]) return next(new HttpError('400', 'missing file'));
+    var file = req.file || (req.files && req.files[0]);
+    if (!file || !file.buffer) return next(new HttpError(400, 'missing file'));
 
-    var file = req.files[0];
-    var fileName = checksum(file.buffer) + path.extname(file.originalname);
+    var detectedType = detectImageType(file.buffer);
+    var isImage = Boolean(detectedType && file.mimetype && file.mimetype.indexOf('image/') === 0);
+    var type = isImage ? logic.TYPE_IMAGE : logic.TYPE_UNKNOWN;
+
+    // Server-generated opaque UUID storage key - original filename never participates in storage path
+    var safeExt = getSafeExtension(detectedType);
+    var storageKey = crypto.randomUUID() + safeExt;
+
     var attachmentFolder = path.join(config.attachmentDir, req.user.id);
-
-    // ensure the directory exists
     mkdirp.sync(attachmentFolder);
 
-    fs.writeFile(path.join(attachmentFolder, fileName), file.buffer, function (error) {
-        if (error) return next(new HttpError(500, error));
+    var targetFilePath = path.join(attachmentFolder, storageKey);
 
-        var type = file.mimetype.indexOf('image/') === 0 ? logic.TYPE_IMAGE : logic.TYPE_UNKNOWN;
+    fs.writeFile(targetFilePath, file.buffer, function (error) {
+        if (error) {
+            fs.unlink(targetFilePath, function () {});
+            return next(new HttpError(500, error));
+        }
 
-        next(new HttpSuccess(201, { identifier: fileName, fileName: file.originalname, type: type }));
+        // Sanitized original filename for display only
+        var displayName = path.basename(file.originalname || 'attachment');
+
+        next(new HttpSuccess(201, {
+            identifier: storageKey,
+            fileName: displayName,
+            type: type
+        }));
     });
 }
 
@@ -415,11 +472,11 @@ function fileGet(req, res, next) {
         }
 
         var attachments = Array.isArray(thing.attachments) ? thing.attachments : [];
-        var attachmentExists = attachments.some(function (att) {
+        var attachment = attachments.find(function (att) {
             return att && att.identifier === identifier;
         });
 
-        if (!attachmentExists) {
+        if (!attachment) {
             return next(new HttpError(404, 'attachment not found'));
         }
 
@@ -431,6 +488,10 @@ function fileGet(req, res, next) {
         }
 
         var userRoot = path.join(config.attachmentDir, userId);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        if (attachment.type !== logic.TYPE_IMAGE) {
+            res.setHeader('Content-Disposition', 'attachment; filename="' + encodeURIComponent(attachment.fileName || 'attachment') + '"');
+        }
         res.sendFile(identifier, { root: userRoot }, function (sendError) {
             if (sendError) {
                 if (!res.headersSent) {

@@ -50,6 +50,8 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `SESSION_SECRET` | Random on startup | Value of host `SESSION_SECRET` | Session signing secret |
 | `REGISTRATION_MODE` | `open` | `open` | Registration policy: `open`, `first-user`, or `disabled` |
 | `URL_ENRICHMENT_ENABLED` | `false` | `false` | Outbound URL metadata fetch (disabled by default for SSRF safety) |
+| `MAX_ATTACHMENT_SIZE` | `10485760` (10MB) | `10485760` | Maximum attachment upload size in bytes |
+| `MAX_IMPORT_SIZE` | `52428800` (50MB) | `52428800` | Maximum import archive size in bytes |
 | `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |
 
 For a public hostname or reverse proxy:
