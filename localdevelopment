@@ -7,13 +7,13 @@ CONTAINER_NAME="mongo-server-meemo"
 OUT=`docker inspect ${CONTAINER_NAME}` || true
 if [[ "${OUT}" = "[]" ]]; then
     echo "Starting ${CONTAINER_NAME}..."
-    docker run --name ${CONTAINER_NAME} -d mongo:5.0.20
+    docker run --name ${CONTAINER_NAME} -d mongo:8
 else
     echo "${CONTAINER_NAME} already running. If you want to start fresh, run 'docker rm --force ${CONTAINER_NAME}'"
 fi
 
 echo "Waiting for mongo server to be ready..."
-while ! docker exec ${CONTAINER_NAME} mongo --eval "print(\"waited for connection\")"; do
+while ! docker exec ${CONTAINER_NAME} mongosh --eval "print(\"waited for connection\")"; do
     sleep 1
 done
 
