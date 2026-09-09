@@ -742,7 +742,7 @@ Readiness 中明确检查 MongoDB；业务指标只增加低基数指标，不�
 
 ## 4.5 Gate G3 验收
 
-- [ ] `createApp` 可被测试代码创建/销毁，无隐式 listen 或孤儿连接。
+- [x] `createApp` 可被测试代码创建/销毁，无隐式 listen 或孤儿连接。
 - [ ] 路由层不直接访问底层 Mongo/FS，全流程经过 schema validation。
 - [ ] 错误响应格式统一且不泄露底层堆栈与路径。
 - [ ] 核心流程已完成 `async/await` 改造。
