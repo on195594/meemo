@@ -81,12 +81,17 @@ function createApp(options) {
     router.get ('/api/health/ready', routes.healthReady);
     router.get ('/api/healthcheck', routes.healthcheck);
 
+    // 404 for unhandled API endpoints
+    router.all('/api/*', function (req, res, next) {
+        next(new routes.HttpError(404, 'not found'));
+    });
+
     // page overlay for pretty public streams
     router.get ('/public/:userId', routes.public.streamPage);
 
     // Add pretty 404 handler
     router.get ('*', function (req, res) {
-        res.sendFile(path.resolve(__dirname, 'public/error.html'));
+        res.status(404).sendFile(path.resolve(__dirname, 'public/error.html'));
     });
 
     if (process.env.DEBUG) {

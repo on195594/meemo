@@ -83,6 +83,8 @@ function get(userId, thingId, callback) {
     assert.strictEqual(typeof thingId, 'string');
     assert.strictEqual(typeof callback, 'function');
 
+    if (!ObjectId.isValid(thingId)) return callback(new Error('not found'));
+
     getCollection(userId).find({ _id: new ObjectId(thingId) }).toArray(function (error, result) {
         if (error) return callback(error);
         if (result.length === 0) return callback(new Error('not found'));
@@ -141,6 +143,8 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
     assert.strictEqual(typeof isSticky, 'boolean');
     assert.strictEqual(typeof callback, 'function');
 
+    if (!ObjectId.isValid(thingId)) return callback(new Error('not found'));
+
     var data = {
         content: content,
         tags: tags,
@@ -164,6 +168,8 @@ function del(userId, thingId, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
     assert.strictEqual(typeof callback, 'function');
+
+    if (!ObjectId.isValid(thingId)) return callback(new Error('not found'));
 
     getCollection(userId).deleteOne({ _id: new ObjectId(thingId) }, function (error) {
         if (error) return callback(error);
