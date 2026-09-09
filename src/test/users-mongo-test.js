@@ -37,7 +37,7 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
             dbClient = client;
             config.db = client.db();
             mongoRepo = new MongoUserRepository(config.db);
-            done();
+            mongoRepo.ensureIndexes(done);
         });
     });
 

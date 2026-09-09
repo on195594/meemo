@@ -16,7 +16,8 @@ exports = module.exports = {
 
 var assert = require('assert'),
     ObjectId = require('mongodb').ObjectID,
-    config = require('../config.js');
+    config = require('../config.js'),
+    users = require('../users.js');
 
 var g_collections = {};
 
@@ -24,8 +25,25 @@ function getAllActiveUserIds() {
     return Object.keys(g_collections);
 }
 
+function getAlternateUserId(userId, callback) {
+    if (!users || typeof users.resolveUser !== 'function') return callback(null, null);
+    users.resolveUser(userId, function (err, user) {
+        if (err || !user) return callback(null, null);
+        if (user.id === userId && user.username && user.username !== userId) {
+            return callback(null, user.username);
+        }
+        if (user.username === userId && user.id && user.id !== userId) {
+            return callback(null, user.id);
+        }
+        return callback(null, null);
+    });
+}
+
 function postProcess(userId, thing) {
     thing._id = String(thing._id);
+    if (!thing.ownerId) {
+        thing.ownerId = userId;
+    }
     thing.public = !!thing.public;
     thing.shared = !!thing.shared;
     thing.archived = !!thing.archived;
@@ -56,7 +74,21 @@ function getAll(userId, query, skip, limit, callback) {
 
     getCollection(userId).find(query).skip(skip).limit(limit).sort({ sticky: -1, modifiedAt: -1 }).toArray(function (error, result) {
         if (error) return callback(error);
-        if (!result) return callback(null, []);
+        if (!result || result.length === 0) {
+            return getAlternateUserId(userId, function (altErr, altUserId) {
+                if (altErr || !altUserId) {
+                    return callback(null, result || []);
+                }
+
+                getCollection(altUserId).find(query).skip(skip).limit(limit).sort({ sticky: -1, modifiedAt: -1 }).toArray(function (err2, result2) {
+                    if (err2) return callback(err2);
+                    if (!result2) return callback(null, []);
+
+                    result2.forEach(postProcess.bind(null, userId));
+                    callback(null, result2);
+                });
+            });
+        }
 
         result.forEach(postProcess.bind(null, userId));
 
@@ -70,7 +102,21 @@ function getAllLean(userId, callback) {
 
     getCollection(userId).find({}).sort({ modifiedAt: -1, isSticky: 1 }).toArray(function (error, result) {
         if (error) return callback(error);
-        if (!result) return callback(null, []);
+        if (!result || result.length === 0) {
+            return getAlternateUserId(userId, function (altErr, altUserId) {
+                if (altErr || !altUserId) {
+                    return callback(null, result || []);
+                }
+
+                getCollection(altUserId).find({}).sort({ modifiedAt: -1, isSticky: 1 }).toArray(function (err2, result2) {
+                    if (err2) return callback(err2);
+                    if (!result2) return callback(null, []);
+
+                    result2.forEach(postProcess.bind(null, userId));
+                    callback(null, result2);
+                });
+            });
+        }
 
         result.forEach(postProcess.bind(null, userId));
 
@@ -87,7 +133,19 @@ function get(userId, thingId, callback) {
 
     getCollection(userId).find({ _id: new ObjectId(thingId) }).toArray(function (error, result) {
         if (error) return callback(error);
-        if (result.length === 0) return callback(new Error('not found'));
+        if (!result || result.length === 0) {
+            return getAlternateUserId(userId, function (altErr, altUserId) {
+                if (altErr || !altUserId) return callback(new Error('not found'));
+
+                getCollection(altUserId).find({ _id: new ObjectId(thingId) }).toArray(function (err2, result2) {
+                    if (err2) return callback(err2);
+                    if (!result2 || result2.length === 0) return callback(new Error('not found'));
+
+                    postProcess(userId, result2[0]);
+                    callback(null, result2[0]);
+                });
+            });
+        }
 
         postProcess(userId, result[0]);
 
@@ -110,6 +168,7 @@ function addFull(userId, content, tags, attachments, externalContent, createdAt,
     assert.strictEqual(typeof callback, 'function');
 
     var doc = {
+        ownerId: userId,
         content: content,
         createdAt: createdAt,
         modifiedAt: modifiedAt,
@@ -146,6 +205,7 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
     if (!ObjectId.isValid(thingId)) return callback(new Error('not found'));
 
     var data = {
+        ownerId: userId,
         content: content,
         tags: tags,
         modifiedAt: Date.now(),

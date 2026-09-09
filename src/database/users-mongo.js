@@ -38,9 +38,11 @@ MongoUserRepository.prototype.ensureIndexes = function (callback) {
     var db = this._db || config.db;
     if (!db) return callback(new Error('MongoDB database is not connected'));
 
+    var self = this;
     var collection = db.collection('users');
     collection.createIndex({ usernameNorm: 1 }, { unique: true }, function (err) {
         if (err && err.codeName !== 'IndexOptionsConflict') return callback(err);
+        self._indexesCreated = true;
         callback(null);
     });
 };
@@ -124,36 +126,44 @@ MongoUserRepository.prototype.create = function (userData, callback) {
     assert.strictEqual(typeof userData.username, 'string');
     assert.strictEqual(typeof callback, 'function');
 
-    var doc = {
-        username: userData.username,
-        usernameNorm: userData.username.toLowerCase(),
-        displayName: userData.displayName,
-        email: userData.email,
-        passwordHash: userData.passwordHash,
-        createdAt: typeof userData.createdAt === 'number' ? userData.createdAt : Date.now(),
-        status: userData.status || 'active'
-    };
+    var self = this;
+    var norm = userData.username.toLowerCase();
 
-    if (userData.id && ObjectId.isValid(userData.id)) {
-        doc._id = new ObjectId(userData.id);
-    }
+    this.getByUsername(userData.username, function (err, existing) {
+        if (err) return callback(err);
+        if (existing) return callback(new Error('user exists'));
 
-    try {
-        this.getCollection().insertOne(doc, function (err, result) {
-            if (err) {
-                // MongoDB duplicate key error (code 11000)
-                if (err.code === 11000 || (err.message && err.message.indexOf('E11000') !== -1)) {
-                    return callback(new Error('user exists'));
+        var doc = {
+            username: userData.username,
+            usernameNorm: norm,
+            displayName: userData.displayName,
+            email: userData.email,
+            passwordHash: userData.passwordHash,
+            createdAt: typeof userData.createdAt === 'number' ? userData.createdAt : Date.now(),
+            status: userData.status || 'active'
+        };
+
+        if (userData.id && ObjectId.isValid(userData.id)) {
+            doc._id = new ObjectId(userData.id);
+        }
+
+        try {
+            self.getCollection().insertOne(doc, function (err, result) {
+                if (err) {
+                    // MongoDB duplicate key error (code 11000)
+                    if (err.code === 11000 || (err.message && err.message.indexOf('E11000') !== -1)) {
+                        return callback(new Error('user exists'));
+                    }
+                    return callback(err);
                 }
-                return callback(err);
-            }
 
-            var created = Object.assign({}, doc, { id: String(result.insertedId || doc._id) });
-            callback(null, created);
-        });
-    } catch (e) {
-        callback(e);
-    }
+                var created = Object.assign({}, doc, { id: String(result.insertedId || doc._id) });
+                callback(null, created);
+            });
+        } catch (e) {
+            callback(e);
+        }
+    });
 };
 
 MongoUserRepository.prototype.list = function (callback) {

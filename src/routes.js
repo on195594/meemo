@@ -82,11 +82,16 @@ function healthcheck(req, res, next) {
 }
 
 function auth(req, res, next) {
-    if (!req.session.username) return next(new HttpError(401, 'Unauthorized'));
+    if (!req.session || (!req.session.username && !req.session.userId)) {
+        return next(new HttpError(401, 'Unauthorized'));
+    }
+
+    var userId = req.session.userId || req.session.username;
+    var username = req.session.username || req.session.userId;
 
     req.user = {
-        id: req.session.username,
-        username: req.session.username
+        id: String(userId),
+        username: String(username)
     };
     next();
 }
@@ -128,7 +133,7 @@ function login(req, res, next) {
     var username = req.body.username.trim().toLowerCase();
     var password = req.body.password;
 
-    users.verify(username, password, function (error) {
+    users.verify(username, password, function (error, user) {
         if (error && (error.code === UserError.NOT_FOUND || error.code === UserError.NOT_AUTHORIZED)) {
             return next(new HttpError(401, 'Invalid username or password'));
         }
@@ -136,14 +141,19 @@ function login(req, res, next) {
 
         resetLoginRateLimit(clientIp);
 
+        var stableUserId = (user && (user.id || user._id)) ? String(user.id || user._id) : username;
+        var canonicalUsername = (user && user.username) ? user.username : username;
+
         if (req.session && typeof req.session.regenerate === 'function') {
             req.session.regenerate(function (regenErr) {
                 if (regenErr) return next(new HttpError(500, regenErr));
-                req.session.username = username;
+                req.session.userId = stableUserId;
+                req.session.username = canonicalUsername;
                 next(new HttpSuccess(200, {}));
             });
         } else {
-            req.session.username = username;
+            req.session.userId = stableUserId;
+            req.session.username = canonicalUsername;
             next(new HttpSuccess(200, {}));
         }
     });
@@ -334,25 +344,38 @@ function settingsGet(req, res, next) {
 }
 
 function exportThings(req, res, next) {
-    // Just to make sure the folder exists in case a user has never uploaded an attachment
-    var attachmentFolder = path.join(config.attachmentDir, req.user.id);
+    var userId = req.user.id;
+    var username = req.user.username;
+
+    // Check stable userId folder first, fallback to legacy username folder if needed
+    var attachmentFolder = path.join(config.attachmentDir, userId);
+    if (!fs.existsSync(attachmentFolder) && username && username !== userId && fs.existsSync(path.join(config.attachmentDir, username))) {
+        attachmentFolder = path.join(config.attachmentDir, username);
+    }
     mkdirp.sync(attachmentFolder);
 
-    logic.exp(req.user.id, function (error, result) {
-        if (error) return next(new HttpError(500, error));
+    logic.exp(userId, function (error, result) {
+        if (error && username && username !== userId) {
+            return logic.exp(username, onExpResult);
+        }
+        onExpResult(error, result);
 
-        var out = tar.pack(attachmentFolder, {
-            map: function (header) {
-                header.name = 'attachments/' + header.name;
-                return header;
-            }
-        });
+        function onExpResult(error, result) {
+            if (error) return next(new HttpError(500, error));
 
-        // add the db dump
-        out.entry({ name: 'things.json' }, JSON.stringify(result, null, 4));
+            var out = tar.pack(attachmentFolder, {
+                map: function (header) {
+                    header.name = 'attachments/' + header.name;
+                    return header;
+                }
+            });
 
-        res.attachment('meemo-export.tar');
-        out.pipe(res);
+            // add the db dump
+            out.entry({ name: 'things.json' }, JSON.stringify(result, null, 4));
+
+            res.attachment('meemo-export.tar');
+            out.pipe(res);
+        }
     });
 }
 
@@ -449,11 +472,11 @@ function isSafePathSegment(segment) {
 }
 
 function fileGet(req, res, next) {
-    var userId = req.params.userId;
+    var rawUserId = req.params.userId;
     var thingId = req.params.thingId;
     var identifier = req.params.identifier;
 
-    if (!isSafePathSegment(userId) || !isSafePathSegment(identifier)) {
+    if (!isSafePathSegment(rawUserId) || !isSafePathSegment(identifier)) {
         return next(new HttpError(400, 'invalid parameters'));
     }
 
@@ -461,71 +484,123 @@ function fileGet(req, res, next) {
         return next(new HttpError(404, 'not found'));
     }
 
-    logic.get(userId, thingId, function (error, thing) {
-        if (error) {
-            if (error.message === 'not found') return next(new HttpError(404, 'not found'));
-            return next(new HttpError(500, error));
-        }
+    users.resolveUser(rawUserId, function (resolveErr, targetUser) {
+        if (resolveErr && resolveErr.code === UserError.INTERNAL_ERROR) return next(new HttpError(500, resolveErr));
 
-        if (!thing) {
-            return next(new HttpError(404, 'not found'));
-        }
+        var targetUserId = targetUser ? targetUser.id : rawUserId;
+        var targetUsername = targetUser ? targetUser.username : rawUserId;
 
-        var attachments = Array.isArray(thing.attachments) ? thing.attachments : [];
-        var attachment = attachments.find(function (att) {
-            return att && att.identifier === identifier;
-        });
+        logic.get(targetUserId, thingId, function (error, thing) {
+            if (error && error.message === 'not found' && targetUsername && targetUsername !== targetUserId) {
+                return logic.get(targetUsername, thingId, onGotThing);
+            }
+            onGotThing(error, thing);
 
-        if (!attachment) {
-            return next(new HttpError(404, 'attachment not found'));
-        }
-
-        var isOwner = req.session && req.session.username && (req.session.username === userId);
-        var isPublicOrShared = Boolean(thing.public || thing.shared);
-
-        if (!isOwner && !isPublicOrShared) {
-            return next(new HttpError(403, 'not allowed'));
-        }
-
-        var userRoot = path.join(config.attachmentDir, userId);
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        if (attachment.type !== logic.TYPE_IMAGE) {
-            res.setHeader('Content-Disposition', 'attachment; filename="' + encodeURIComponent(attachment.fileName || 'attachment') + '"');
-        }
-        res.sendFile(identifier, { root: userRoot }, function (sendError) {
-            if (sendError) {
-                if (!res.headersSent) {
-                    return next(new HttpError(404, 'file not found'));
+            function onGotThing(error, thing) {
+                if (error) {
+                    if (error.message === 'not found') return next(new HttpError(404, 'not found'));
+                    return next(new HttpError(500, error));
                 }
+
+                if (!thing) {
+                    return next(new HttpError(404, 'not found'));
+                }
+
+                var attachments = Array.isArray(thing.attachments) ? thing.attachments : [];
+                var attachment = attachments.find(function (att) {
+                    return att && att.identifier === identifier;
+                });
+
+                if (!attachment) {
+                    return next(new HttpError(404, 'attachment not found'));
+                }
+
+                var isOwner = req.session && (
+                    (req.session.userId && (req.session.userId === targetUserId || req.session.userId === rawUserId)) ||
+                    (req.session.username && (req.session.username === targetUsername || req.session.username === rawUserId))
+                );
+                var isPublicOrShared = Boolean(thing.public || thing.shared);
+
+                if (!isOwner && !isPublicOrShared) {
+                    return next(new HttpError(403, 'not allowed'));
+                }
+
+                var userRoot = path.join(config.attachmentDir, targetUserId);
+                var filePath = path.join(userRoot, identifier);
+
+                if (!fs.existsSync(filePath) && targetUsername && targetUsername !== targetUserId) {
+                    var legacyRoot = path.join(config.attachmentDir, targetUsername);
+                    var legacyPath = path.join(legacyRoot, identifier);
+                    if (fs.existsSync(legacyPath)) {
+                        userRoot = legacyRoot;
+                    }
+                }
+
+                res.setHeader('X-Content-Type-Options', 'nosniff');
+                if (attachment.type !== logic.TYPE_IMAGE) {
+                    res.setHeader('Content-Disposition', 'attachment; filename="' + encodeURIComponent(attachment.fileName || 'attachment') + '"');
+                }
+                res.sendFile(identifier, { root: userRoot }, function (sendError) {
+                    if (sendError) {
+                        if (!res.headersSent) {
+                            return next(new HttpError(404, 'file not found'));
+                        }
+                    }
+                });
             }
         });
     });
 }
 
 function publicGetThing(req, res, next) {
-    logic.getPublic(req.params.userId, req.params.thingId, function (error, result) {
-        if (error === 'not allowed') return next(new HttpError(403, 'not allowed'));
-        if (error) return next(new HttpError(500, error));
+    users.resolveUser(req.params.userId, function (err, targetUser) {
+        if (err && err.code === UserError.INTERNAL_ERROR) return next(new HttpError(500, err));
+        var targetUserId = targetUser ? targetUser.id : req.params.userId;
+        var targetUsername = targetUser ? targetUser.username : req.params.userId;
 
-        next(new HttpSuccess(200, { thing: result }));
+        logic.getPublic(targetUserId, req.params.thingId, function (error, result) {
+            if (error && error.message === 'not found' && targetUsername && targetUsername !== targetUserId) {
+                return logic.getPublic(targetUsername, req.params.thingId, handleResult);
+            }
+            handleResult(error, result);
+
+            function handleResult(error, result) {
+                if (error === 'not allowed') return next(new HttpError(403, 'not allowed'));
+                if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
+                if (error) return next(new HttpError(500, error));
+
+                next(new HttpSuccess(200, { thing: result }));
+            }
+        });
     });
 }
 
 function publicGetAll(req, res, next) {
-    var query = {};
+    users.resolveUser(req.params.userId, function (err, targetUser) {
+        if (err && err.code === UserError.INTERNAL_ERROR) return next(new HttpError(500, err));
+        var targetUserId = targetUser ? targetUser.id : req.params.userId;
+        var targetUsername = targetUser ? targetUser.username : req.params.userId;
 
-    if (req.query && req.query.filter) {
-        query = {
-            $text: { $search: String(req.query.filter) }
-        };
-    }
+        var query = {};
+        if (req.query && req.query.filter) {
+            query = {
+                $text: { $search: String(req.query.filter) }
+            };
+        }
 
-    var skip = isNaN(parseInt(req.query.skip)) ? 0 : parseInt(req.query.skip);
-    var limit = isNaN(parseInt(req.query.limit)) ? 10 : parseInt(req.query.limit);
+        var skip = isNaN(parseInt(req.query.skip)) ? 0 : parseInt(req.query.skip);
+        var limit = isNaN(parseInt(req.query.limit)) ? 10 : parseInt(req.query.limit);
 
-    logic.getAllPublic(req.params.userId, query, skip, limit, function (error, result) {
-        if (error) return next(new HttpError(500, error));
-        next(new HttpSuccess(200, { things: result }));
+        logic.getAllPublic(targetUserId, query, skip, limit, function (error, result) {
+            if (error && targetUsername && targetUsername !== targetUserId) {
+                return logic.getAllPublic(targetUsername, query, skip, limit, function (fallbackErr, fallbackResult) {
+                    if (fallbackErr) return next(new HttpError(500, fallbackErr));
+                    next(new HttpSuccess(200, { things: fallbackResult }));
+                });
+            }
+            if (error) return next(new HttpError(500, error));
+            next(new HttpSuccess(200, { things: result }));
+        });
     });
 }
 
@@ -543,22 +618,33 @@ function publicUsers(req, res, next) {
 }
 
 function publicProfile(req, res, next) {
-    users.profile(req.params.userId, false, function (error, result) {
-        if (error && error.code === UserError.NOT_FOUND) return next(new HttpError(404, error.message));
-        if (error) return next(new HttpError(500, error));
+    users.resolveUser(req.params.userId, function (err, targetUser) {
+        if (err && err.code === UserError.INTERNAL_ERROR) return next(new HttpError(500, err));
+        if (!targetUser) return next(new HttpError(404, 'not found'));
+
+        var targetUserId = targetUser.id;
+        var targetUsername = targetUser.username;
 
         var out = {
-            username: result.username,
-            displayName: result.displayName,
+            id: targetUserId,
+            username: targetUsername,
+            displayName: targetUser.displayName
         };
 
-        settings.get(req.params.userId, function (error, result) {
-            if (error) return next(new HttpError(500, error));
+        settings.get(targetUserId, function (error, result) {
+            if (error && targetUsername && targetUsername !== targetUserId) {
+                return settings.get(targetUsername, handleSettings);
+            }
+            handleSettings(error, result);
 
-            out.title = result.title;
-            out.backgroundImageDataUrl = result.publicBackground ? result.backgroundImageDataUrl : undefined;
+            function handleSettings(error, result) {
+                if (error) return next(new HttpError(500, error));
 
-            next(new HttpSuccess(200, out));
+                out.title = result.title;
+                out.backgroundImageDataUrl = result.publicBackground ? result.backgroundImageDataUrl : undefined;
+
+                next(new HttpSuccess(200, out));
+            }
         });
     });
 }
@@ -566,38 +652,47 @@ function publicProfile(req, res, next) {
 function publicGetRSS(req, res, next) {
     assert.strictEqual(typeof req.params.userId, 'string');
 
-    users.profile(req.params.userId, false, function (error, user) {
-        if (error && error.code === UserError.NOT_FOUND) return next(new HttpError(404, error.message));
-        if (error) return next(new HttpError(500, error));
+    users.resolveUser(req.params.userId, function (err, targetUser) {
+        if (err && err.code === UserError.INTERNAL_ERROR) return next(new HttpError(500, err));
+        if (!targetUser) return next(new HttpError(404, 'not found'));
 
-        settings.get(req.params.userId, function (error, config) {
-            if (error) return next(new HttpError(500, error));
+        var targetUserId = targetUser.id;
+        var targetUsername = targetUser.username;
 
-            logic.getAllPublic(req.params.userId, {}, 0, 50, function (error, result) {
-                if (error) return next(new HttpError(500, error));
-
-                var webServer = process.env.APP_ORIGIN || 'http://localhost';
-
-                var feed = new rss({
-                    title: config.title,
-                    image_url: webServer + '/img/logo128.png',
-                    site_url: webServer
-                });
-
-                // generate the rss feed items
-                result.forEach(function (r) {
-                    var title = r.content.split('\n').filter(function (l) { return !!l.trim(); })[0];
-
-                    feed.item({
-                        title: title,
-                        url: webServer + '/blog/' + 'TODO', // TODO
-                        author: user.displayName + '( ' + user.username + ' )',
-                        date: new Date(r.createdAt),
-                        description: md.render(r.richContent)
+        settings.get(targetUserId, function (error, cfg) {
+            logic.getAllPublic(targetUserId, {}, 0, 50, function (error, result) {
+                if (error && targetUsername && targetUsername !== targetUserId) {
+                    return logic.getAllPublic(targetUsername, {}, 0, 50, function (fallbackErr, fallbackResult) {
+                        if (fallbackErr) return next(new HttpError(500, fallbackErr));
+                        buildFeed(cfg, fallbackResult);
                     });
-                });
+                }
+                if (error) return next(new HttpError(500, error));
+                buildFeed(cfg, result);
 
-                res.type('application/rss+xml').status(200).send(feed.xml());
+                function buildFeed(cfg, result) {
+                    var webServer = process.env.APP_ORIGIN || 'http://localhost';
+
+                    var feed = new rss({
+                        title: (cfg && cfg.title) || 'Meemo',
+                        image_url: webServer + '/img/logo128.png',
+                        site_url: webServer
+                    });
+
+                    result.forEach(function (r) {
+                        var title = r.content.split('\n').filter(function (l) { return !!l.trim(); })[0];
+
+                        feed.item({
+                            title: title,
+                            url: webServer + '/blog/' + 'TODO',
+                            author: targetUser.displayName + '( ' + targetUser.username + ' )',
+                            date: new Date(r.createdAt),
+                            description: md.render(r.richContent)
+                        });
+                    });
+
+                    res.type('application/rss+xml').status(200).send(feed.xml());
+                }
             });
         });
     });
