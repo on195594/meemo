@@ -6,15 +6,6 @@ require('supererror')({ splatchError: true });
 
 const PORT = process.env.VITE_DEV_PORT || process.env.PORT || 3000;
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
-const SESSION_SECRET = process.env.SESSION_SECRET || require('crypto').randomBytes(32).toString('hex');
-
-if (!process.env.SESSION_SECRET) {
-    if (process.env.NODE_ENV === 'production') {
-        console.error('FATAL: SESSION_SECRET is required when NODE_ENV=production');
-        process.exit(1);
-    }
-    console.warn('SESSION_SECRET is not set. A random secret was generated for this process; existing sessions will be invalidated after restart.');
-}
 
 var express = require('express'),
     json = require('body-parser').json,
@@ -31,109 +22,175 @@ var express = require('express'),
     path = require('path'),
     serveStatic = require('serve-static');
 
-var app = express();
-var router = new express.Router();
+function createApp(options) {
+    options = options || {};
 
-var storage = multer.diskStorage({});
-var diskUpload = multer({ storage: storage }).any();
-var memoryUpload = multer({ storage: multer.memoryStorage({}) }).any();
+    var isProduction = options.isProduction !== undefined ? options.isProduction : (process.env.NODE_ENV === 'production');
+    var sessionSecret = options.sessionSecret || process.env.SESSION_SECRET;
 
-router.del = router.delete;
+    if (!sessionSecret) {
+        if (isProduction) {
+            throw new Error('FATAL: SESSION_SECRET is required when NODE_ENV=production');
+        }
+        sessionSecret = require('crypto').randomBytes(32).toString('hex');
+        console.warn('SESSION_SECRET is not set. A random secret was generated for this process; existing sessions will be invalidated after restart.');
+    }
 
-router.post('/api/register', routes.register);
-router.post('/api/login', routes.login);
-router.post('/api/logout', routes.logout);
+    var app = express();
+    var router = new express.Router();
 
-router.post('/api/things', routes.auth, routes.add);
-router.get ('/api/things', routes.auth, routes.getAll);
-router.get ('/api/things/:id', routes.auth, routes.get);
-router.put ('/api/things/:id', routes.auth, routes.put);
-router.del ('/api/things/:id', routes.auth, routes.del);
+    var storage = multer.diskStorage({});
+    var diskUpload = multer({ storage: storage }).any();
+    var memoryUpload = multer({ storage: multer.memoryStorage({}) }).any();
 
-router.post('/api/files', routes.auth, memoryUpload, routes.fileAdd);
-router.get ('/api/files/:userId/:thingId/:identifier', routes.fileGet);
+    router.del = router.delete;
 
-router.get ('/api/tags', routes.auth, routes.getTags);
+    router.post('/api/register', routes.register);
+    router.post('/api/login', routes.login);
+    router.post('/api/logout', routes.logout);
 
-router.post('/api/settings', routes.auth, routes.settingsSave);
-router.get ('/api/settings', routes.auth, routes.settingsGet);
+    router.post('/api/things', routes.auth, routes.add);
+    router.get ('/api/things', routes.auth, routes.getAll);
+    router.get ('/api/things/:id', routes.auth, routes.get);
+    router.put ('/api/things/:id', routes.auth, routes.put);
+    router.del ('/api/things/:id', routes.auth, routes.del);
 
-router.get ('/api/export', routes.auth, routes.exportThings);
-router.post('/api/import', routes.auth, diskUpload, routes.importThings);
+    router.post('/api/files', routes.auth, memoryUpload, routes.fileAdd);
+    router.get ('/api/files/:userId/:thingId/:identifier', routes.fileGet);
 
-router.get ('/api/profile', routes.auth, routes.profile);
+    router.get ('/api/tags', routes.auth, routes.getTags);
 
-// public apis
-router.get ('/api/public/:userId/files/:fileId', routes.public.getFile);
-router.get ('/api/public/:userId/things', routes.public.getAll);
-router.get ('/api/public/:userId/things/:thingId', routes.public.getThing);
-router.get ('/api/rss/:userId', routes.public.getRSS);
+    router.post('/api/settings', routes.auth, routes.settingsSave);
+    router.get ('/api/settings', routes.auth, routes.settingsGet);
 
-router.get ('/api/users', routes.public.users);
-router.get ('/api/users/:userId', routes.public.profile);
+    router.get ('/api/export', routes.auth, routes.exportThings);
+    router.post('/api/import', routes.auth, diskUpload, routes.importThings);
 
-router.get ('/api/health/live', routes.healthLive);
-router.get ('/api/health/ready', routes.healthReady);
-router.get ('/api/healthcheck', routes.healthcheck);
+    router.get ('/api/profile', routes.auth, routes.profile);
 
-// page overlay for pretty public streams
-router.get ('/public/:userId', routes.public.streamPage);
+    // public apis
+    router.get ('/api/public/:userId/files/:fileId', routes.public.getFile);
+    router.get ('/api/public/:userId/things', routes.public.getAll);
+    router.get ('/api/public/:userId/things/:thingId', routes.public.getThing);
+    router.get ('/api/rss/:userId', routes.public.getRSS);
 
-// Add pretty 404 handler
-router.get ('*', function (req, res) {
-    res.sendFile(path.resolve(__dirname, 'public/error.html'));
-});
+    router.get ('/api/users', routes.public.users);
+    router.get ('/api/users/:userId', routes.public.profile);
 
-if (process.env.DEBUG) {
-    app.use(morgan('dev', { immediate: false, stream: { write: function (str) { console.log(str.slice(0, -1)); } } }));
+    router.get ('/api/health/live', routes.healthLive);
+    router.get ('/api/health/ready', routes.healthReady);
+    router.get ('/api/healthcheck', routes.healthcheck);
+
+    // page overlay for pretty public streams
+    router.get ('/public/:userId', routes.public.streamPage);
+
+    // Add pretty 404 handler
+    router.get ('*', function (req, res) {
+        res.sendFile(path.resolve(__dirname, 'public/error.html'));
+    });
+
+    if (process.env.DEBUG) {
+        app.use(morgan('dev', { immediate: false, stream: { write: function (str) { console.log(str.slice(0, -1)); } } }));
+    }
+
+    app.use(serveStatic(__dirname + '/public', { etag: false }));
+    app.use(cors());
+    app.use(json({ strict: true, limit: '5mb' }));
+
+    var sessionStore;
+    if (options.sessionStore) {
+        sessionStore = options.sessionStore;
+    } else if (options.sessionMemory) {
+        sessionStore = undefined;
+    } else {
+        sessionStore = MongoStore.create({ mongoUrl: options.databaseUrl || config.databaseUrl });
+    }
+
+    app.use(session({
+        secret: sessionSecret,
+        saveUninitialized: false,
+        resave: false,
+        cookie: { sameSite: 'strict' },
+        store: sessionStore
+    }));
+
+    app.use(router);
+    app.use(lastmile());
+
+    return app;
 }
-
-app.use(serveStatic(__dirname + '/public', { etag: false }));
-app.use(cors());
-app.use(json({ strict: true, limit: '5mb' }));
-app.use(session({
-    secret: SESSION_SECRET,
-    saveUninitialized: false,
-    resave: false,
-    cookie: { sameSite: 'strict' },
-    store: MongoStore.create({ mongoUrl: config.databaseUrl })
-}));
-
-app.use(router);
-app.use(lastmile());
 
 function exit(error) {
     if (error) console.error(error);
     process.exit(error ? 1 : 0);
 }
 
-MongoClient.connect(config.databaseUrl, { useUnifiedTopology: true }, function (error, client) {
-    if (error) exit(error);
+function startServer(options, callback) {
+    options = options || {};
+    var port = options.port || PORT;
+    var bindAddress = options.bindAddress || BIND_ADDRESS;
+    var databaseUrl = options.databaseUrl || config.databaseUrl;
 
-    // stash for database code to be used
-    config.db = client.db();
-
-    var server = app.listen(PORT, BIND_ADDRESS, function () {
-        var host = server.address().address;
-        var port = server.address().port;
-
-        console.log('App listening at http://%s:%s', host, port);
-
-        var cleanupInterval = setInterval(logic.cleanupTags, 1000 * 60);
-
-        function shutdown(signal) {
-            console.log('Received %s, starting graceful shutdown...', signal);
-            clearInterval(cleanupInterval);
-            server.close(function () {
-                console.log('HTTP server closed');
-                client.close(false, function () {
-                    console.log('MongoDB connection closed');
-                    process.exit(0);
-                });
-            });
+    MongoClient.connect(databaseUrl, { useUnifiedTopology: true }, function (error, client) {
+        if (error) {
+            if (callback) return callback(error);
+            exit(error);
         }
 
-        process.on('SIGTERM', function () { shutdown('SIGTERM'); });
-        process.on('SIGINT', function () { shutdown('SIGINT'); });
+        // stash for database code to be used
+        config.db = client.db();
+
+        var app;
+        try {
+            app = createApp(options);
+        } catch (err) {
+            if (callback) return callback(err);
+            exit(err);
+        }
+
+        var server = app.listen(port, bindAddress, function () {
+            var host = server.address().address;
+            var actualPort = server.address().port;
+
+            console.log('App listening at http://%s:%s', host, actualPort);
+
+            var cleanupInterval = setInterval(logic.cleanupTags, 1000 * 60);
+
+            function shutdown(signal, done) {
+                console.log('Received %s, starting graceful shutdown...', signal || 'shutdown');
+                clearInterval(cleanupInterval);
+                server.close(function () {
+                    console.log('HTTP server closed');
+                    client.close(false, function () {
+                        console.log('MongoDB connection closed');
+                        if (done) return done();
+                        process.exit(0);
+                    });
+                });
+            }
+
+            process.on('SIGTERM', function () { shutdown('SIGTERM'); });
+            process.on('SIGINT', function () { shutdown('SIGINT'); });
+
+            var result = {
+                app: app,
+                server: server,
+                client: client,
+                close: function (done) {
+                    shutdown('close', done);
+                }
+            };
+
+            if (callback) callback(null, result);
+        });
     });
-});
+}
+
+if (require.main === module) {
+    startServer();
+}
+
+module.exports = {
+    createApp: createApp,
+    startServer: startServer
+};

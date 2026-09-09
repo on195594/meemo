@@ -32,14 +32,16 @@ UserError.NOT_FOUND = 'not found';
 UserError.NOT_AUTHORIZED = 'not authorized';
 UserError.INTERNAL_ERROR = 'internal error';
 
-const USERS_FILEPATH = path.resolve(process.env.USERS_FILE || '.users.json');
+function getUsersFilePath() {
+    return path.resolve(process.env.USERS_FILE || '.users.json');
+}
 
 function profile(userId, full, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof full, 'boolean');
     assert.strictEqual(typeof callback, 'function');
 
-    const users = safe.JSON.parse(safe.fs.readFileSync(USERS_FILEPATH));
+    const users = safe.JSON.parse(safe.fs.readFileSync(getUsersFilePath()));
     if (!users) return callback(new UserError(UserError.NOT_FOUND));
     if (!users[userId]) return callback(new UserError(UserError.NOT_FOUND));
 
@@ -60,7 +62,7 @@ function create(username, email, displayName, password, callback) {
     assert.strictEqual(typeof password, 'string');
     assert.strictEqual(typeof callback, 'function');
 
-    const users = safe.JSON.parse(safe.fs.readFileSync(USERS_FILEPATH)) || {};
+    const users = safe.JSON.parse(safe.fs.readFileSync(getUsersFilePath())) || {};
     if (users[username]) return callback(new UserError('user exists'));
 
     bcrypt.hash(password, 10, function(err, hash) {
@@ -73,7 +75,7 @@ function create(username, email, displayName, password, callback) {
             passwordHash: hash
         };
 
-        safe.fs.writeFileSync(USERS_FILEPATH, JSON.stringify(users, null, 4));
+        safe.fs.writeFileSync(getUsersFilePath(), JSON.stringify(users, null, 4));
         callback(null);
     });
 }
@@ -83,7 +85,7 @@ function verify(username, password, callback) {
     assert.strictEqual(typeof password, 'string');
     assert.strictEqual(typeof callback, 'function');
 
-    const users = safe.JSON.parse(safe.fs.readFileSync(USERS_FILEPATH));
+    const users = safe.JSON.parse(safe.fs.readFileSync(getUsersFilePath()));
     if (!users) return callback(new UserError(UserError.NOT_FOUND));
     if (!users[username]) return callback(new UserError(UserError.NOT_FOUND));
 
@@ -95,7 +97,7 @@ function verify(username, password, callback) {
 }
 
 function list(callback) {
-    var users = safe.JSON.parse(safe.fs.readFileSync(USERS_FILEPATH));
+    var users = safe.JSON.parse(safe.fs.readFileSync(getUsersFilePath()));
     if (!users) return callback(null, []);
 
     var result = Object.keys(users).map(function (u) {

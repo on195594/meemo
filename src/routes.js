@@ -63,15 +63,13 @@ function healthReady(req, res, next) {
     config.db.command({ ping: 1 }, function (err) {
         if (err) return next(new HttpError(503, 'Database ping failed: ' + (err.message || err)));
 
-        mkdirp(config.attachmentDir, function (mkdirErr) {
-            if (mkdirErr) return next(new HttpError(503, 'Attachment directory inaccessible'));
-
-            fs.access(config.attachmentDir, fs.constants.R_OK | fs.constants.W_OK, function (accessErr) {
-                if (accessErr) return next(new HttpError(503, 'Attachment directory not writable'));
-
-                next(new HttpSuccess(200, { status: 'ready' }));
-            });
-        });
+        try {
+            mkdirp.sync(config.attachmentDir);
+            fs.accessSync(config.attachmentDir, fs.constants.R_OK | fs.constants.W_OK);
+            next(new HttpSuccess(200, { status: 'ready' }));
+        } catch (storageErr) {
+            return next(new HttpError(503, 'Attachment directory not accessible: ' + storageErr.message));
+        }
     });
 }
 
