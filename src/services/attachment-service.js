@@ -3,6 +3,7 @@
 var crypto = require('crypto'),
     ObjectId = require('mongodb').ObjectId,
     path = require('path'),
+    nodeify = require('../promise.js'),
     storage = require('../storage/local-storage.js'),
     things = require('./thing-service.js'),
     users = require('../users.js'),
@@ -33,59 +34,61 @@ function safeExtension(detectedType) {
 }
 
 function save(userId, file, callback) {
-    var detectedType = detectImageType(file.buffer);
-    var isImage = Boolean(detectedType && file.mimetype && file.mimetype.indexOf('image/') === 0);
-    var storageKey = crypto.randomUUID() + safeExtension(detectedType);
-    var metadata = {
-        identifier: storageKey,
-        fileName: path.basename(file.originalname || 'attachment'),
-        type: isImage ? things.TYPE_IMAGE : things.TYPE_UNKNOWN
-    };
-
-    storage.saveAttachment(userId, storageKey, file.buffer, function (error) {
-        if (error) return callback(error);
-        callback(null, metadata);
+    var promise = Promise.resolve().then(async function () {
+        var detectedType = detectImageType(file.buffer);
+        var isImage = Boolean(detectedType && file.mimetype && file.mimetype.indexOf('image/') === 0);
+        var storageKey = crypto.randomUUID() + safeExtension(detectedType);
+        await storage.saveAttachment(userId, storageKey, file.buffer);
+        return {
+            identifier: storageKey,
+            fileName: path.basename(file.originalname || 'attachment'),
+            type: isImage ? things.TYPE_IMAGE : things.TYPE_UNKNOWN
+        };
     });
+    return nodeify(promise, callback);
 }
 
 function authorize(rawUserId, thingId, identifier, session, callback) {
-    if (!ObjectId.isValid(thingId)) return callback(serviceError('not_found', 'not found'));
+    var promise = Promise.resolve().then(async function () {
+        if (!ObjectId.isValid(thingId)) throw serviceError('not_found', 'not found');
 
-    users.resolveUser(rawUserId, function (resolveError, targetUser) {
-        if (resolveError && resolveError.code !== UserError.NOT_FOUND) return callback(resolveError);
+        var targetUser;
+        try {
+            targetUser = await users.resolveUser(rawUserId);
+        } catch (error) {
+            if (error.code !== UserError.NOT_FOUND) throw error;
+        }
 
         var targetUserId = targetUser ? targetUser.id : rawUserId;
         var targetUsername = targetUser ? targetUser.username : rawUserId;
+        var thing;
+        try {
+            thing = await things.get(targetUserId, thingId);
+        } catch (error) {
+            if (error.message !== 'not found' || targetUsername === targetUserId) throw error;
+            thing = await things.get(targetUsername, thingId);
+        }
 
-        things.get(targetUserId, thingId, function (error, thing) {
-            if (error && error.message === 'not found' && targetUsername && targetUsername !== targetUserId) {
-                return things.get(targetUsername, thingId, handleThing);
-            }
-            handleThing(error, thing);
-
-            function handleThing(error, thing) {
-                if (error && error.message === 'not found') return callback(serviceError('not_found', 'not found'));
-                if (error) return callback(error);
-                if (!thing) return callback(serviceError('not_found', 'not found'));
-
-                var attachment = (Array.isArray(thing.attachments) ? thing.attachments : []).find(function (candidate) {
-                    return candidate && candidate.identifier === identifier;
-                });
-                if (!attachment) return callback(serviceError('not_found', 'attachment not found'));
-
-                var isOwner = session && (
-                    (session.userId && (session.userId === targetUserId || session.userId === rawUserId)) ||
-                    (session.username && (session.username === targetUsername || session.username === rawUserId))
-                );
-                if (!isOwner && !thing.public && !thing.shared) return callback(serviceError('forbidden', 'not allowed'));
-
-                callback(null, {
-                    attachment: attachment,
-                    root: storage.resolveAttachmentRoot(targetUserId, targetUsername, identifier)
-                });
-            }
+        var attachment = (Array.isArray(thing.attachments) ? thing.attachments : []).find(function (candidate) {
+            return candidate && candidate.identifier === identifier;
         });
+        if (!attachment) throw serviceError('not_found', 'attachment not found');
+
+        var isOwner = session && (
+            (session.userId && (session.userId === targetUserId || session.userId === rawUserId)) ||
+            (session.username && (session.username === targetUsername || session.username === rawUserId))
+        );
+        if (!isOwner && !thing.public && !thing.shared) throw serviceError('forbidden', 'not allowed');
+
+        return {
+            attachment: attachment,
+            root: await storage.resolveAttachmentRoot(targetUserId, targetUsername, identifier)
+        };
+    }).catch(function (error) {
+        if (error.message === 'not found' && !error.code) throw serviceError('not_found', 'not found');
+        throw error;
     });
+    return nodeify(promise, callback);
 }
 
 module.exports = {

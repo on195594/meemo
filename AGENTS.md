@@ -25,7 +25,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 1. Read the relevant route, logic, database, frontend, and test callers before changing behavior.
 2. Keep HTTP concerns in `src/http/`, shared behavior in `src/services/`, persistence in `src/database/`, and attachment filesystem access in `src/storage/`.
 3. Prefer the smallest root-cause change. Reuse existing code and dependencies; do not add speculative abstractions.
-4. Preserve the existing CommonJS, callback-based style unless the task explicitly requires a broader migration.
+4. Preserve CommonJS and use Promise-first `async`/`await`; add callback compatibility only when an existing script or test still requires it.
 5. Follow `.editorconfig` and nearby style. Use four-space JavaScript indentation and avoid unrelated formatting.
 6. Never weaken authentication, authorization, input validation, session handling, or error handling for convenience.
 7. Do not log or commit passwords, password hashes, session secrets, local account data, attachments, or imported notes.

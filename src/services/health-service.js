@@ -1,21 +1,24 @@
 'use strict';
 
 var config = require('../config.js'),
+    nodeify = require('../promise.js'),
     storage = require('../storage/local-storage.js');
 
 function ready(callback) {
-    if (!config.db) return callback(new Error('Database not connected'));
-
-    config.db.command({ ping: 1 }, function (error) {
-        if (error) return callback(new Error('Database ping failed'));
-
+    var promise = Promise.resolve().then(async function () {
+        if (!config.db) throw new Error('Database not connected');
         try {
-            storage.checkAccess();
-            callback(null);
-        } catch (storageError) {
-            callback(new Error('Attachment directory not accessible'));
+            await config.db.command({ ping: 1 });
+        } catch (error) {
+            throw new Error('Database ping failed');
+        }
+        try {
+            await storage.checkAccess();
+        } catch (error) {
+            throw new Error('Attachment directory not accessible');
         }
     });
+    return nodeify(promise, callback);
 }
 
 module.exports = { ready: ready };

@@ -8,10 +8,11 @@ Meemo is a small browser application served by Express and backed by MongoDB and
 2. `src/http/router.js` composes domain route modules under `src/http/routes/`; Zod schemas validate body, query, and path input before handlers run.
 3. `src/http/responses.js` maps failures to stable API error codes without returning internal stack traces or filesystem paths.
 4. `src/services/` implements authentication, notes, attachments, sharing, settings, health, and import/export behavior without depending on Express.
-5. `src/database/` reads and writes MongoDB collections (unified collections `things`, `tags`, and `settings` partitioned by `ownerId`, plus `users` and `sessions`).
-6. `src/storage/local-storage.js` owns persistent attachment filesystem access.
-7. `src/users.js` abstracts account storage across file and MongoDB implementations via `UserRepository`.
-8. `frontend/` is compiled by Gulp into the generated, ignored `public/` directory.
+5. Runtime, HTTP, services, storage, user repositories, and primary database modules use Promise-first `async`/`await`; callback adapters remain only for legacy scripts and tests during migration.
+6. `src/database/` reads and writes MongoDB collections (unified collections `things`, `tags`, and `settings` partitioned by `ownerId`, plus `users` and `sessions`).
+7. `src/storage/local-storage.js` owns persistent attachment filesystem access.
+8. `src/users.js` abstracts account storage across file and MongoDB implementations via `UserRepository`.
+9. `frontend/` is compiled by Gulp into the generated, ignored `public/` directory.
 
 Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, persistence in `src/database/`, and attachment filesystem access in `src/storage/`. HTTP routes must call services instead of database or filesystem APIs directly.
 

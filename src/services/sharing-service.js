@@ -1,6 +1,7 @@
 'use strict';
 
-var settings = require('./settings-service.js'),
+var nodeify = require('../promise.js'),
+    settings = require('./settings-service.js'),
     things = require('./thing-service.js'),
     users = require('../users.js'),
     UserError = users.UserError;
@@ -11,83 +12,82 @@ function notFound() {
     return error;
 }
 
-function resolve(rawUserId, callback) {
-    users.resolveUser(rawUserId, function (error, user) {
-        if (error && error.code !== UserError.NOT_FOUND) return callback(error);
-        callback(null, user, user ? user.id : rawUserId, user ? user.username : rawUserId);
-    });
+async function resolve(rawUserId) {
+    try {
+        var user = await users.resolveUser(rawUserId);
+        return { user: user, id: user.id, username: user.username };
+    } catch (error) {
+        if (error.code !== UserError.NOT_FOUND) throw error;
+        return { user: null, id: rawUserId, username: rawUserId };
+    }
 }
 
 function getThing(rawUserId, thingId, callback) {
-    resolve(rawUserId, function (error, user, userId, username) {
-        if (error) return callback(error);
-
-        things.getPublic(userId, thingId, function (error, result) {
-            if (error && error.message === 'not found' && username !== userId) {
-                return things.getPublic(username, thingId, callback);
+    var promise = resolve(rawUserId).then(async function (target) {
+        try {
+            return await things.getPublic(target.id, thingId);
+        } catch (error) {
+            if (error && error.message === 'not found' && target.username !== target.id) {
+                return things.getPublic(target.username, thingId);
             }
-            callback(error, result);
-        });
+            throw error;
+        }
     });
+    return nodeify(promise, callback);
 }
 
 function getAll(rawUserId, query, skip, limit, callback) {
-    resolve(rawUserId, function (error, user, userId, username) {
-        if (error) return callback(error);
-
-        things.getAllPublic(userId, query, skip, limit, function (error, result) {
-            if (error && username !== userId) return things.getAllPublic(username, query, skip, limit, callback);
-            callback(error, result);
-        });
+    var promise = resolve(rawUserId).then(async function (target) {
+        try {
+            return await things.getAllPublic(target.id, query, skip, limit);
+        } catch (error) {
+            if (target.username !== target.id) return things.getAllPublic(target.username, query, skip, limit);
+            throw error;
+        }
     });
+    return nodeify(promise, callback);
 }
 
 function listUsers(callback) {
-    users.list(callback);
+    return nodeify(users.list(), callback);
 }
 
 function profile(rawUserId, callback) {
-    resolve(rawUserId, function (error, user) {
-        if (error) return callback(error);
-        if (!user) return callback(notFound());
+    var promise = resolve(rawUserId).then(async function (target) {
+        if (!target.user) throw notFound();
 
-        settings.get(user.id, function (error, result) {
-            if (error && user.username !== user.id) return settings.get(user.username, handleSettings);
-            handleSettings(error, result);
-
-            function handleSettings(error, result) {
-                if (error) return callback(error);
-                callback(null, {
-                    id: user.id,
-                    username: user.username,
-                    displayName: user.displayName,
-                    title: result.title,
-                    backgroundImageDataUrl: result.publicBackground ? result.backgroundImageDataUrl : undefined
-                });
-            }
-        });
+        var config;
+        try {
+            config = await settings.get(target.id);
+        } catch (error) {
+            if (target.username === target.id) throw error;
+            config = await settings.get(target.username);
+        }
+        return {
+            id: target.user.id,
+            username: target.user.username,
+            displayName: target.user.displayName,
+            title: config.title,
+            backgroundImageDataUrl: config.publicBackground ? config.backgroundImageDataUrl : undefined
+        };
     });
+    return nodeify(promise, callback);
 }
 
 function feed(rawUserId, callback) {
-    resolve(rawUserId, function (error, user) {
-        if (error) return callback(error);
-        if (!user) return callback(notFound());
-
-        settings.get(user.id, function (error, config) {
-            if (error) return callback(error);
-            things.getAllPublic(user.id, {}, 0, 50, function (error, result) {
-                if (error && user.username !== user.id) {
-                    return things.getAllPublic(user.username, {}, 0, 50, function (fallbackError, fallbackResult) {
-                        if (fallbackError) return callback(fallbackError);
-                        callback(null, { user: user, settings: config, things: fallbackResult });
-                    });
-                }
-                if (error) return callback(error);
-                callback(null, { user: user, settings: config, things: result });
-            });
-        });
+    var promise = resolve(rawUserId).then(async function (target) {
+        if (!target.user) throw notFound();
+        var config = await settings.get(target.id);
+        var result;
+        try {
+            result = await things.getAllPublic(target.id, {}, 0, 50);
+        } catch (error) {
+            if (target.username === target.id) throw error;
+            result = await things.getAllPublic(target.username, {}, 0, 50);
+        }
+        return { user: target.user, settings: config, things: result };
     });
+    return nodeify(promise, callback);
 }
 
 module.exports = {

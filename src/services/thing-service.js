@@ -1,8 +1,7 @@
 'use strict';
 
-var assert = require('assert'),
-    async = require('async'),
-    debug = require('debug')('services:things'),
+var debug = require('debug')('services:things'),
+    nodeify = require('../promise.js'),
     ssrf = require('../ssrf.js'),
     tags = require('../database/tags.js'),
     things = require('../database/things.js');
@@ -14,14 +13,12 @@ var markdown = require('markdown-it')({ breaks: true, html: true, linkify: true 
 
 function extractURLs(content) {
     var urls = [];
-
     markdown.renderer.rules.link_open = function (tokens, idx) {
         if (tokens[idx].markup !== 'linkify') return '';
         var href = tokens[idx].attrs[tokens[idx].attrIndex('href')][1];
         if (href) urls.push(href);
         return '';
     };
-
     markdown.render(content);
     return urls.filter(function (item, pos, self) { return self.indexOf(item) === pos; });
 }
@@ -32,7 +29,6 @@ function escapeRegExp(value) {
 
 function extractTags(content) {
     var tagObjects = [];
-
     extractURLs(content).forEach(function (url) {
         content = content.replace(new RegExp(escapeRegExp(url), 'gmi'), ' --URL_PLACEHOLDER-- ');
     });
@@ -41,31 +37,43 @@ function extractTags(content) {
         hashtagRegExp: '[\u00C0-\u017Fa-zA-Z0-9]+',
         preceding: ''
     });
-
     tagMarkdown.renderer.rules.hashtag_open = function (tokens, idx) {
         tagObjects.push(tokens[idx].content.toLowerCase());
         return '';
     };
-
     tagMarkdown.render(content);
     return tagObjects;
 }
 
 function extractExternalContent(content, callback) {
-    ssrf.enrichUrls(extractURLs(content), callback);
+    return nodeify(ssrf.enrichUrls(extractURLs(content)), callback);
 }
 
 function facelift(userId, thing, callback) {
-    var data = thing.content;
-    var tagObjects = thing.tags;
-    var externalContent = thing.externalContent;
-    var attachments = thing.attachments || [];
+    var promise = Promise.resolve().then(async function () {
+        var data = thing.content;
+        var tagObjects = thing.tags;
+        var externalContent = thing.externalContent;
+        var attachments = thing.attachments || [];
 
-    function render() {
+        if (!Array.isArray(externalContent)) {
+            try {
+                externalContent = await extractExternalContent(thing.content);
+                debug('update %s with new external content.', thing._id, externalContent);
+                try {
+                    await things.put(userId, thing._id, thing.content, thing.tags, attachments, externalContent, false, false, false, false);
+                } catch (updateError) {
+                    console.error('Failed to update external content:', updateError);
+                }
+            } catch (error) {
+                console.error('Failed to extract external content:', error);
+                externalContent = [];
+            }
+        }
+
         tagObjects.forEach(function (tag) {
             data = data.replace(new RegExp('#' + tag + '(#|\\s|$)', 'gmi'), '[#' + tag + '](#search?#' + tag + ')$1').trim();
         });
-
         externalContent.forEach(function (item) {
             if (item.type === TYPE_IMAGE) {
                 data = data.replace(new RegExp(escapeRegExp(item.url), 'gmi'), '![' + item.url + '](' + item.url + ')');
@@ -82,7 +90,6 @@ function facelift(userId, thing, callback) {
             } catch (error) {}
             data = data.replace(new RegExp(escapeRegExp(item.url), 'gmi'), '[' + pretty + '](' + item.url + ')');
         });
-
         attachments.forEach(function (attachment) {
             if (attachment.type === TYPE_IMAGE) {
                 data = data.replace(new RegExp('\\[' + attachment.fileName + '\\]', 'gmi'), '![/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
@@ -90,150 +97,125 @@ function facelift(userId, thing, callback) {
                 data = data.replace(new RegExp('\\[' + attachment.fileName + '\\]', 'gmi'), '[' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
             }
         });
-
-        callback(null, data);
-    }
-
-    if (Array.isArray(externalContent)) return render();
-
-    extractExternalContent(thing.content, function (error, result) {
-        if (error) {
-            console.error('Failed to extract external content:', error);
-            externalContent = [];
-            return render();
-        }
-
-        externalContent = result;
-        debug('update %s with new external content.', thing._id, result);
-        things.put(userId, thing._id, thing.content, thing.tags, attachments, result, false, false, false, function (error) {
-            if (error) console.error('Failed to update external content:', error);
-            render();
-        });
+        return data;
     });
+    return nodeify(promise, callback);
 }
 
-function addRichContent(userId, result, callback) {
-    if (!result) return callback(null, []);
-
-    async.each(result, function (thing, done) {
-        facelift(userId, thing, function (error, data) {
-            if (error) console.error('Failed to facelift:', error);
-            thing.attachments = thing.attachments || [];
-            thing.richContent = data || thing.content;
-            done(null);
-        });
-    }, function () {
-        callback(null, result);
-    });
+async function addRichContent(userId, result) {
+    await Promise.all((result || []).map(async function (thing) {
+        try {
+            thing.richContent = await facelift(userId, thing);
+        } catch (error) {
+            console.error('Failed to facelift:', error);
+            thing.richContent = thing.content;
+        }
+        thing.attachments = thing.attachments || [];
+    }));
+    return result || [];
 }
 
 function getAll(userId, query, skip, limit, callback) {
-    things.getAll(userId, query, skip, limit, function (error, result) {
-        if (error) return callback(error);
-        addRichContent(userId, result, callback);
+    var promise = things.getAll(userId, query, skip, limit).then(function (result) {
+        return addRichContent(userId, result);
     });
+    return nodeify(promise, callback);
 }
 
 function getAllPublic(userId, query, skip, limit, callback) {
-    assert.strictEqual(typeof query, 'object');
     query.public = true;
-    getAll(userId, query, skip, limit, callback);
+    return getAll(userId, query, skip, limit, callback);
 }
 
 function getAllLean(userId, callback) {
-    things.getAllLean(userId, callback);
+    return nodeify(things.getAllLean(userId), callback);
 }
 
 function get(userId, thingId, callback) {
-    things.get(userId, thingId, function (error, result) {
-        if (error) return callback(error);
-        facelift(userId, result, function (error, data) {
-            if (error) console.error('Failed to facelift:', error);
-            result.attachments = result.attachments || [];
-            result.richContent = data || result.content;
-            callback(null, result);
-        });
+    var promise = things.get(userId, thingId).then(async function (result) {
+        try {
+            result.richContent = await facelift(userId, result);
+        } catch (error) {
+            console.error('Failed to facelift:', error);
+            result.richContent = result.content;
+        }
+        result.attachments = result.attachments || [];
+        return result;
     });
+    return nodeify(promise, callback);
 }
 
 function getPublic(userId, thingId, callback) {
-    get(userId, thingId, function (error, result) {
-        if (error) return callback(error);
-        if (!result.public && !result.shared) return callback('not allowed');
-        callback(null, result);
+    var promise = get(userId, thingId).then(function (result) {
+        if (!result.public && !result.shared) throw 'not allowed';
+        return result;
     });
+    return nodeify(promise, callback);
 }
 
 function add(userId, content, attachments, callback) {
-    extractExternalContent(content, function (error, externalContent) {
-        if (error) return callback(error);
+    var promise = Promise.resolve().then(async function () {
+        var externalContent = await extractExternalContent(content);
         var tagObjects = extractTags(content);
-
-        async.eachSeries(tagObjects, tags.update.bind(null, userId), function (error) {
-            if (error) return callback(error);
-            things.add(userId, content, tagObjects, attachments, externalContent, function (error, result) {
-                if (error) return callback(error);
-                if (!result) return callback(new Error('no result returned'));
-                get(userId, result._id, callback);
-            });
-        });
+        for (var tag of tagObjects) await tags.update(userId, tag);
+        var result = await things.add(userId, content, tagObjects, attachments, externalContent);
+        if (!result) throw new Error('no result returned');
+        return get(userId, result._id);
     });
+    return nodeify(promise, callback);
 }
 
 function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, callback) {
-    var tagObjects = extractTags(content);
+    var promise = Promise.resolve().then(async function () {
+        var tagObjects = extractTags(content);
+        for (var tag of tagObjects) await tags.update(userId, tag);
 
-    async.eachSeries(tagObjects, tags.update.bind(null, userId), function (error) {
-        if (error) return callback(error);
-        extractExternalContent(content, function (error, externalContent) {
-            if (error) console.error('Failed to extract external content:', error);
-            things.put(userId, thingId, content, tagObjects, attachments, externalContent,
-                isPublic, isShared, isArchived, isSticky, function (error) {
-                    if (error) return callback(error);
-                    get(userId, thingId, callback);
-                });
-        });
+        var externalContent;
+        try {
+            externalContent = await extractExternalContent(content);
+        } catch (error) {
+            console.error('Failed to extract external content:', error);
+            externalContent = [];
+        }
+
+        await things.put(userId, thingId, content, tagObjects, attachments, externalContent,
+            isPublic, isShared, isArchived, isSticky);
+        return get(userId, thingId);
     });
+    return nodeify(promise, callback);
 }
 
 function del(userId, thingId, callback) {
-    things.del(userId, thingId, callback);
+    return nodeify(things.del(userId, thingId), callback);
 }
 
 function getTags(userId, callback) {
-    tags.get(userId, callback);
+    return nodeify(tags.get(userId), callback);
 }
 
 function cleanupTags(callback) {
-    async.each(things.getAllActiveUserIds(), function (userId, nextUser) {
-        things.getAllLean(userId, function (error, result) {
-            if (error) {
-                console.error(new Error(error));
-                return nextUser();
-            }
+    var promise = Promise.resolve().then(async function () {
+        for (var userId of things.getAllActiveUserIds()) {
+            try {
+                var result = await things.getAllLean(userId);
+                var activeTags = [];
+                (result || []).forEach(function (thing) {
+                    activeTags = activeTags.concat(extractTags(thing.content));
+                });
 
-            var activeTags = [];
-            (result || []).forEach(function (thing) {
-                activeTags = activeTags.concat(extractTags(thing.content));
-            });
-
-            tags.get(userId, function (error, result) {
-                if (error) {
-                    console.error(new Error(error));
-                    return nextUser();
+                var savedTags = await tags.get(userId);
+                for (var tag of savedTags || []) {
+                    if (activeTags.indexOf(tag.name) === -1) {
+                        debug('Cleanup tag', tag.name);
+                        await tags.del(userId, String(tag._id));
+                    }
                 }
-
-                async.each(result || [], function (tag, nextTag) {
-                    if (activeTags.indexOf(tag.name) !== -1) return nextTag(null);
-                    debug('Cleanup tag', tag.name);
-                    tags.del(userId, String(tag._id), nextTag);
-                }, nextUser);
-            });
-        });
-    }, function (error) {
-        if (error) console.error('Cleanup tags failed:', error);
-        if (callback) callback(error);
+            } catch (error) {
+                console.error('Cleanup tags failed for user:', error);
+            }
+        }
     });
+    return nodeify(promise, callback);
 }
 
 module.exports = {

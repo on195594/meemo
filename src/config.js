@@ -2,20 +2,23 @@
 
 'use strict';
 
-exports = module.exports = {
-    db: null,
+var MongoClient = require('mongodb').MongoClient,
+    nodeify = require('./promise.js');
 
+function clearDatabase(callback) {
+    var client;
+    var promise = MongoClient.connect(module.exports.databaseUrl, { useUnifiedTopology: true }).then(function (connected) {
+        client = connected;
+        return client.db().dropDatabase();
+    }).finally(function () {
+        if (client) return client.close();
+    });
+    return nodeify(promise, callback);
+}
+
+module.exports = {
+    db: null,
     databaseUrl: process.env.MONGODB_URL || 'mongodb://127.0.0.1:27017/meemo',
     _clearDatabase: clearDatabase,
     attachmentDir: process.env.ATTACHMENT_DIR || (__dirname + '/../storage')
 };
-
-var MongoClient = require('mongodb').MongoClient;
-
-function clearDatabase(callback) {
-    MongoClient.connect(exports.databaseUrl, { useUnifiedTopology: true }, function (error, client) {
-        if (error) return callback(error);
-
-        client.db().dropDatabase(callback);
-    });
-}

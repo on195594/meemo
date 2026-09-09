@@ -21,7 +21,7 @@ var express = require('express'),
     things = require('./src/database/things.js'),
     tags = require('./src/database/tags.js'),
     settings = require('./src/database/settings.js'),
-    MongoClient = require('mongodb').MongoClient,
+    nodeify = require('./src/promise.js'),
     morgan = require('morgan'),
     os = require('os'),
     serveStatic = require('serve-static');
@@ -133,89 +133,58 @@ function exit(error) {
 
 function startServer(options, callback) {
     options = options || {};
-    var port = options.port !== undefined ? options.port : PORT;
-    var bindAddress = options.bindAddress || BIND_ADDRESS;
 
-    var databaseManager = new lifecycle.DatabaseManager();
-    var workerManager = new lifecycle.WorkerManager();
-    var shutdownManager = new lifecycle.ShutdownManager({
-        databaseManager: databaseManager,
-        workerManager: workerManager,
-        timeoutMs: options.shutdownTimeoutMs
-    });
-
-    var enableWorkers = options.enableWorkers !== undefined ? options.enableWorkers : (process.env.ENABLE_WORKERS !== 'false');
-    var cleanupIntervalMs = options.tagCleanupIntervalMs || parseInt(process.env.TAG_CLEANUP_INTERVAL_MS, 10) || (1000 * 60);
-    workerManager.register('cleanupTags', thingService.cleanupTags, cleanupIntervalMs);
-
-    databaseManager.connect(options, function (error, db, client) {
-        if (error) {
-            if (callback) return callback(error);
-            exit(error);
-            return;
-        }
-
-        things.ensureIndexes(function (errIdx1) {
-            if (errIdx1) console.warn('Warning: things index initialization:', errIdx1.message);
-            tags.ensureIndexes(function (errIdx2) {
-                if (errIdx2) console.warn('Warning: tags index initialization:', errIdx2.message);
-                settings.ensureIndexes(function (errIdx3) {
-                    if (errIdx3) console.warn('Warning: settings index initialization:', errIdx3.message);
-
-                    var app;
-                    try {
-                        app = createApp(options);
-                    } catch (err) {
-                        if (callback) return callback(err);
-                        exit(err);
-                        return;
-                    }
-
-                    var server = app.listen(port, bindAddress, function () {
-                        var host = server.address().address;
-                        var actualPort = server.address().port;
-
-                        console.log('App listening at http://%s:%s', host, actualPort);
-
-                        shutdownManager.trackServer(server);
-
-                        if (enableWorkers) {
-                            workerManager.start();
-                        }
-
-                        if (options.autoAttachSignals !== false) {
-                            shutdownManager.attachSignals();
-                        }
-
-                        var result = {
-                            app: app,
-                            server: server,
-                            client: client,
-                            db: db,
-                            workers: workerManager,
-                            databaseManager: databaseManager,
-                            shutdownManager: shutdownManager,
-                            close: function (done) {
-                                shutdownManager.shutdown('close', done);
-                            }
-                        };
-
-                        if (callback) callback(null, result);
-                    });
-
-                    server.on('error', function (err) {
-                        if (callback) return callback(err);
-                        exit(err);
-                    });
-                });
-            });
+    var promise = Promise.resolve().then(async function () {
+        var databaseManager = new lifecycle.DatabaseManager();
+        var workerManager = new lifecycle.WorkerManager();
+        var shutdownManager = new lifecycle.ShutdownManager({
+            databaseManager: databaseManager,
+            workerManager: workerManager,
+            timeoutMs: options.shutdownTimeoutMs
         });
+        var cleanupIntervalMs = options.tagCleanupIntervalMs || parseInt(process.env.TAG_CLEANUP_INTERVAL_MS, 10) || (1000 * 60);
+        workerManager.register('cleanupTags', thingService.cleanupTags, cleanupIntervalMs);
+
+        var connection = await databaseManager.connect(options);
+        await Promise.all([
+            things.ensureIndexes(),
+            tags.ensureIndexes(),
+            settings.ensureIndexes()
+        ]);
+
+        var app = createApp(options);
+        var port = options.port !== undefined ? options.port : PORT;
+        var bindAddress = options.bindAddress || BIND_ADDRESS;
+        var server = await new Promise(function (resolve, reject) {
+            var listener = app.listen(port, bindAddress, function () {
+                listener.removeListener('error', reject);
+                resolve(listener);
+            });
+            listener.once('error', reject);
+        });
+
+        console.log('App listening at http://%s:%s', server.address().address, server.address().port);
+        shutdownManager.trackServer(server);
+        var enableWorkers = options.enableWorkers !== undefined ? options.enableWorkers : (process.env.ENABLE_WORKERS !== 'false');
+        if (enableWorkers) workerManager.start();
+        if (options.autoAttachSignals !== false) shutdownManager.attachSignals();
+
+        return {
+            app: app,
+            server: server,
+            client: connection.client,
+            db: connection.db,
+            workers: workerManager,
+            databaseManager: databaseManager,
+            shutdownManager: shutdownManager,
+            close: function (done) { return shutdownManager.shutdown('close', done); }
+        };
     });
+
+    return nodeify(promise, callback);
 }
 
-if (require.main === module) {
-    startServer();
-}
+if (require.main === module) startServer().catch(exit);
 
 module.exports = {
     createApp: createApp,

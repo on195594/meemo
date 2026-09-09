@@ -624,6 +624,8 @@ storage/
 
 ## 3.4 RF-304：callback → async/await 现代化
 
+实施状态：已完成（运行时、数据库、存储、Service 与 HTTP 主链路均为 Promise-first；仅保留旧调用方的 callback 兼容桥）。
+
 建议分支：`refactor/async-await`
 
 从旧式 Node 回调全面演进为原生 `async/await`，彻底消除回调地狱与未捕获 promise rejection：
@@ -749,7 +751,7 @@ Readiness 中明确检查 MongoDB；业务指标只增加低基数指标，不�
 - [x] `createApp` 可被测试代码创建/销毁，无隐式 listen 或孤儿连接。
 - [x] 路由层不直接访问底层 Mongo/FS，全流程经过 schema validation。
 - [x] 错误响应格式统一且不泄露底层堆栈与路径。
-- [ ] 核心流程已完成 `async/await` 改造。
+- [x] 核心流程已完成 `async/await` 改造。
 - [ ] 结构化日志上线且严格遵守敏感信息过滤规则。
 - [ ] 11 项核心安全回归套件全部加入自动化门禁并保持全绿。
 - [ ] API 契约文档与实际行为一致。

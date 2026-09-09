@@ -3,7 +3,15 @@
 'use strict';
 
 var MongoClient = require('mongodb').MongoClient,
-    config = require('./config.js');
+    config = require('./config.js'),
+    nodeify = require('./promise.js');
+
+function runWorker(worker) {
+    if (worker.length === 0) return Promise.resolve().then(worker);
+    return new Promise(function (resolve, reject) {
+        worker(function (error) { if (error) reject(error); else resolve(); });
+    });
+}
 
 function WorkerManager(options) {
     this.options = options || {};
@@ -13,13 +21,8 @@ function WorkerManager(options) {
 }
 
 WorkerManager.prototype.register = function (name, workerFn, intervalMs) {
-    if (typeof workerFn !== 'function') {
-        throw new TypeError('Worker task must be a function');
-    }
-    this.workers[name] = {
-        fn: workerFn,
-        intervalMs: intervalMs || 60000
-    };
+    if (typeof workerFn !== 'function') throw new TypeError('Worker task must be a function');
+    this.workers[name] = { fn: workerFn, intervalMs: intervalMs || 60000 };
 };
 
 WorkerManager.prototype.start = function () {
@@ -30,19 +33,11 @@ WorkerManager.prototype.start = function () {
     Object.keys(this.workers).forEach(function (name) {
         var worker = self.workers[name];
         self.timers[name] = setInterval(function () {
-            try {
-                worker.fn(function (err) {
-                    if (err) {
-                        console.error('Worker error in [' + name + ']:', err);
-                    }
-                });
-            } catch (err) {
-                console.error('Uncaught error executing worker [' + name + ']:', err);
-            }
+            runWorker(worker.fn).catch(function (error) {
+                console.error('Worker error in [' + name + ']:', error);
+            });
         }, worker.intervalMs);
-        if (self.timers[name].unref) {
-            self.timers[name].unref();
-        }
+        if (self.timers[name].unref) self.timers[name].unref();
     });
 };
 
@@ -61,19 +56,8 @@ WorkerManager.prototype.isRunning = function () {
 
 WorkerManager.prototype.runOnce = function (name, callback) {
     var worker = this.workers[name];
-    if (!worker) {
-        var err = new Error('Worker [' + name + '] not found');
-        if (callback) return callback(err);
-        return;
-    }
-
-    try {
-        worker.fn(function (err) {
-            if (callback) callback(err || null);
-        });
-    } catch (err) {
-        if (callback) callback(err);
-    }
+    var promise = worker ? runWorker(worker.fn) : Promise.reject(new Error('Worker [' + name + '] not found'));
+    return nodeify(promise, callback);
 };
 
 function DatabaseManager() {
@@ -84,51 +68,35 @@ function DatabaseManager() {
 }
 
 DatabaseManager.prototype.connect = function (options, callback) {
+    var self = this;
     options = options || {};
     this.prevConfigDb = config.db;
 
-    if (options.db) {
-        this.db = options.db;
-        this.client = options.client || null;
-        this.isManaged = false;
-        config.db = this.db;
-        return process.nextTick(function () {
-            callback(null, options.db, options.client || null);
-        });
-    }
-
-    if (options.client) {
-        this.client = options.client;
-        this.db = options.client.db();
-        this.isManaged = false;
-        config.db = this.db;
-        var selfClient = this;
-        return process.nextTick(function () {
-            callback(null, selfClient.db, selfClient.client);
-        });
-    }
-
-    var databaseUrl = options.databaseUrl || config.databaseUrl || 'mongodb://127.0.0.1:27017/meemo';
-    var maxPoolSize = options.maxPoolSize || parseInt(process.env.MONGO_MAX_POOL_SIZE, 10) || 50;
-    var minPoolSize = options.minPoolSize || parseInt(process.env.MONGO_MIN_POOL_SIZE, 10) || 1;
-    var serverSelectionTimeoutMS = options.serverSelectionTimeoutMS || parseInt(process.env.MONGO_TIMEOUT_MS, 10) || 3000;
-
-    var mongoOptions = {
-        useUnifiedTopology: true,
-        maxPoolSize: maxPoolSize,
-        minPoolSize: minPoolSize,
-        serverSelectionTimeoutMS: serverSelectionTimeoutMS
-    };
-
-    var self = this;
-    MongoClient.connect(databaseUrl, mongoOptions, function (err, client) {
-        if (err) return callback(err);
-        self.client = client;
-        self.db = client.db();
-        self.isManaged = true;
+    var promise = Promise.resolve().then(async function () {
+        if (options.db) {
+            self.db = options.db;
+            self.client = options.client || null;
+            self.isManaged = false;
+        } else if (options.client) {
+            self.client = options.client;
+            self.db = options.client.db();
+            self.isManaged = false;
+        } else {
+            self.client = await MongoClient.connect(options.databaseUrl || config.databaseUrl || 'mongodb://127.0.0.1:27017/meemo', {
+                useUnifiedTopology: true,
+                maxPoolSize: options.maxPoolSize || parseInt(process.env.MONGO_MAX_POOL_SIZE, 10) || 50,
+                minPoolSize: options.minPoolSize || parseInt(process.env.MONGO_MIN_POOL_SIZE, 10) || 1,
+                serverSelectionTimeoutMS: options.serverSelectionTimeoutMS || parseInt(process.env.MONGO_TIMEOUT_MS, 10) || 3000
+            });
+            self.db = self.client.db();
+            self.isManaged = true;
+        }
         config.db = self.db;
-        callback(null, self.db, self.client);
+        return { db: self.db, client: self.client };
     });
+
+    if (typeof callback !== 'function') return promise;
+    promise.then(function (result) { callback(null, result.db, result.client); }, callback);
 };
 
 DatabaseManager.prototype.disconnect = function (force, callback) {
@@ -136,28 +104,14 @@ DatabaseManager.prototype.disconnect = function (force, callback) {
         callback = force;
         force = false;
     }
-    force = Boolean(force);
-
     var self = this;
-    var restore = function () {
-        if (self.prevConfigDb) {
-            config.db = self.prevConfigDb;
-        }
-    };
-
-    if (this.client && this.isManaged) {
-        this.client.close(force, function (err) {
-            self.client = null;
-            self.db = null;
-            restore();
-            if (callback) callback(err || null);
-        });
-    } else {
-        this.client = null;
-        this.db = null;
-        restore();
-        if (callback) process.nextTick(function () { callback(null); });
-    }
+    var promise = Promise.resolve().then(async function () {
+        if (self.client && self.isManaged) await self.client.close(Boolean(force));
+        self.client = null;
+        self.db = null;
+        if (self.prevConfigDb) config.db = self.prevConfigDb;
+    });
+    return nodeify(promise, callback);
 };
 
 function ShutdownManager(options) {
@@ -167,12 +121,10 @@ function ShutdownManager(options) {
     this.workerManager = options.workerManager || null;
     this.timeoutMs = options.timeoutMs || parseInt(process.env.SHUTDOWN_TIMEOUT_MS, 10) || 10000;
     this.isShuttingDown = false;
+    this.shutdownPromise = null;
     this.trackedSockets = new Set();
     this._signalHandlers = {};
-
-    if (this.server) {
-        this.trackServer(this.server);
-    }
+    if (this.server) this.trackServer(this.server);
 }
 
 ShutdownManager.prototype.trackServer = function (server) {
@@ -180,44 +132,32 @@ ShutdownManager.prototype.trackServer = function (server) {
     var self = this;
     server.on('connection', function (socket) {
         self.trackedSockets.add(socket);
-        socket.on('close', function () {
-            self.trackedSockets.delete(socket);
-        });
+        socket.on('close', function () { self.trackedSockets.delete(socket); });
     });
 };
 
 ShutdownManager.prototype.attachSignals = function (onShutdownComplete) {
     var self = this;
-    this._signalHandlers.SIGTERM = function () {
-        self.shutdown('SIGTERM', function (err) {
-            if (onShutdownComplete) {
-                return onShutdownComplete(err);
-            }
-            process.exit(err ? 1 : 0);
-        });
-    };
-    this._signalHandlers.SIGINT = function () {
-        self.shutdown('SIGINT', function (err) {
-            if (onShutdownComplete) {
-                return onShutdownComplete(err);
-            }
-            process.exit(err ? 1 : 0);
-        });
-    };
-
-    process.on('SIGTERM', this._signalHandlers.SIGTERM);
-    process.on('SIGINT', this._signalHandlers.SIGINT);
+    ['SIGTERM', 'SIGINT'].forEach(function (signal) {
+        self._signalHandlers[signal] = function () {
+            self.shutdown(signal).then(function () {
+                if (onShutdownComplete) return onShutdownComplete(null);
+                process.exit(0);
+            }, function (error) {
+                if (onShutdownComplete) return onShutdownComplete(error);
+                process.exit(1);
+            });
+        };
+        process.on(signal, self._signalHandlers[signal]);
+    });
 };
 
 ShutdownManager.prototype.detachSignals = function () {
-    if (this._signalHandlers.SIGTERM) {
-        process.removeListener('SIGTERM', this._signalHandlers.SIGTERM);
-        delete this._signalHandlers.SIGTERM;
-    }
-    if (this._signalHandlers.SIGINT) {
-        process.removeListener('SIGINT', this._signalHandlers.SIGINT);
-        delete this._signalHandlers.SIGINT;
-    }
+    var self = this;
+    Object.keys(this._signalHandlers).forEach(function (signal) {
+        process.removeListener(signal, self._signalHandlers[signal]);
+        delete self._signalHandlers[signal];
+    });
 };
 
 ShutdownManager.prototype.shutdown = function (signal, callback) {
@@ -225,76 +165,51 @@ ShutdownManager.prototype.shutdown = function (signal, callback) {
         callback = signal;
         signal = 'manual';
     }
-    callback = callback || function () {};
-
-    if (this.isShuttingDown) {
-        return callback(null);
-    }
-    this.isShuttingDown = true;
+    if (this.shutdownPromise) return nodeify(this.shutdownPromise, callback);
 
     var self = this;
-    var completed = false;
-
-    var timeoutTimer = setTimeout(function () {
-        if (completed) return;
-        completed = true;
-        console.warn('Graceful shutdown timed out after ' + self.timeoutMs + 'ms, forcing socket termination');
-        self.trackedSockets.forEach(function (socket) {
-            try { socket.destroy(); } catch (e) {}
-        });
-        self.detachSignals();
-        callback(new Error('Graceful shutdown timed out'));
-    }, this.timeoutMs);
-
-    if (timeoutTimer.unref) {
-        timeoutTimer.unref();
-    }
-
-    // Step 1: Stop workers
-    if (this.workerManager) {
-        this.workerManager.stop();
-    }
-
-    // Destroy idle/keep-alive sockets so server.close doesn't hang
-    self.trackedSockets.forEach(function (socket) {
-        try { socket.destroy(); } catch (e) {}
-    });
-
-    // Step 2: Stop accepting new HTTP connections
-    var closeServer = function (next) {
-        if (!self.server) return next();
-        try {
-            self.server.close(function (err) {
-                if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') {
-                    console.error('Error closing HTTP server:', err);
-                }
-                next();
+    this.isShuttingDown = true;
+    var timeoutTimer;
+    this.shutdownPromise = Promise.race([
+        Promise.resolve().then(async function () {
+            if (self.workerManager) self.workerManager.stop();
+            self.trackedSockets.forEach(function (socket) {
+                try { socket.destroy(); } catch (error) {}
             });
-        } catch (e) {
-            next();
-        }
-    };
 
-    // Step 3: Disconnect database
-    var closeDb = function (next) {
-        if (!self.databaseManager) return next();
-        self.databaseManager.disconnect(false, function (err) {
-            if (err) {
-                console.error('Error disconnecting MongoDB:', err);
+            if (self.server) {
+                await new Promise(function (resolve) {
+                    try {
+                        self.server.close(function (error) {
+                            if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') console.error('Error closing HTTP server:', error);
+                            resolve();
+                        });
+                    } catch (error) {
+                        resolve();
+                    }
+                });
             }
-            next();
-        });
-    };
-
-    closeServer(function () {
-        closeDb(function () {
-            if (completed) return;
-            completed = true;
-            clearTimeout(timeoutTimer);
+            if (self.databaseManager) {
+                try { await self.databaseManager.disconnect(false); } catch (error) { console.error('Error disconnecting MongoDB:', error); }
+            }
             self.detachSignals();
-            callback(null);
-        });
+        }),
+        new Promise(function (resolve, reject) {
+            timeoutTimer = setTimeout(function () {
+                console.warn('Graceful shutdown timed out after ' + self.timeoutMs + 'ms, forcing socket termination');
+                self.trackedSockets.forEach(function (socket) {
+                    try { socket.destroy(); } catch (error) {}
+                });
+                self.detachSignals();
+                reject(new Error('Graceful shutdown timed out'));
+            }, self.timeoutMs);
+            if (timeoutTimer.unref) timeoutTimer.unref();
+        })
+    ]).finally(function () {
+        clearTimeout(timeoutTimer);
     });
+
+    return nodeify(this.shutdownPromise, callback);
 };
 
 module.exports = {

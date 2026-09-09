@@ -1,6 +1,7 @@
 'use strict';
 
 var things = require('../../services/thing-service.js'),
+    asyncHandler = require('../middleware/async-handler.js'),
     responses = require('../responses.js'),
     HttpError = responses.HttpError,
     HttpSuccess = responses.HttpSuccess,
@@ -40,7 +41,7 @@ var listQuery = z.object({
 
 var idParams = z.object({ id: validation.objectId });
 
-function getAll(req, res, next) {
+async function getAll(req, res, next) {
     var query = { $or: [] };
 
     if (req.query.filter) {
@@ -55,58 +56,56 @@ function getAll(req, res, next) {
         $or: [{ archived: false }, { archived: { $exists: false } }]
     };
 
-    things.getAll(req.user.id, { $and: [archiveQuery, query] }, req.query.skip, req.query.limit, function (error, result) {
-        if (error) return next(new HttpError(500, error));
-        next(new HttpSuccess(200, { things: result }));
-    });
+    var result = await things.getAll(req.user.id, { $and: [archiveQuery, query] }, req.query.skip, req.query.limit);
+    next(new HttpSuccess(200, { things: result }));
 }
 
-function get(req, res, next) {
-    things.get(req.user.id, req.params.id, function (error, result) {
-        if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
-        if (error) return next(new HttpError(500, error));
-        next(new HttpSuccess(200, { thing: result }));
-    });
+async function get(req, res, next) {
+    try {
+        next(new HttpSuccess(200, { thing: await things.get(req.user.id, req.params.id) }));
+    } catch (error) {
+        if (error.message === 'not found') throw new HttpError(404, 'not found');
+        throw error;
+    }
 }
 
-function add(req, res, next) {
-    things.add(req.user.id, req.body.content, req.body.attachments, function (error, result) {
-        if (error) return next(new HttpError(500, error));
+async function add(req, res, next) {
+    var result = await things.add(req.user.id, req.body.content, req.body.attachments);
+    next(new HttpSuccess(201, { thing: result }));
+}
+
+async function put(req, res, next) {
+    try {
+        var result = await things.put(req.user.id, req.params.id, req.body.content, req.body.attachments,
+            req.body.public, req.body.shared, req.body.archived, req.body.sticky);
         next(new HttpSuccess(201, { thing: result }));
-    });
+    } catch (error) {
+        if (error.message === 'not found') throw new HttpError(404, 'not found');
+        throw error;
+    }
 }
 
-function put(req, res, next) {
-    things.put(req.user.id, req.params.id, req.body.content, req.body.attachments,
-        req.body.public, req.body.shared, req.body.archived, req.body.sticky, function (error, result) {
-            if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
-            if (error) return next(new HttpError(500, error));
-            next(new HttpSuccess(201, { thing: result }));
-        });
-}
-
-function del(req, res, next) {
-    things.del(req.user.id, req.params.id, function (error) {
-        if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
-        if (error) return next(new HttpError(500, error));
+async function del(req, res, next) {
+    try {
+        await things.del(req.user.id, req.params.id);
         next(new HttpSuccess(200, {}));
-    });
+    } catch (error) {
+        if (error.message === 'not found') throw new HttpError(404, 'not found');
+        throw error;
+    }
 }
 
-function getTags(req, res, next) {
-    things.getTags(req.user.id, function (error, result) {
-        if (error) return next(new HttpError(500, error));
-        next(new HttpSuccess(200, { tags: result }));
-    });
+async function getTags(req, res, next) {
+    next(new HttpSuccess(200, { tags: await things.getTags(req.user.id) }));
 }
 
 function registerRoutes(router, auth) {
-    router.post('/api/things', auth, validate({ body: createBody }), add);
-    router.get('/api/things', auth, validate({ query: listQuery }), getAll);
-    router.get('/api/things/:id', auth, validate({ params: idParams }), get);
-    router.put('/api/things/:id', auth, validate({ params: idParams, body: updateBody }), put);
-    router.delete('/api/things/:id', auth, validate({ params: idParams }), del);
-    router.get('/api/tags', auth, getTags);
+    router.post('/api/things', auth, validate({ body: createBody }), asyncHandler(add));
+    router.get('/api/things', auth, validate({ query: listQuery }), asyncHandler(getAll));
+    router.get('/api/things/:id', auth, validate({ params: idParams }), asyncHandler(get));
+    router.put('/api/things/:id', auth, validate({ params: idParams, body: updateBody }), asyncHandler(put));
+    router.delete('/api/things/:id', auth, validate({ params: idParams }), asyncHandler(del));
+    router.get('/api/tags', auth, asyncHandler(getTags));
 }
 
 module.exports = {

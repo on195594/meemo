@@ -1,68 +1,86 @@
 'use strict';
 
 var config = require('../config.js'),
-    fs = require('fs'),
-    mkdirp = require('mkdirp'),
+    fs = require('fs').promises,
     path = require('path');
 
 function userDirectory(userId) {
     return path.join(config.attachmentDir, userId);
 }
 
-function ensureUserDirectory(userId) {
+async function ensureUserDirectory(userId) {
     var directory = userDirectory(userId);
-    mkdirp.sync(directory);
+    await fs.mkdir(directory, { recursive: true });
     return directory;
 }
 
-function saveAttachment(userId, storageKey, buffer, callback) {
-    var target = path.join(ensureUserDirectory(userId), storageKey);
-
-    fs.writeFile(target, buffer, function (error) {
-        if (!error) return callback(null);
-        fs.unlink(target, function () {});
-        callback(error);
-    });
+async function saveAttachment(userId, storageKey, buffer) {
+    var target = path.join(await ensureUserDirectory(userId), storageKey);
+    try {
+        await fs.writeFile(target, buffer);
+    } catch (error) {
+        try { await fs.rm(target, { force: true }); } catch (cleanupError) {}
+        throw error;
+    }
 }
 
-function resolveAttachmentRoot(userId, username, storageKey) {
+async function resolveAttachmentRoot(userId, username, storageKey) {
     var root = userDirectory(userId);
-    if (!fs.existsSync(path.join(root, storageKey)) && username && username !== userId) {
-        var legacyRoot = userDirectory(username);
-        if (fs.existsSync(path.join(legacyRoot, storageKey))) root = legacyRoot;
+    try {
+        await fs.access(path.join(root, storageKey));
+    } catch (error) {
+        if (username && username !== userId) {
+            var legacyRoot = userDirectory(username);
+            try {
+                await fs.access(path.join(legacyRoot, storageKey));
+                root = legacyRoot;
+            } catch (legacyError) {}
+        }
     }
     return root;
 }
 
-function exportDirectory(userId, username) {
+async function exportDirectory(userId, username) {
     var directory = userDirectory(userId);
-    if (!fs.existsSync(directory) && username && username !== userId && fs.existsSync(userDirectory(username))) {
-        directory = userDirectory(username);
+    try {
+        await fs.access(directory);
+    } catch (error) {
+        if (username && username !== userId) {
+            try {
+                await fs.access(userDirectory(username));
+                directory = userDirectory(username);
+            } catch (legacyError) {}
+        }
     }
-    mkdirp.sync(directory);
+    await fs.mkdir(directory, { recursive: true });
     return directory;
 }
 
-function copyAttachment(userId, sourcePath, storageKey) {
-    var target = path.join(ensureUserDirectory(userId), storageKey);
-    var created = !fs.existsSync(target);
-    fs.copyFileSync(sourcePath, target);
+async function copyAttachment(userId, sourcePath, storageKey) {
+    var target = path.join(await ensureUserDirectory(userId), storageKey);
+    var created = false;
+    try {
+        await fs.access(target);
+    } catch (error) {
+        created = true;
+    }
+    await fs.copyFile(sourcePath, target);
     return { path: target, created: created };
 }
 
-function removeFiles(files) {
-    files.forEach(function (file) {
-        try { fs.rmSync(file, { force: true }); } catch (error) {}
-    });
+async function removeFiles(files) {
+    await Promise.all(files.map(async function (file) {
+        try { await fs.rm(file, { force: true }); } catch (error) {}
+    }));
 }
 
-function removeFile(file) {
-    try { fs.rmSync(file, { force: true }); } catch (error) {}
+async function removeFile(file) {
+    try { await fs.rm(file, { force: true }); } catch (error) {}
 }
 
-function checkAccess() {
-    mkdirp.sync(config.attachmentDir);
-    fs.accessSync(config.attachmentDir, fs.constants.R_OK | fs.constants.W_OK);
+async function checkAccess() {
+    await fs.mkdir(config.attachmentDir, { recursive: true });
+    await fs.access(config.attachmentDir, require('fs').constants.R_OK | require('fs').constants.W_OK);
 }
 
 module.exports = {

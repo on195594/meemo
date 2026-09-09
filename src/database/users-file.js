@@ -6,6 +6,7 @@ var assert = require('assert'),
     path = require('path'),
     util = require('util'),
     safe = require('safetydance'),
+    nodeify = require('../promise.js'),
     UserRepository = require('./user-repository.js');
 
 function LegacyFileUserRepository(filePath) {
@@ -27,85 +28,70 @@ LegacyFileUserRepository.prototype._writeUsers = function (users) {
 };
 
 LegacyFileUserRepository.prototype.get = function (id, callback) {
+    var self = this;
     assert.strictEqual(typeof id, 'string');
-    assert.strictEqual(typeof callback, 'function');
 
-    var users = this._readUsers();
-    if (!users || !users[id]) return callback(null, null);
-
-    var u = Object.assign({}, users[id]);
-    u.id = u.id || u.username || id;
-    callback(null, u);
+    return nodeify(Promise.resolve().then(function () {
+        var users = self._readUsers();
+        if (!users || !users[id]) return null;
+        var user = Object.assign({}, users[id]);
+        user.id = user.id || user.username || id;
+        return user;
+    }), callback);
 };
 
 LegacyFileUserRepository.prototype.getByUsername = function (username, callback) {
+    var self = this;
     assert.strictEqual(typeof username, 'string');
-    assert.strictEqual(typeof callback, 'function');
 
-    var users = this._readUsers();
-    if (!users) return callback(null, null);
+    return nodeify(Promise.resolve().then(function () {
+        var users = self._readUsers();
+        if (!users) return null;
 
-    if (users[username]) {
-        var u = Object.assign({}, users[username]);
-        u.id = u.id || u.username || username;
-        return callback(null, u);
-    }
+        var foundKey = users[username] ? username : Object.keys(users).find(function (key) {
+            return key.toLowerCase() === username.toLowerCase() ||
+                (users[key].username && users[key].username.toLowerCase() === username.toLowerCase());
+        });
+        if (!foundKey) return null;
 
-    var norm = username.toLowerCase();
-    var foundKey = Object.keys(users).find(function (k) {
-        return k.toLowerCase() === norm || (users[k].username && users[k].username.toLowerCase() === norm);
-    });
-
-    if (foundKey) {
-        var u = Object.assign({}, users[foundKey]);
-        u.id = u.id || u.username || foundKey;
-        return callback(null, u);
-    }
-
-    callback(null, null);
+        var user = Object.assign({}, users[foundKey]);
+        user.id = user.id || user.username || foundKey;
+        return user;
+    }), callback);
 };
 
 LegacyFileUserRepository.prototype.create = function (userData, callback) {
-    assert.strictEqual(typeof userData, 'object');
-    assert(userData !== null);
+    var self = this;
+    assert(userData && typeof userData === 'object');
     assert.strictEqual(typeof userData.username, 'string');
-    assert.strictEqual(typeof callback, 'function');
 
-    var users = this._readUsers() || {};
-    if (users[userData.username]) {
-        return callback(new Error('user exists'));
-    }
+    return nodeify(Promise.resolve().then(function () {
+        var users = self._readUsers() || {};
+        if (users[userData.username]) throw new Error('user exists');
 
-    var u = Object.assign({}, userData);
-    u.id = u.id || u.username;
-    users[userData.username] = u;
-    this._writeUsers(users);
-
-    callback(null, Object.assign({}, u));
+        var user = Object.assign({}, userData);
+        user.id = user.id || user.username;
+        users[userData.username] = user;
+        self._writeUsers(users);
+        return Object.assign({}, user);
+    }), callback);
 };
 
 LegacyFileUserRepository.prototype.list = function (callback) {
-    assert.strictEqual(typeof callback, 'function');
-
-    var users = this._readUsers();
-    if (!users) return callback(null, []);
-
-    var list = Object.keys(users).map(function (k) {
-        var u = Object.assign({}, users[k]);
-        u.id = u.id || u.username || k;
-        return u;
-    });
-
-    callback(null, list);
+    var self = this;
+    return nodeify(Promise.resolve().then(function () {
+        var users = self._readUsers();
+        if (!users) return [];
+        return Object.keys(users).map(function (key) {
+            var user = Object.assign({}, users[key]);
+            user.id = user.id || user.username || key;
+            return user;
+        });
+    }), callback);
 };
 
 LegacyFileUserRepository.prototype.count = function (callback) {
-    assert.strictEqual(typeof callback, 'function');
-
-    this.list(function (err, list) {
-        if (err) return callback(err);
-        callback(null, list.length);
-    });
+    return nodeify(this.list().then(function (users) { return users.length; }), callback);
 };
 
 module.exports = LegacyFileUserRepository;

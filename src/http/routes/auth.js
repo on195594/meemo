@@ -2,6 +2,7 @@
 
 var authService = require('../../services/auth-service.js'),
     UserError = authService.UserError,
+    asyncHandler = require('../middleware/async-handler.js'),
     responses = require('../responses.js'),
     HttpError = responses.HttpError,
     HttpSuccess = responses.HttpSuccess,
@@ -29,59 +30,61 @@ var loginBody = z.object({
     password: z.string({ required_error: 'missing username or password', invalid_type_error: 'missing username or password' })
 });
 
-function login(req, res, next) {
+async function login(req, res, next) {
     var clientIp = req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
-
-    authService.authenticate(req.body.username, req.body.password, clientIp, function (error, user) {
-        if (error && error.code === 'rate_limit') return next(new HttpError(429, error.message));
-        if (error && (error.code === UserError.NOT_FOUND || error.code === UserError.NOT_AUTHORIZED)) {
-            return next(new HttpError(401, 'Invalid username or password', 'invalid_credentials'));
+    var user;
+    try {
+        user = await authService.authenticate(req.body.username, req.body.password, clientIp);
+    } catch (error) {
+        if (error.code === 'rate_limit') throw new HttpError(429, error.message);
+        if (error.code === UserError.NOT_FOUND || error.code === UserError.NOT_AUTHORIZED) {
+            throw new HttpError(401, 'Invalid username or password', 'invalid_credentials');
         }
-        if (error) return next(new HttpError(500, error));
+        throw new HttpError(500, error);
+    }
 
-        req.session.regenerate(function (regenError) {
-            if (regenError) return next(new HttpError(500, regenError));
-            req.session.userId = user.id;
-            req.session.username = user.username;
-            next(new HttpSuccess(200, {}));
-        });
+    await new Promise(function (resolve, reject) {
+        req.session.regenerate(function (error) { if (error) reject(error); else resolve(); });
     });
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    next(new HttpSuccess(200, {}));
 }
 
-function logout(req, res, next) {
+async function logout(req, res, next) {
     if (!req.session) return next(new HttpSuccess(200, {}));
-
-    req.session.destroy(function (error) {
-        if (error) return next(new HttpError(500, error));
-        res.clearCookie('connect.sid');
-        next(new HttpSuccess(200, {}));
+    await new Promise(function (resolve, reject) {
+        req.session.destroy(function (error) { if (error) reject(error); else resolve(); });
     });
+    res.clearCookie('connect.sid');
+    next(new HttpSuccess(200, {}));
 }
 
-function register(req, res, next) {
-    authService.register(req.body, function (error) {
-        if (error && (error.code === 'registration_disabled' || error.code === 'registration_closed')) {
-            return next(new HttpError(403, error.message));
-        }
-        if (error && error.code === 'user exists') return next(new HttpError(409, error.message));
-        if (error) return next(new HttpError(500, error));
-        next(new HttpSuccess(201, {}));
-    });
+async function register(req, res, next) {
+    try {
+        await authService.register(req.body);
+    } catch (error) {
+        if (error.code === 'registration_disabled' || error.code === 'registration_closed') throw new HttpError(403, error.message);
+        if (error.code === 'user exists') throw new HttpError(409, error.message);
+        throw new HttpError(500, error);
+    }
+    next(new HttpSuccess(201, {}));
 }
 
-function profile(req, res, next) {
-    authService.profile(req.user.id, function (error, result) {
-        if (error && error.code === UserError.NOT_FOUND) return next(new HttpError(404, error.message));
-        if (error) return next(new HttpError(500, error));
-        next(new HttpSuccess(200, { user: result }));
-    });
+async function profile(req, res, next) {
+    try {
+        next(new HttpSuccess(200, { user: await authService.profile(req.user.id) }));
+    } catch (error) {
+        if (error.code === UserError.NOT_FOUND) throw new HttpError(404, error.message);
+        throw new HttpError(500, error);
+    }
 }
 
 function registerRoutes(router, auth) {
-    router.post('/api/register', validate({ body: registerBody }), register);
-    router.post('/api/login', validate({ body: loginBody }), login);
-    router.post('/api/logout', logout);
-    router.get('/api/profile', auth, profile);
+    router.post('/api/register', validate({ body: registerBody }), asyncHandler(register));
+    router.post('/api/login', validate({ body: loginBody }), asyncHandler(login));
+    router.post('/api/logout', asyncHandler(logout));
+    router.get('/api/profile', auth, asyncHandler(profile));
 }
 
 module.exports = {

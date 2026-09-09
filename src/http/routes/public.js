@@ -5,6 +5,7 @@ var assert = require('assert'),
     rss = require('rss'),
     sharing = require('../../services/sharing-service.js'),
     UserError = sharing.UserError,
+    asyncHandler = require('../middleware/async-handler.js'),
     responses = require('../responses.js'),
     HttpError = responses.HttpError,
     HttpSuccess = responses.HttpSuccess,
@@ -21,70 +22,75 @@ var listQuery = z.object({
     limit: validation.pagination.limit
 });
 
-function getThing(req, res, next) {
-    sharing.getThing(req.params.userId, req.params.thingId, function (error, result) {
-        if (error === 'not allowed') return next(new HttpError(403, 'not allowed'));
-        if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
-        if (error) return next(new HttpError(500, error));
+async function getThing(req, res, next) {
+    try {
+        var result = await sharing.getThing(req.params.userId, req.params.thingId);
         next(new HttpSuccess(200, { thing: result }));
-    });
+    } catch (error) {
+        if (error === 'not allowed') throw new HttpError(403, 'not allowed');
+        if (error && error.message === 'not found') throw new HttpError(404, 'not found');
+        throw error;
+    }
 }
 
-function getAll(req, res, next) {
+async function getAll(req, res, next) {
     var query = req.query.filter ? { $text: { $search: req.query.filter } } : {};
-    sharing.getAll(req.params.userId, query, req.query.skip, req.query.limit, function (error, result) {
-        if (error) return next(new HttpError(500, error));
-        next(new HttpSuccess(200, { things: result }));
-    });
+    var result = await sharing.getAll(req.params.userId, query, req.query.skip, req.query.limit);
+    next(new HttpSuccess(200, { things: result }));
 }
 
 function getFile(req, res, next) {
     next(new HttpError(404, 'not found'));
 }
 
-function listUsers(req, res, next) {
-    sharing.listUsers(function (error, result) {
-        if (error && error.code === UserError.NOT_FOUND) return next(new HttpError(404, error.message));
-        if (error) return next(new HttpError(500, error));
-        next(new HttpSuccess(200, { users: result }));
-    });
+async function listUsers(req, res, next) {
+    try {
+        next(new HttpSuccess(200, { users: await sharing.listUsers() }));
+    } catch (error) {
+        if (error.code === UserError.NOT_FOUND) throw new HttpError(404, error.message);
+        throw error;
+    }
 }
 
-function profile(req, res, next) {
-    sharing.profile(req.params.userId, function (error, result) {
-        if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
-        if (error) return next(new HttpError(500, error));
-        next(new HttpSuccess(200, result));
-    });
+async function profile(req, res, next) {
+    try {
+        next(new HttpSuccess(200, await sharing.profile(req.params.userId)));
+    } catch (error) {
+        if (error.message === 'not found') throw new HttpError(404, 'not found');
+        throw error;
+    }
 }
 
-function getRSS(req, res, next) {
+async function getRSS(req, res) {
     assert.strictEqual(typeof req.params.userId, 'string');
 
-    sharing.feed(req.params.userId, function (error, data) {
-        if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
-        if (error) return next(new HttpError(500, error));
+    var data;
+    try {
+        data = await sharing.feed(req.params.userId);
+    } catch (error) {
+        if (error.message === 'not found') throw new HttpError(404, 'not found');
+        throw error;
+    }
 
-        var webServer = process.env.APP_ORIGIN || 'http://localhost';
-        var feed = new rss({
-            title: (data.settings && data.settings.title) || 'Meemo',
-            image_url: webServer + '/img/logo128.png',
-            site_url: webServer
-        });
-
-        data.things.forEach(function (thing) {
-            var title = thing.content.split('\n').filter(function (line) { return !!line.trim(); })[0];
-            feed.item({
-                title: title,
-                url: webServer + '/blog/TODO',
-                author: data.user.displayName + '( ' + data.user.username + ' )',
-                date: new Date(thing.createdAt),
-                description: markdown.render(thing.richContent)
-            });
-        });
-
-        res.type('application/rss+xml').status(200).send(feed.xml());
+    var webServer = process.env.APP_ORIGIN || 'http://localhost';
+    var feed = new rss({
+        title: (data.settings && data.settings.title) || 'Meemo',
+        image_url: webServer + '/img/logo128.png',
+        site_url: webServer
     });
+
+    data.things.forEach(function (thing) {
+        var title = thing.content.split('\n').filter(function (line) { return !!line.trim(); })[0];
+        feed.item({
+            title: title,
+            url: webServer + '/blog/TODO',
+            author: data.user.displayName + '( ' + data.user.username + ' )',
+            date: new Date(thing.createdAt),
+            description: markdown.render(thing.richContent)
+        });
+    });
+
+    res.type('application/rss+xml').status(200).send(feed.xml());
 }
 
 function streamPage(req, res) {
@@ -141,11 +147,11 @@ markdown.renderer.rules.emoji = function (token, idx) {
 
 function registerRoutes(router) {
     router.get('/api/public/:userId/files/:fileId', validate({ params: legacyFileParams }), getFile);
-    router.get('/api/public/:userId/things', validate({ params: userParams, query: listQuery }), getAll);
-    router.get('/api/public/:userId/things/:thingId', validate({ params: thingParams }), getThing);
-    router.get('/api/rss/:userId', validate({ params: userParams }), getRSS);
-    router.get('/api/users', listUsers);
-    router.get('/api/users/:userId', validate({ params: userParams }), profile);
+    router.get('/api/public/:userId/things', validate({ params: userParams, query: listQuery }), asyncHandler(getAll));
+    router.get('/api/public/:userId/things/:thingId', validate({ params: thingParams }), asyncHandler(getThing));
+    router.get('/api/rss/:userId', validate({ params: userParams }), asyncHandler(getRSS));
+    router.get('/api/users', asyncHandler(listUsers));
+    router.get('/api/users/:userId', validate({ params: userParams }), asyncHandler(profile));
     router.get('/public/:userId', validate({ params: userParams }), streamPage);
 }
 

@@ -17,7 +17,7 @@ npm test
 ## Change guidelines
 
 - Keep HTTP handling in `src/http/`, application behavior in `src/services/`, persistence in `src/database/`, and attachment filesystem access in `src/storage/`.
-- Follow the existing JavaScript style and `.editorconfig`; do not reformat unrelated code.
+- Follow the existing CommonJS, Promise-first `async`/`await` style and `.editorconfig`; do not reformat unrelated code.
 - Do not commit generated `public/`, dependency `node_modules/`, local account files, or attachments.
 - Add or update a focused test under `src/test/` for non-trivial server behavior.
 - Update `README.md` or `docs/ARCHITECTURE.md` when behavior, deployment, or architecture changes.
