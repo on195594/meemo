@@ -241,10 +241,10 @@ development: open
 
 验收：
 
-- [ ] 不存在用户与错误密码表现一致。
-- [ ] 暴力登录会被限速。
-- [ ] 登录前后的 session id 不相同。
-- [ ] 生产环境无 SESSION_SECRET 无法启动。
+- [x] 不存在用户与错误密码表现一致。
+- [x] 暴力登录会被限速。
+- [x] 登录前后的 session id 不相同。
+- [x] 生产环境无 SESSION_SECRET 无法启动。
 
 ---
 
@@ -327,10 +327,10 @@ Gate：上述目标全部被拒绝，正常公网 URL 不影响 Note 保存。
 
 验收至少覆盖：
 
-- [ ] 用户 A 无法读取用户 B 私有附件。
-- [ ] Public Thing 只能暴露属于它自己的附件。
-- [ ] 猜到 storage key 不能绕过 authorization。
-- [ ] 超限文件返回 413/明确错误，不导致进程 OOM。
+- [x] 用户 A 无法读取用户 B 私有附件。
+- [x] Public Thing 只能暴露属于它自己的附件。
+- [x] 猜到 storage key 不能绕过 authorization。
+- [x] 超限文件返回 413/明确错误，不导致进程 OOM。
 
 ---
 
@@ -365,12 +365,12 @@ compare core data
 
 ## 1.5 Gate G1 验收
 
-- [ ] Auth 安全测试全绿。
-- [ ] SSRF 私网与 redirect 测试全绿。
-- [ ] Attachment authorization 测试全绿。
-- [ ] Upload limits 生效。
-- [ ] Import path traversal 与 partial-write 测试全绿。
-- [ ] Export/Import round-trip 可重复执行。
+- [x] Auth 安全测试全绿。
+- [x] SSRF 私网与 redirect 测试全绿。
+- [x] Attachment authorization 测试全绿。
+- [x] Upload limits 生效。
+- [x] Import path traversal 与 partial-write 测试全绿。
+- [x] Export/Import round-trip 可重复执行。
 
 **G1 未通过，不启动 Vue 3 主迁移。**
 
