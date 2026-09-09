@@ -48,6 +48,8 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `ATTACHMENT_DIR` | `./storage` | `/app/data/storage` | Attachment directory |
 | `USERS_FILE` | `./.users.json` | `/app/data/.users.json` | Account data file |
 | `SESSION_SECRET` | Random on startup | Value of host `SESSION_SECRET` | Session signing secret |
+| `REGISTRATION_MODE` | `open` | `open` | Registration policy: `open`, `first-user`, or `disabled` |
+| `URL_ENRICHMENT_ENABLED` | `false` | `false` | Outbound URL metadata fetch (disabled by default for SSRF safety) |
 | `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |
 
 For a public hostname or reverse proxy:
