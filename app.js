@@ -16,7 +16,7 @@ var express = require('express'),
     multer  = require('multer'),
     createRouter = require('./src/http/router.js'),
     responses = require('./src/http/responses.js'),
-    logic = require('./src/logic.js'),
+    thingService = require('./src/services/thing-service.js'),
     lifecycle = require('./src/lifecycle.js'),
     things = require('./src/database/things.js'),
     tags = require('./src/database/tags.js'),
@@ -146,7 +146,7 @@ function startServer(options, callback) {
 
     var enableWorkers = options.enableWorkers !== undefined ? options.enableWorkers : (process.env.ENABLE_WORKERS !== 'false');
     var cleanupIntervalMs = options.tagCleanupIntervalMs || parseInt(process.env.TAG_CLEANUP_INTERVAL_MS, 10) || (1000 * 60);
-    workerManager.register('cleanupTags', logic.cleanupTags, cleanupIntervalMs);
+    workerManager.register('cleanupTags', thingService.cleanupTags, cleanupIntervalMs);
 
     databaseManager.connect(options, function (error, db, client) {
         if (error) {

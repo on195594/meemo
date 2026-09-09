@@ -11,7 +11,7 @@ var path = require('path');
 var mkdirp = require('mkdirp');
 var request = require('supertest');
 var config = require('../config.js');
-var logic = require('../logic.js');
+var logic = require('../services/thing-service.js');
 var users = require('../users.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
@@ -234,6 +234,16 @@ describe('Attachment Authorization (RF-104)', function () {
                 .get('/api/files/..%2falice/' + alicePublicThingId + '/' + alicePublicFile)
                 .expect(400)
                 .end(function (err, res) {
+                    expect(err).to.be(null);
+                    done();
+                });
+        });
+
+        it('returns 404 instead of 500 for an unknown attachment owner', function (done) {
+            request(app)
+                .get('/api/files/unknown-user/' + alicePublicThingId + '/' + alicePublicFile)
+                .expect(404)
+                .end(function (err) {
                     expect(err).to.be(null);
                     done();
                 });

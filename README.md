@@ -91,8 +91,9 @@ To run only the Node.js process, provide MongoDB separately and use `npm start`.
 | --- | --- |
 | `app.js` | Express entry point, app factory (`createApp`), and server lifecycle (`startServer`) |
 | `src/lifecycle.js` | Worker management, MongoDB pool lifecycle, and graceful shutdown sequencing |
-| `src/http/` | Domain route modules, authentication, Zod request validation, and uniform HTTP errors |
-| `src/logic.js` | Application behavior |
+| `src/http/` | Domain route modules, authentication middleware, Zod validation, and uniform HTTP errors |
+| `src/services/` | Authentication, things, attachments, sharing, settings, health, and import/export behavior |
+| `src/storage/` | Local filesystem attachment adapter |
 | `src/database/` | MongoDB persistence (things, tags, settings, users) |
 | `src/users.js` | Account repository abstraction and password handling |
 | `scripts/` | Idempotent zero-downtime migration scripts (`dry-run`, `apply`, `verify`) |

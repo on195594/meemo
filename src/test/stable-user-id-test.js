@@ -13,7 +13,7 @@ var request = require('supertest');
 var MongoClient = require('mongodb').MongoClient;
 var config = require('../config.js');
 var users = require('../users.js');
-var logic = require('../logic.js');
+var logic = require('../services/thing-service.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
 

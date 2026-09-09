@@ -1,12 +1,10 @@
 'use strict';
 
 var assert = require('assert'),
-    logic = require('../../logic.js'),
     path = require('path'),
     rss = require('rss'),
-    settings = require('../../database/settings.js'),
-    users = require('../../users.js'),
-    UserError = users.UserError,
+    sharing = require('../../services/sharing-service.js'),
+    UserError = sharing.UserError,
     responses = require('../responses.js'),
     HttpError = responses.HttpError,
     HttpSuccess = responses.HttpSuccess,
@@ -24,44 +22,19 @@ var listQuery = z.object({
 });
 
 function getThing(req, res, next) {
-    users.resolveUser(req.params.userId, function (error, targetUser) {
-        if (error && error.code === UserError.INTERNAL_ERROR) return next(new HttpError(500, error));
-        var targetUserId = targetUser ? targetUser.id : req.params.userId;
-        var targetUsername = targetUser ? targetUser.username : req.params.userId;
-
-        logic.getPublic(targetUserId, req.params.thingId, function (error, result) {
-            if (error && error.message === 'not found' && targetUsername && targetUsername !== targetUserId) {
-                return logic.getPublic(targetUsername, req.params.thingId, handleResult);
-            }
-            handleResult(error, result);
-
-            function handleResult(error, result) {
-                if (error === 'not allowed') return next(new HttpError(403, 'not allowed'));
-                if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
-                if (error) return next(new HttpError(500, error));
-                next(new HttpSuccess(200, { thing: result }));
-            }
-        });
+    sharing.getThing(req.params.userId, req.params.thingId, function (error, result) {
+        if (error === 'not allowed') return next(new HttpError(403, 'not allowed'));
+        if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
+        if (error) return next(new HttpError(500, error));
+        next(new HttpSuccess(200, { thing: result }));
     });
 }
 
 function getAll(req, res, next) {
-    users.resolveUser(req.params.userId, function (error, targetUser) {
-        if (error && error.code === UserError.INTERNAL_ERROR) return next(new HttpError(500, error));
-        var targetUserId = targetUser ? targetUser.id : req.params.userId;
-        var targetUsername = targetUser ? targetUser.username : req.params.userId;
-        var query = req.query.filter ? { $text: { $search: req.query.filter } } : {};
-
-        logic.getAllPublic(targetUserId, query, req.query.skip, req.query.limit, function (error, result) {
-            if (error && targetUsername && targetUsername !== targetUserId) {
-                return logic.getAllPublic(targetUsername, query, req.query.skip, req.query.limit, function (fallbackError, fallbackResult) {
-                    if (fallbackError) return next(new HttpError(500, fallbackError));
-                    next(new HttpSuccess(200, { things: fallbackResult }));
-                });
-            }
-            if (error) return next(new HttpError(500, error));
-            next(new HttpSuccess(200, { things: result }));
-        });
+    var query = req.query.filter ? { $text: { $search: req.query.filter } } : {};
+    sharing.getAll(req.params.userId, query, req.query.skip, req.query.limit, function (error, result) {
+        if (error) return next(new HttpError(500, error));
+        next(new HttpSuccess(200, { things: result }));
     });
 }
 
@@ -70,7 +43,7 @@ function getFile(req, res, next) {
 }
 
 function listUsers(req, res, next) {
-    users.list(function (error, result) {
+    sharing.listUsers(function (error, result) {
         if (error && error.code === UserError.NOT_FOUND) return next(new HttpError(404, error.message));
         if (error) return next(new HttpError(500, error));
         next(new HttpSuccess(200, { users: result }));
@@ -78,73 +51,39 @@ function listUsers(req, res, next) {
 }
 
 function profile(req, res, next) {
-    users.resolveUser(req.params.userId, function (error, targetUser) {
-        if (error && error.code === UserError.INTERNAL_ERROR) return next(new HttpError(500, error));
-        if (!targetUser) return next(new HttpError(404, 'not found'));
-
-        var out = {
-            id: targetUser.id,
-            username: targetUser.username,
-            displayName: targetUser.displayName
-        };
-
-        settings.get(targetUser.id, function (error, result) {
-            if (error && targetUser.username !== targetUser.id) return settings.get(targetUser.username, handleSettings);
-            handleSettings(error, result);
-
-            function handleSettings(error, result) {
-                if (error) return next(new HttpError(500, error));
-                out.title = result.title;
-                out.backgroundImageDataUrl = result.publicBackground ? result.backgroundImageDataUrl : undefined;
-                next(new HttpSuccess(200, out));
-            }
-        });
+    sharing.profile(req.params.userId, function (error, result) {
+        if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
+        if (error) return next(new HttpError(500, error));
+        next(new HttpSuccess(200, result));
     });
 }
 
 function getRSS(req, res, next) {
     assert.strictEqual(typeof req.params.userId, 'string');
 
-    users.resolveUser(req.params.userId, function (error, targetUser) {
-        if (error && error.code === UserError.INTERNAL_ERROR) return next(new HttpError(500, error));
-        if (!targetUser) return next(new HttpError(404, 'not found'));
+    sharing.feed(req.params.userId, function (error, data) {
+        if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
+        if (error) return next(new HttpError(500, error));
 
-        settings.get(targetUser.id, function (settingsError, cfg) {
-            if (settingsError) return next(new HttpError(500, settingsError));
+        var webServer = process.env.APP_ORIGIN || 'http://localhost';
+        var feed = new rss({
+            title: (data.settings && data.settings.title) || 'Meemo',
+            image_url: webServer + '/img/logo128.png',
+            site_url: webServer
+        });
 
-            logic.getAllPublic(targetUser.id, {}, 0, 50, function (error, result) {
-                if (error && targetUser.username !== targetUser.id) {
-                    return logic.getAllPublic(targetUser.username, {}, 0, 50, function (fallbackError, fallbackResult) {
-                        if (fallbackError) return next(new HttpError(500, fallbackError));
-                        buildFeed(cfg, fallbackResult);
-                    });
-                }
-                if (error) return next(new HttpError(500, error));
-                buildFeed(cfg, result);
+        data.things.forEach(function (thing) {
+            var title = thing.content.split('\n').filter(function (line) { return !!line.trim(); })[0];
+            feed.item({
+                title: title,
+                url: webServer + '/blog/TODO',
+                author: data.user.displayName + '( ' + data.user.username + ' )',
+                date: new Date(thing.createdAt),
+                description: markdown.render(thing.richContent)
             });
         });
 
-        function buildFeed(cfg, result) {
-            var webServer = process.env.APP_ORIGIN || 'http://localhost';
-            var feed = new rss({
-                title: (cfg && cfg.title) || 'Meemo',
-                image_url: webServer + '/img/logo128.png',
-                site_url: webServer
-            });
-
-            result.forEach(function (thing) {
-                var title = thing.content.split('\n').filter(function (line) { return !!line.trim(); })[0];
-                feed.item({
-                    title: title,
-                    url: webServer + '/blog/TODO',
-                    author: targetUser.displayName + '( ' + targetUser.username + ' )',
-                    date: new Date(thing.createdAt),
-                    description: markdown.render(thing.richContent)
-                });
-            });
-
-            res.type('application/rss+xml').status(200).send(feed.xml());
-        }
+        res.type('application/rss+xml').status(200).send(feed.xml());
     });
 }
 

@@ -1,7 +1,7 @@
 'use strict';
 
-var users = require('../../users.js'),
-    UserError = users.UserError,
+var authService = require('../../services/auth-service.js'),
+    UserError = authService.UserError,
     responses = require('../responses.js'),
     HttpError = responses.HttpError,
     HttpSuccess = responses.HttpSuccess,
@@ -29,44 +29,20 @@ var loginBody = z.object({
     password: z.string({ required_error: 'missing username or password', invalid_type_error: 'missing username or password' })
 });
 
-var loginAttempts = {};
-
-function checkLoginRateLimit(ip) {
-    var now = Date.now();
-    var windowMs = parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS, 10) || 60000;
-    var maxAttempts = parseInt(process.env.LOGIN_RATE_LIMIT_MAX, 10) || 10;
-    var record = loginAttempts[ip];
-
-    if (!record || now > record.resetAt) {
-        loginAttempts[ip] = { count: 1, resetAt: now + windowMs };
-        return true;
-    }
-
-    record.count++;
-    return record.count <= maxAttempts;
-}
-
 function login(req, res, next) {
     var clientIp = req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
-    if (!checkLoginRateLimit(clientIp)) {
-        return next(new HttpError(429, 'Too many login attempts. Please try again later.'));
-    }
 
-    users.verify(req.body.username, req.body.password, function (error, user) {
+    authService.authenticate(req.body.username, req.body.password, clientIp, function (error, user) {
+        if (error && error.code === 'rate_limit') return next(new HttpError(429, error.message));
         if (error && (error.code === UserError.NOT_FOUND || error.code === UserError.NOT_AUTHORIZED)) {
             return next(new HttpError(401, 'Invalid username or password', 'invalid_credentials'));
         }
         if (error) return next(new HttpError(500, error));
 
-        delete loginAttempts[clientIp];
-
-        var stableUserId = (user && (user.id || user._id)) ? String(user.id || user._id) : req.body.username;
-        var canonicalUsername = (user && user.username) ? user.username : req.body.username;
-
-        req.session.regenerate(function (regenErr) {
-            if (regenErr) return next(new HttpError(500, regenErr));
-            req.session.userId = stableUserId;
-            req.session.username = canonicalUsername;
+        req.session.regenerate(function (regenError) {
+            if (regenError) return next(new HttpError(500, regenError));
+            req.session.userId = user.id;
+            req.session.username = user.username;
             next(new HttpSuccess(200, {}));
         });
     });
@@ -83,31 +59,18 @@ function logout(req, res, next) {
 }
 
 function register(req, res, next) {
-    var registrationMode = process.env.REGISTRATION_MODE || (process.env.NODE_ENV === 'production' ? 'first-user' : 'open');
-
-    if (registrationMode === 'disabled') {
-        return next(new HttpError(403, 'Registration is disabled'));
-    }
-
-    function createUser() {
-        users.create(req.body.username, req.body.email, req.body.displayName, req.body.password, function (error) {
-            if (error && error.code === 'user exists') return next(new HttpError(409, error.message));
-            if (error) return next(new HttpError(500, error));
-            next(new HttpSuccess(201, {}));
-        });
-    }
-
-    if (registrationMode !== 'first-user') return createUser();
-
-    users.count(function (error, count) {
+    authService.register(req.body, function (error) {
+        if (error && (error.code === 'registration_disabled' || error.code === 'registration_closed')) {
+            return next(new HttpError(403, error.message));
+        }
+        if (error && error.code === 'user exists') return next(new HttpError(409, error.message));
         if (error) return next(new HttpError(500, error));
-        if (count > 0) return next(new HttpError(403, 'Registration is closed (first-user only)'));
-        createUser();
+        next(new HttpSuccess(201, {}));
     });
 }
 
 function profile(req, res, next) {
-    users.profile(req.user.id, false, function (error, result) {
+    authService.profile(req.user.id, function (error, result) {
         if (error && error.code === UserError.NOT_FOUND) return next(new HttpError(404, error.message));
         if (error) return next(new HttpError(500, error));
         next(new HttpSuccess(200, { user: result }));
@@ -127,8 +90,5 @@ module.exports = {
     logout: logout,
     register: register,
     profile: profile,
-    schemas: {
-        login: loginBody,
-        register: registerBody
-    }
+    schemas: { login: loginBody, register: registerBody }
 };

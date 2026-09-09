@@ -594,6 +594,8 @@ API 路由层不直接访问底层数据库驱动，不向客户端输出原始 
 
 ## 3.3 RF-303：Service 业务层解耦
 
+实施状态：已完成（HTTP → Service → Database/Storage 边界落地，移除旧 `src/logic.js`）。
+
 建议分支：`refactor/service-layer`
 
 解耦原 `src/logic.js`，按功能提炼纯粹的业务服务，直接依赖 `database/` 与 `storage/`，避免为了分层而额外引入一层单一实现的 Repository 样板：
@@ -745,7 +747,7 @@ Readiness 中明确检查 MongoDB；业务指标只增加低基数指标，不�
 ## 4.5 Gate G3 验收
 
 - [x] `createApp` 可被测试代码创建/销毁，无隐式 listen 或孤儿连接。
-- [ ] 路由层不直接访问底层 Mongo/FS，全流程经过 schema validation。
+- [x] 路由层不直接访问底层 Mongo/FS，全流程经过 schema validation。
 - [x] 错误响应格式统一且不泄露底层堆栈与路径。
 - [ ] 核心流程已完成 `async/await` 改造。
 - [ ] 结构化日志上线且严格遵守敏感信息过滤规则。
@@ -1101,7 +1103,7 @@ ADR 只记录“为什么选这个方案”和“放弃了什么”，不重复�
 - [ ] SSRF policy 有自动化安全回归测试。
 - [ ] Attachment 权限绑定 Thing/owner，而不是文件名保密性。
 - [ ] Import/Export 具备 round-trip 测试。
-- [ ] 后端业务边界不再集中于单个 `routes.js` / `logic.js`。
+- [x] 后端业务边界不再集中于单个 `routes.js` / `logic.js`。
 - [ ] 关键后端代码具备清晰输入校验与 API 契约文档。
 - [ ] Vue 1、Gulp、jQuery、legacy vendored sanitizer 及旧多页模板已从 production build 移除。
 - [ ] Docker image 可从 release 重新构建并通过版本标签回滚。

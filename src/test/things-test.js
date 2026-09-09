@@ -7,7 +7,7 @@
 
 var expect = require('expect.js'),
     config = require('../config.js'),
-    logic = require('../logic.js');
+    logic = require('../services/thing-service.js');
 
 describe('Things', function () {
     function setup(done) {

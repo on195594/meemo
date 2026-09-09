@@ -1,6 +1,6 @@
 'use strict';
 
-var settings = require('../../database/settings.js'),
+var settings = require('../../services/settings-service.js'),
     responses = require('../responses.js'),
     HttpError = responses.HttpError,
     HttpSuccess = responses.HttpSuccess,
@@ -13,7 +13,7 @@ var settingsBody = z.object({
 });
 
 function save(req, res, next) {
-    settings.put(req.user.id, req.body.settings, function (error) {
+    settings.save(req.user.id, req.body.settings, function (error) {
         if (error) return next(new HttpError(500, error));
         next(new HttpSuccess(202, {}));
     });

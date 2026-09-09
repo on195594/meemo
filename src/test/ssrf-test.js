@@ -10,7 +10,7 @@
 var expect = require('expect.js');
 var http = require('http');
 var ssrf = require('../ssrf.js');
-var logic = require('../logic.js');
+var logic = require('../services/thing-service.js');
 var config = require('../config.js');
 
 describe('SSRF Protection', function () {

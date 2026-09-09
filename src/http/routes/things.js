@@ -1,7 +1,6 @@
 'use strict';
 
-var logic = require('../../logic.js'),
-    tags = require('../../database/tags.js'),
+var things = require('../../services/thing-service.js'),
     responses = require('../responses.js'),
     HttpError = responses.HttpError,
     HttpSuccess = responses.HttpSuccess,
@@ -56,14 +55,14 @@ function getAll(req, res, next) {
         $or: [{ archived: false }, { archived: { $exists: false } }]
     };
 
-    logic.getAll(req.user.id, { $and: [archiveQuery, query] }, req.query.skip, req.query.limit, function (error, result) {
+    things.getAll(req.user.id, { $and: [archiveQuery, query] }, req.query.skip, req.query.limit, function (error, result) {
         if (error) return next(new HttpError(500, error));
         next(new HttpSuccess(200, { things: result }));
     });
 }
 
 function get(req, res, next) {
-    logic.get(req.user.id, req.params.id, function (error, result) {
+    things.get(req.user.id, req.params.id, function (error, result) {
         if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
         if (error) return next(new HttpError(500, error));
         next(new HttpSuccess(200, { thing: result }));
@@ -71,14 +70,14 @@ function get(req, res, next) {
 }
 
 function add(req, res, next) {
-    logic.add(req.user.id, req.body.content, req.body.attachments, function (error, result) {
+    things.add(req.user.id, req.body.content, req.body.attachments, function (error, result) {
         if (error) return next(new HttpError(500, error));
         next(new HttpSuccess(201, { thing: result }));
     });
 }
 
 function put(req, res, next) {
-    logic.put(req.user.id, req.params.id, req.body.content, req.body.attachments,
+    things.put(req.user.id, req.params.id, req.body.content, req.body.attachments,
         req.body.public, req.body.shared, req.body.archived, req.body.sticky, function (error, result) {
             if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
             if (error) return next(new HttpError(500, error));
@@ -87,7 +86,7 @@ function put(req, res, next) {
 }
 
 function del(req, res, next) {
-    logic.del(req.user.id, req.params.id, function (error) {
+    things.del(req.user.id, req.params.id, function (error) {
         if (error && error.message === 'not found') return next(new HttpError(404, 'not found'));
         if (error) return next(new HttpError(500, error));
         next(new HttpSuccess(200, {}));
@@ -95,7 +94,7 @@ function del(req, res, next) {
 }
 
 function getTags(req, res, next) {
-    tags.get(req.user.id, function (error, result) {
+    things.getTags(req.user.id, function (error, result) {
         if (error) return next(new HttpError(500, error));
         next(new HttpSuccess(200, { tags: result }));
     });
