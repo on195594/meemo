@@ -10,9 +10,24 @@ exports = module.exports = {
 
 var assert = require('assert'),
     ObjectId = require('mongodb').ObjectID,
-    config = require('../config.js');
+    config = require('../config.js'),
+    users = require('../users.js');
 
 var g_collections = {};
+
+function getAlternateUserId(userId, callback) {
+    if (!users || typeof users.resolveUser !== 'function') return callback(null, null);
+    users.resolveUser(userId, function (err, user) {
+        if (err || !user) return callback(null, null);
+        if (user.id === userId && user.username && user.username !== userId) {
+            return callback(null, user.username);
+        }
+        if (user.username === userId && user.id && user.id !== userId) {
+            return callback(null, user.id);
+        }
+        return callback(null, null);
+    });
+}
 
 function getCollection(userId) {
     assert.strictEqual(typeof userId, 'string');
@@ -31,6 +46,16 @@ function get(userId, callback) {
 
     getCollection(userId).find({}).sort({ createdAt: -1 }).toArray(function (error, result) {
         if (error) return callback(error);
+        if (!result || result.length === 0) {
+            return getAlternateUserId(userId, function (altErr, altUserId) {
+                if (altErr || !altUserId) return callback(null, result || []);
+
+                getCollection(altUserId).find({}).sort({ createdAt: -1 }).toArray(function (err2, result2) {
+                    if (err2) return callback(err2);
+                    callback(null, result2 || []);
+                });
+            });
+        }
         callback(null, result || []);
     });
 }
@@ -43,7 +68,8 @@ function update(userId, name, callback) {
     getCollection(userId).updateOne({ name: name }, {
         $inc: { usage: 1 },
         $set: {
-            name: name
+            name: name,
+            ownerId: userId
         }
     }, { upsert:true }, function (error) {
         if (error) return callback(error);

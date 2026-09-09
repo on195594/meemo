@@ -33,7 +33,9 @@ LegacyFileUserRepository.prototype.get = function (id, callback) {
     var users = this._readUsers();
     if (!users || !users[id]) return callback(null, null);
 
-    callback(null, Object.assign({}, users[id]));
+    var u = Object.assign({}, users[id]);
+    u.id = u.id || u.username || id;
+    callback(null, u);
 };
 
 LegacyFileUserRepository.prototype.getByUsername = function (username, callback) {
@@ -44,7 +46,9 @@ LegacyFileUserRepository.prototype.getByUsername = function (username, callback)
     if (!users) return callback(null, null);
 
     if (users[username]) {
-        return callback(null, Object.assign({}, users[username]));
+        var u = Object.assign({}, users[username]);
+        u.id = u.id || u.username || username;
+        return callback(null, u);
     }
 
     var norm = username.toLowerCase();
@@ -53,7 +57,9 @@ LegacyFileUserRepository.prototype.getByUsername = function (username, callback)
     });
 
     if (foundKey) {
-        return callback(null, Object.assign({}, users[foundKey]));
+        var u = Object.assign({}, users[foundKey]);
+        u.id = u.id || u.username || foundKey;
+        return callback(null, u);
     }
 
     callback(null, null);
@@ -70,10 +76,12 @@ LegacyFileUserRepository.prototype.create = function (userData, callback) {
         return callback(new Error('user exists'));
     }
 
-    users[userData.username] = Object.assign({}, userData);
+    var u = Object.assign({}, userData);
+    u.id = u.id || u.username;
+    users[userData.username] = u;
     this._writeUsers(users);
 
-    callback(null, Object.assign({}, userData));
+    callback(null, Object.assign({}, u));
 };
 
 LegacyFileUserRepository.prototype.list = function (callback) {
@@ -83,7 +91,9 @@ LegacyFileUserRepository.prototype.list = function (callback) {
     if (!users) return callback(null, []);
 
     var list = Object.keys(users).map(function (k) {
-        return Object.assign({}, users[k]);
+        var u = Object.assign({}, users[k]);
+        u.id = u.id || u.username || k;
+        return u;
     });
 
     callback(null, list);

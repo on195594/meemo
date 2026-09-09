@@ -10,6 +10,7 @@ exports = module.exports = {
     count,
     create,
     verify,
+    resolveUser,
 
     // Repository access
     UserRepository,
@@ -96,6 +97,7 @@ function profile(userId, full, callback) {
         if (!user) return callback(new UserError(UserError.NOT_FOUND));
 
         var result = {
+            id: user.id || user.username || userId,
             username: user.username,
             displayName: user.displayName,
             email: user.email,
@@ -103,6 +105,38 @@ function profile(userId, full, callback) {
         };
 
         callback(null, result);
+    });
+}
+
+function resolveUser(identifier, callback) {
+    assert.strictEqual(typeof identifier, 'string');
+    assert.strictEqual(typeof callback, 'function');
+
+    var repo = getRepository();
+    repo.get(identifier, function (err, user) {
+        if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
+        if (user) {
+            return callback(null, {
+                id: user.id || user.username || identifier,
+                username: user.username || identifier,
+                displayName: user.displayName || user.username,
+                email: user.email
+            });
+        }
+
+        repo.getByUsername(identifier, function (err, userByUsername) {
+            if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
+            if (userByUsername) {
+                return callback(null, {
+                    id: userByUsername.id || userByUsername.username || identifier,
+                    username: userByUsername.username || identifier,
+                    displayName: userByUsername.displayName || userByUsername.username,
+                    email: userByUsername.email
+                });
+            }
+
+            callback(new UserError(UserError.NOT_FOUND));
+        });
     });
 }
 
@@ -148,7 +182,7 @@ function verify(username, password, callback) {
         bcrypt.compare(password, user.passwordHash, function (err, result) {
             if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
             if (!result) return callback(new UserError(UserError.NOT_AUTHORIZED));
-            callback(null);
+            callback(null, user);
         });
     });
 }
