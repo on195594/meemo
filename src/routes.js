@@ -368,12 +368,12 @@ function importThings(req, res, next) {
         }
     }
 
-    logic.importThings(req.user.id, tempFilePath, function (error) {
+    logic.importThings(req.user.id, tempFilePath, function (error, stats) {
         cleanupTemp();
 
-        if (error) return next(new HttpError(400, error));
+        if (error) return next(new HttpError(400, typeof error === 'string' ? error : (error.message || 'Import failed')));
 
-        next(new HttpSuccess(200, {}));
+        next(new HttpSuccess(200, stats || {}));
     });
 }
 
