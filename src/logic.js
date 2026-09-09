@@ -18,6 +18,7 @@ exports = module.exports = {
     facelift: facelift,
     cleanupTags: cleanupTags,
     importThings: importThings,
+    extractExternalContent: extractExternalContent,
 
     TYPE_IMAGE: 'image',
     TYPE_UNKNOWN: 'unknown'
@@ -30,12 +31,11 @@ var assert = require('assert'),
     path = require('path'),
     fs = require('fs'),
     mkdirp = require('mkdirp'),
-    url = require('url'),
     tags = require('./database/tags.js'),
     tar = require('tar-fs'),
     things = require('./database/things.js'),
     safe = require('safetydance'),
-    superagent = require('superagent');
+    ssrf = require('./ssrf.js');
 
 var PRETTY_URL_LENGTH = 40;
 
@@ -100,29 +100,7 @@ function extractTags(content) {
 
 function extractExternalContent(content, callback) {
     var urls = extractURLs(content);
-    var externalContent = [];
-
-    async.each(urls, function (url, callback) {
-        superagent.head(url).timeout(20000).end(function (error, result) {
-            var obj = { url: url, type: exports.TYPE_UNKNOWN };
-
-            if (error) {
-                debug('failed to fetch external content %s', url);
-            } else {
-                if (result.type.indexOf('image/') === 0) {
-                    obj = { url: url, type: exports.TYPE_IMAGE };
-                }
-
-                debug('external content type %s - %s', obj.type, obj.url);
-            }
-
-            externalContent.push(obj);
-
-            callback(null);
-        });
-    }, function () {
-        callback(null, externalContent);
-    });
+    ssrf.enrichUrls(urls, callback);
 }
 
 function facelift(userId, thing, callback) {
@@ -143,13 +121,15 @@ function facelift(userId, thing, callback) {
             if (obj.type === exports.TYPE_IMAGE) {
                 data = data.replace(new RegExp(escapeRegExp(obj.url), 'gmi'), '![' + obj.url + '](' + obj.url + ')');
             } else {
-                // make urls look prettier
-                var tmp = url.parse(obj.url);
-
                 var pretty = obj.url;
-                if (tmp.protocol) {
-                    pretty = obj.url.slice(tmp.protocol.length + 2);
-                    if (pretty.length > PRETTY_URL_LENGTH) pretty = pretty.slice(0, PRETTY_URL_LENGTH) + '...';
+                try {
+                    var tmp = new URL(obj.url);
+                    if (tmp.protocol) {
+                        pretty = obj.url.slice(tmp.protocol.length + 2);
+                        if (pretty.length > PRETTY_URL_LENGTH) pretty = pretty.slice(0, PRETTY_URL_LENGTH) + '...';
+                    }
+                } catch (e) {
+                    // Ignore URL parsing errors and keep obj.url
                 }
 
                 data = data.replace(new RegExp(escapeRegExp(obj.url), 'gmi'), '[' + pretty + '](' + obj.url + ')');
