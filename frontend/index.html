@@ -22,7 +22,6 @@
     <navigation-bar :active-view="mainView" :tags="tags" :profile="profile" :search="search" :settings="settings" :archived="archived" v-ref:navbar></navigation-bar>
 
     <modal-settings id="modalSettings"></modal-settings>
-    <modal-browser-extensions id="modalExtensions"></modal-browser-extensions>
     <modal-import id="modalImport"></modal-import>
     <modal-cheatsheet id="modalCheatSheet"></modal-cheatsheet>
 
@@ -76,8 +75,6 @@
       </div>
     </div>
 
-    <div id="guacamoly-settings-node" class="hide"></div>
-
     <script type="text/javascript" src="/3rdparty/jquery.min.js?<%= revision %>"></script>
     <script type="text/javascript" src="/3rdparty/js/bootstrap.min.js?<%= revision %>"></script>
     <script type="text/javascript" src="/3rdparty/js/vue.min.js?<%= revision %>"></script>
@@ -95,7 +92,6 @@
     <%- include('templates/navigation-bar.html') %>
     <%- include('templates/tag-sidebar.html') %>
     <%- include('templates/modal-settings.html') %>
-    <%- include('templates/modal-browser-extensions.html') %>
     <%- include('templates/modal-cheatsheet.html') %>
     <%- include('templates/modal-import.html') %>
     <%- include('templates/view-login.html') %>

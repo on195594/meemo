@@ -58,6 +58,9 @@ jobs:
             sleep 2
           done
 
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            'http://127.0.0.1:3000/api/profile?token=legacy-token')" = 401
+
           curl --fail --silent --show-error \
             -H 'Content-Type: application/json' \
             -d '{"username":"ci-user","password":"ci-password","email":"ci@example.invalid","displayName":"CI User"}' \

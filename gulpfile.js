@@ -7,7 +7,6 @@ var autoprefixer = require('gulp-autoprefixer'),
     gulp = require('gulp'),
     minifycss = require('gulp-cssnano'),
     rename = require('gulp-rename'),
-    run = require('gulp-run'),
     sass = require('gulp-sass')(require('sass')),
     sourcemaps = require('gulp-sourcemaps');
 
@@ -73,34 +72,11 @@ var build3rdParty = gulp.series(
     }
 );
 
-function buildImages() {
-    return gulp.src([
-        'logo.svg',
-        'frontend/img/*',
-    ]).pipe(gulp.dest('public/img/'));
-}
-
-gulp.task('chrome_extension', function () {
-    fs.rmSync('webextension-chrome.zip', { force: true });
-
-    return run('zip -r webextension-chrome.zip webextension/').exec();
-});
-
-gulp.task('firefox_extension', function () {
-    fs.rmSync('webextension-firefox.xpi', { force: true });
-
-    return run('zip -r ../webextension-firefox.xpi .', { cwd: process.cwd() + '/webextension' }).exec();
-});
-
 gulp.task('clean', async function () {
     fs.rmSync('public/', { recursive: true, force: true });
 });
 
-gulp.task('extensions', gulp.series('chrome_extension', 'firefox_extension', function extensions(done) {
-    done();
-}));
-
-gulp.task('default', gulp.series('clean', buildHtml, buildFavicon, buildImages, buildCss, buildJavascript, build3rdParty, function defaultTask(done) {
+gulp.task('default', gulp.series('clean', buildHtml, buildFavicon, buildCss, buildJavascript, build3rdParty, function defaultTask(done) {
     done();
 }));
 
@@ -116,12 +92,4 @@ function watchHtml() {
     return gulp.watch(['frontend/*.html', 'frontend/templates/*'], gulp.series('default'));
 }
 
-function watchImages() {
-    return gulp.watch('frontend/img/*', buildImages);
-}
-
-function watchExtensions() {
-    return gulp.watch('webextension/*', gulp.series('extensions'));
-}
-
-gulp.task('develop', gulp.series('default', gulp.parallel(watchCss, watchJavascript, watchHtml, watchImages, watchExtensions)));
+gulp.task('develop', gulp.series('default', gulp.parallel(watchCss, watchJavascript, watchHtml)));

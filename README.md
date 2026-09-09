@@ -1,106 +1,100 @@
 # Meemo
 
-Meemo is a personal manager for notes, ideas, links, bookmarks, and tasks. This repository is the canonical source for both application development and container builds.
+Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It uses username/password authentication, MongoDB for application data and sessions, and the local filesystem for accounts and attachments.
 
-## Authentication
+## Features
 
-The default Docker deployment uses local username/password authentication. No OIDC provider is required.
+- Markdown notes with tags and full-text search
+- Attachments, archive, sticky notes, and public sharing
+- Public feeds and RSS
+- JSON archive import and export
+- Local username/password accounts with bcrypt password hashes
+- Docker Compose deployment
 
-Users register through Meemo and credentials are stored as bcrypt password hashes in `/app/data/.users.json` inside the persistent `meemo_data` Docker volume. The development-only mock OIDC callback is not enabled in this mode, so local sessions cannot bypass password verification.
+## Quick start
 
-Cloudron OIDC remains supported when `CLOUDRON_OIDC_ISSUER`, `CLOUDRON_OIDC_CLIENT_ID`, and `CLOUDRON_OIDC_CLIENT_SECRET` are provided.
-
-For stable sessions across container restarts, set a strong `SESSION_SECRET`. If it is omitted, Meemo generates a random process-local secret and existing sessions are invalidated after restart.
-
-## Development
-
-Requirements:
-
-- Node.js 18 or newer
-- npm
-- Docker
-
-Install dependencies and build the frontend:
-
-```sh
-npm ci
-npm run build
-```
-
-Run the test suite:
-
-```sh
-npm test
-```
-
-The test script starts a temporary MongoDB container.
-
-## Local development
-
-Build the frontend once, then start the application and its MongoDB container:
-
-```sh
-npm ci
-npm run build
-./localdevelopment
-```
-
-## Docker deployment
-
-Build the current checkout and start Meemo with MongoDB:
+Requirements: Docker with Docker Compose.
 
 ```sh
 export SESSION_SECRET="$(openssl rand -hex 32)"
 docker compose up --build -d
 ```
 
-Meemo is available at <http://localhost:3000>.
+Open <http://localhost:3000>, register an account, and sign in. View logs with `docker compose logs -f` and stop the stack with `docker compose down`.
 
-The Compose stack uses named volumes:
+> Registration is currently public. Put Meemo behind an access-controlled network or reverse proxy if account creation must be restricted.
 
-- `meemo_data` for the local user database and attachments
-- `mongodb_data` for MongoDB data
+## Authentication and storage
 
-No host-side `touch`, `mkdir`, or `chown` preparation is required.
+Meemo supports username/password authentication only. Passwords are stored as bcrypt hashes in the file configured by `USERS_FILE`; successful logins create server-side sessions stored in MongoDB.
 
-To use a public hostname or reverse proxy, set `CLOUDRON_APP_ORIGIN` to the externally visible origin before starting the stack.
+The Compose stack uses two named volumes:
 
-The Dockerfile builds frontend assets and runtime dependencies directly from this repository. It does not clone another Meemo repository or release during the build.
+- `meemo_data`: accounts and attachments
+- `mongodb_data`: notes, tags, settings, and sessions
 
-GitHub Actions validate Docker builds locally and do not push images to Docker Hub or another remote registry.
+Set a stable, strong `SESSION_SECRET`. When it is omitted, Meemo generates a process-local secret and existing sessions become invalid after every restart.
 
-### Environment variables
+Running `docker compose down -v` permanently deletes both volumes and all Meemo data.
 
-| Variable | Container default | Purpose |
-| --- | --- | --- |
-| `PORT` | `3000` | HTTP listen port |
-| `BIND_ADDRESS` | `0.0.0.0` | HTTP listen address |
-| `CLOUDRON_MONGODB_URL` | `mongodb://mongodb:27017/meemo` | MongoDB connection URL |
-| `CLOUDRON_APP_ORIGIN` | `http://localhost:3000` | Public application origin and OIDC callback base URL |
-| `ATTACHMENT_DIR` | `/app/data/storage` | Persistent attachment directory |
-| `CLOUDRON_LOCAL_AUTH_FILE` | `/app/data/.users.json` | Local username/password data file |
-| `SESSION_SECRET` | generated when unset | Express/OIDC session signing secret |
-| `CLOUDRON_OIDC_ISSUER` | unset | Optional Cloudron OIDC issuer; unset uses local username/password authentication |
-| `CLOUDRON_OIDC_CLIENT_ID` | unset | Optional Cloudron OIDC client ID |
-| `CLOUDRON_OIDC_CLIENT_SECRET` | unset | Optional Cloudron OIDC client secret |
+## Configuration
 
-`CLOUDRON_USERS_FILEPATH` remains accepted as a legacy fallback when `CLOUDRON_LOCAL_AUTH_FILE` is not set.
+| Variable | Application default | Compose value | Purpose |
+| --- | --- | --- | --- |
+| `PORT` | `3000` | `3000` | Container HTTP port |
+| `BIND_ADDRESS` | `0.0.0.0` | `0.0.0.0` | HTTP listen address |
+| `MONGODB_URL` | `mongodb://127.0.0.1:27017/meemo` | `mongodb://mongodb:27017/meemo` | MongoDB connection URL |
+| `APP_ORIGIN` | `http://localhost` | `http://localhost:3000` | Public origin used in RSS links |
+| `ATTACHMENT_DIR` | `./storage` | `/app/data/storage` | Attachment directory |
+| `USERS_FILE` | `./.users.json` | `/app/data/.users.json` | Account data file |
+| `SESSION_SECRET` | Random on startup | Value of host `SESSION_SECRET` | Session signing secret |
+| `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |
+
+For a public hostname or reverse proxy:
+
+```sh
+export APP_ORIGIN="https://meemo.example.com"
+export SESSION_SECRET="$(openssl rand -hex 32)"
+docker compose up --build -d
+```
+
+## Development
+
+Requirements: Node.js 18 or newer, npm, and Docker.
+
+```sh
+npm ci
+npm run build
+npm test
+./localdevelopment
+```
+
+`npm run build` compiles `frontend/` into the ignored `public/` directory. `npm test` starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application.
+
+To run only the Node.js process, provide MongoDB separately and use `npm start`.
 
 ## Project structure
 
 | Path | Contents |
 | --- | --- |
-| `app.js` | Express application entry point, sessions, local auth/OIDC integration, and MongoDB startup |
-| `src/` | Server routes, application logic, persistence, users, and tests |
-| `frontend/` | Browser UI source compiled by Gulp into `public/` |
-| `webextension/` | Browser-extension source |
-| `gulpfile.js` | Frontend and extension build tasks |
-| `Dockerfile`, `docker-compose.yml` | Container build and local deployment |
-| `.github/` | GitHub Actions and repository governance files |
+| `app.js` | Express entry point, sessions, authentication, routes, and startup |
+| `src/routes.js` | HTTP handlers and authorization |
+| `src/logic.js` | Application behavior |
+| `src/database/` | MongoDB persistence |
+| `src/users.js` | Account and password handling |
+| `src/test/` | Mocha tests |
+| `frontend/` | Browser source compiled into `public/` |
+| `docs/` | Architecture and maintenance documentation |
+| `Dockerfile`, `docker-compose.yml` | Container build and deployment |
+| `.github/` | Continuous integration and repository configuration |
 
-## Repository history
+Do not commit generated `public/`, `node_modules/`, account files, attachments, or database data.
 
-The application source and its commit history were developed in `on195594/meemoo`. They were merged into `on195594/meemo` with an unrelated-histories merge so both repositories' commits remain reachable. `on195594/meemo` is the canonical repository for ongoing maintenance and development.
+## Contributing and security
+
+- [Contribution guide](CONTRIBUTING.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security policy](SECURITY.md)
 
 ## License
 

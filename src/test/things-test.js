@@ -23,69 +23,69 @@ describe('Things', function () {
         after(cleanup);
 
         it('succeeds with one url', function () {
-            var test = 'Some content with a url http://meemo.minimal-space.de/';
+            var test = 'Some content with a url https://example.com/';
 
             var urls = logic.extractURLs(test);
             expect(urls.length).to.equal(1);
-            expect(urls[0]).to.equal('http://meemo.minimal-space.de/');
+            expect(urls[0]).to.equal('https://example.com/');
         });
 
         it('succeeds with multiple urls on one line', function () {
-            var test = 'Some content with a url http://meemo.minimal-space.de/ and http://meemo.minimal-space.de/timestwo with even more http://meemo.minimal-space.de/cheerio.html bar';
+            var test = 'Some content with a url https://example.com/ and https://example.com/timestwo with even more https://example.com/cheerio.html bar';
 
             var urls = logic.extractURLs(test);
             expect(urls.length).to.equal(3);
-            expect(urls[0]).to.equal('http://meemo.minimal-space.de/');
-            expect(urls[1]).to.equal('http://meemo.minimal-space.de/timestwo');
-            expect(urls[2]).to.equal('http://meemo.minimal-space.de/cheerio.html');
+            expect(urls[0]).to.equal('https://example.com/');
+            expect(urls[1]).to.equal('https://example.com/timestwo');
+            expect(urls[2]).to.equal('https://example.com/cheerio.html');
         });
 
         it('succeeds with multiple urls on multiple lines', function () {
-            var test = 'Some content with a url http://meemo.minimal-space.de/ and http://meemo.minimal-space.de/timestwo with \n even more http://meemo.minimal-space.de/cheerio.html bar';
+            var test = 'Some content with a url https://example.com/ and https://example.com/timestwo with \n even more https://example.com/cheerio.html bar';
 
             var urls = logic.extractURLs(test);
             expect(urls.length).to.equal(3);
-            expect(urls[0]).to.equal('http://meemo.minimal-space.de/');
-            expect(urls[1]).to.equal('http://meemo.minimal-space.de/timestwo');
-            expect(urls[2]).to.equal('http://meemo.minimal-space.de/cheerio.html');
+            expect(urls[0]).to.equal('https://example.com/');
+            expect(urls[1]).to.equal('https://example.com/timestwo');
+            expect(urls[2]).to.equal('https://example.com/cheerio.html');
         });
 
         it('filters out duplicate links', function () {
-            var test = 'Some content with a url http://meemo.minimal-space.de/cheerio.html and http://meemo.minimal-space.de/timestwo with \n even more http://meemo.minimal-space.de/cheerio.html bar';
+            var test = 'Some content with a url https://example.com/cheerio.html and https://example.com/timestwo with \n even more https://example.com/cheerio.html bar';
 
             var urls = logic.extractURLs(test);
             expect(urls.length).to.equal(2);
-            expect(urls[0]).to.equal('http://meemo.minimal-space.de/cheerio.html');
-            expect(urls[1]).to.equal('http://meemo.minimal-space.de/timestwo');
+            expect(urls[0]).to.equal('https://example.com/cheerio.html');
+            expect(urls[1]).to.equal('https://example.com/timestwo');
         });
 
         it('succeeds with multiple urls and #', function () {
-            var test = 'Some content with a url http://meemo.minimal-space.de/#/ and http://meemo.minimal-space.de/time#stwo with even more http://meemo.minimal-space.de/cheerio.html#11 http://meemo.minimal-space.de/cheerio.html#11/give_me_more bar';
+            var test = 'Some content with a url https://example.com/#/ and https://example.com/time#stwo with even more https://example.com/cheerio.html#11 https://example.com/cheerio.html#11/give_me_more bar';
 
             var urls = logic.extractURLs(test);
             expect(urls.length).to.equal(4);
-            expect(urls[0]).to.equal('http://meemo.minimal-space.de/#/');
-            expect(urls[1]).to.equal('http://meemo.minimal-space.de/time#stwo');
-            expect(urls[2]).to.equal('http://meemo.minimal-space.de/cheerio.html#11');
-            expect(urls[3]).to.equal('http://meemo.minimal-space.de/cheerio.html#11/give_me_more');
+            expect(urls[0]).to.equal('https://example.com/#/');
+            expect(urls[1]).to.equal('https://example.com/time#stwo');
+            expect(urls[2]).to.equal('https://example.com/cheerio.html#11');
+            expect(urls[3]).to.equal('https://example.com/cheerio.html#11/give_me_more');
         });
 
         it('does not extract urls from inline code blocks', function () {
-            var test = 'Some code `content with a url http://meemo.minimal-space.de/` end';
+            var test = 'Some code `content with a url https://example.com/` end';
 
             var urls = logic.extractURLs(test);
             expect(urls.length).to.equal(0);
         });
 
         it('does not extract urls from code blocks', function () {
-            var test = 'Some code \n ```content with a url http://meemo.minimal-space.de/``` \n end';
+            var test = 'Some code \n ```content with a url https://example.com/``` \n end';
 
             var urls = logic.extractURLs(test);
             expect(urls.length).to.equal(0);
         });
 
         it('does not extract markdown links', function () {
-            var test = 'Test http://meemo.minimal-space.de/#/ spacer [Emphasis](#Emphasis) foobar [some link](http://meemo.minimal-space.de/#/)';
+            var test = 'Test https://example.com/#/ spacer [Emphasis](#Emphasis) foobar [some link](https://example.com/#/)';
 
             var urls = logic.extractURLs(test);
             expect(urls.length).to.equal(1);
@@ -153,7 +153,7 @@ describe('Things', function () {
         });
 
         it('ignores # in urls', function () {
-            var test = 'Hello #tag there! more http://meemo.minimal-space.de/#11/52.5194/13.3456 tags';
+            var test = 'Hello #tag there! more https://example.com/#11/52.5194/13.3456 tags';
 
             var tags = logic.extractTags(test);
             expect(tags.length).to.equal(1);
@@ -161,7 +161,7 @@ describe('Things', function () {
         });
 
         it('extract tags from urls ending with a tag in multiple urls', function () {
-            var test = 'Hello #tag there! more http://meemo.minimal-space.de/#11/52.5194/13.3456 tags foo  http://meemo.minimal-space.de/#11/52.5194/13.3456#bar';
+            var test = 'Hello #tag there! more https://example.com/#11/52.5194/13.3456 tags foo  https://example.com/#11/52.5194/13.3456#bar';
 
             var tags = logic.extractTags(test);
             expect(tags.length).to.equal(2);

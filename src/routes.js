@@ -37,7 +37,6 @@ var assert = require('assert'),
     checksum = require('checksum'),
     config = require('./config.js'),
     fs = require('fs'),
-    path = require('path'),
     logic = require('./logic.js'),
     mkdirp = require('mkdirp'),
     path = require('path'),
@@ -45,10 +44,8 @@ var assert = require('assert'),
     settings = require('./database/settings.js'),
     tags = require('./database/tags.js'),
     tar = require('tar-fs'),
-    tokens = require('./database/tokens.js'),
     users = require('./users.js'),
     UserError = users.UserError,
-    crypto = require('crypto'),
     HttpError = require('connect-lastmile').HttpError,
     HttpSuccess = require('connect-lastmile').HttpSuccess;
 
@@ -56,56 +53,14 @@ function healthcheck(req, res, next) {
     next(new HttpSuccess(200, {}));
 }
 
-async function auth(req, res, next) {
-    if (!req.session.username && !req.oidc.isAuthenticated() && !req.query.token) return next(new HttpError(401, 'Unauthorized'));
+function auth(req, res, next) {
+    if (!req.session.username) return next(new HttpError(401, 'Unauthorized'));
 
-    if (req.query.token) {
-        tokens.get(req.query.token, function (error, result) {
-            if (error) return next(new HttpError(401, 'invalid credentials'));
-
-            // make old versions relogin and invalidate token
-            if (!result.userId) {
-                next(new HttpError(401, 'old token'));
-
-                return tokens.del(req.query.token, function () {});
-            }
-
-            req.token = req.query.token;
-            req.user = {
-                id: result.userId,
-                username: result.userId,
-                email: 'unset for tokens',
-                displayName: 'unset for tokens'
-            };
-
-            next();
-        });
-    } else if (req.oidc.isAuthenticated()) {
-        let user;
-        try {
-            user = {
-                id: req.oidc.user.sub, // maybe get rid of this later
-                username: req.oidc.user.sub,
-                email: req.oidc.user.email,
-                displayName: req.oidc.user.name
-            };
-            // keep it fresh
-            await users.upsert(user.username, user.email, user.displayName);
-        } catch (e) {
-            console.error('Failed to upsert user', req.oidc.user, e);
-            return next(new HttpError(500, 'internal error'));
-        }
-
-        req.user = user;
-
-        next();
-    } else {
-        req.user = {
-            id: req.session.username,
-            username: req.session.username
-        };
-        next();
-    }
+    req.user = {
+        id: req.session.username,
+        username: req.session.username
+    };
+    next();
 }
 
 function login(req, res, next) {
@@ -311,7 +266,7 @@ function fileAdd(req, res, next) {
 }
 
 function fileGet(req, res, next) {
-    var authenticatedUserId = req.session.username || (req.oidc.isAuthenticated() ? req.oidc.user.sub : null);
+    var authenticatedUserId = req.session.username;
 
     if (authenticatedUserId && authenticatedUserId === req.params.userId) {
         return res.sendFile(req.params.identifier, { root: path.join(config.attachmentDir, authenticatedUserId) });
@@ -399,7 +354,7 @@ function publicGetRSS(req, res, next) {
             logic.getAllPublic(req.params.userId, {}, 0, 50, function (error, result) {
                 if (error) return next(new HttpError(500, error));
 
-                var webServer = process.env.CLOUDRON_APP_ORIGIN || 'http://localhost';
+                var webServer = process.env.APP_ORIGIN || 'http://localhost';
 
                 var feed = new rss({
                     title: config.title,

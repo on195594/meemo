@@ -209,13 +209,6 @@ var vue = new Vue({
                         window.setTimeout(function () { $('#searchBarInput').focus(); }, 0);
 
                         hashChangeHandler();
-
-                        // add global object for browser extensions
-                        document.getElementById('guacamoly-settings-node').textContent = JSON.stringify({
-                            origin: Core.origin(),
-                            token: Core.token(),
-                            title: settings.title
-                        });
                     });
                 });
             });

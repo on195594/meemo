@@ -6,12 +6,7 @@ require('supererror')({ splatchError: true });
 
 const PORT = process.env.VITE_DEV_PORT || process.env.PORT || 3000;
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
-const APP_ORIGIN = process.env.CLOUDRON_APP_ORIGIN || `http://localhost:${PORT}`;
 const SESSION_SECRET = process.env.SESSION_SECRET || require('crypto').randomBytes(32).toString('hex');
-
-if (!process.env.CLOUDRON_APP_ORIGIN) {
-    console.log(`No CLOUDRON_APP_ORIGIN env var set. Falling back to ${APP_ORIGIN}`);
-}
 
 if (!process.env.SESSION_SECRET) {
     console.warn('SESSION_SECRET is not set. A random secret was generated for this process; existing sessions will be invalidated after restart.');
@@ -24,7 +19,6 @@ var express = require('express'),
     session = require('express-session'),
     MongoStore = require('connect-mongo'),
     multer  = require('multer'),
-    oidc = require('express-openid-connect'),
     routes = require('./src/routes.js'),
     lastmile = require('connect-lastmile'),
     logic = require('./src/logic.js'),
@@ -98,45 +92,6 @@ app.use(session({
     cookie: { sameSite: 'strict' },
     store: MongoStore.create({ mongoUrl: config.databaseUrl })
 }));
-
-if (process.env.CLOUDRON_OIDC_ISSUER) {
-    console.log('Using Cloudron OpenID integration');
-    app.use(oidc.auth({
-        issuerBaseURL: process.env.CLOUDRON_OIDC_ISSUER,
-        baseURL: APP_ORIGIN,
-        clientID: process.env.CLOUDRON_OIDC_CLIENT_ID,
-        clientSecret: process.env.CLOUDRON_OIDC_CLIENT_SECRET,
-        secret: SESSION_SECRET,
-        authorizationParams: {
-            response_type: 'code',
-            scope: 'openid profile email'
-        },
-        authRequired: false,
-        routes: {
-            callback: '/api/callback',
-            login: false,
-            logout: '/api/logout'
-        },
-        session: {
-            name: 'MeemoSession',
-            rolling: true,
-            rollingDuration: 24 * 60 * 60 * 4
-        }
-    }));
-} else {
-    console.log('CLOUDRON_OIDC_ISSUER is not set. Using local username/password authentication.');
-
-    app.use((req, res, next) => {
-        req.oidc = {
-            user: {},
-            isAuthenticated() {
-                return false;
-            }
-        };
-
-        next();
-    });
-}
 
 app.use(router);
 app.use(lastmile());

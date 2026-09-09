@@ -1,19 +1,19 @@
 ARG ALPINE_VERSION=3.20
 
 FROM alpine:${ALPINE_VERSION} AS builder
-ARG VERSION=1.18.0
+ARG VERSION=dev
 RUN apk add --no-cache nodejs npm python3 make g++
 WORKDIR /app/code
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY frontend/ frontend/
-COPY gulpfile.js logo.svg ./
+COPY gulpfile.js ./
 RUN npm run build -- --revision "${VERSION}" && npm prune --omit=dev
 
 FROM alpine:${ALPINE_VERSION}
 ARG CREATED
 ARG COMMIT
-ARG VERSION=1.18.0
+ARG VERSION=dev
 LABEL org.opencontainers.image.authors="on195594" \
       org.opencontainers.image.created="${CREATED}" \
       org.opencontainers.image.version="${VERSION}" \
@@ -31,14 +31,14 @@ WORKDIR /app/code
 COPY --from=builder --chown=1000:1000 /app/code/node_modules/ node_modules/
 COPY --from=builder --chown=1000:1000 /app/code/public/ public/
 COPY --chown=1000:1000 src/ src/
-COPY --chown=1000:1000 app.js start.sh things.json ./
+COPY --chown=1000:1000 app.js start.sh ./
 
 ENV PORT=3000 \
     BIND_ADDRESS=0.0.0.0 \
-    CLOUDRON_APP_ORIGIN=http://localhost:3000 \
-    CLOUDRON_MONGODB_URL=mongodb://mongodb:27017/meemo \
+    APP_ORIGIN=http://localhost:3000 \
+    MONGODB_URL=mongodb://mongodb:27017/meemo \
     ATTACHMENT_DIR=/app/data/storage \
-    CLOUDRON_LOCAL_AUTH_FILE=/app/data/.users.json \
+    USERS_FILE=/app/data/.users.json \
     NODE_ENV=production
 
 EXPOSE 3000

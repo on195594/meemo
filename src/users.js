@@ -5,7 +5,6 @@
 exports = module.exports = {
     UserError,
 
-    upsert,
     profile,
     list,
     create,
@@ -33,24 +32,7 @@ UserError.NOT_FOUND = 'not found';
 UserError.NOT_AUTHORIZED = 'not authorized';
 UserError.INTERNAL_ERROR = 'internal error';
 
-const USERS_FILEPATH = path.resolve(process.env.CLOUDRON_LOCAL_AUTH_FILE || process.env.CLOUDRON_USERS_FILEPATH || '.users.json');
-
-function upsert(username, email, displayName) {
-    assert.strictEqual(typeof username, 'string');
-    assert.strictEqual(typeof email, 'string');
-    assert.strictEqual(typeof displayName, 'string');
-
-    const users = safe.JSON.parse(safe.fs.readFileSync(USERS_FILEPATH)) || {};
-    const existingUser = users[username];
-    users[username] = {
-        username,
-        displayName,
-        email,
-        passwordHash: existingUser ? existingUser.passwordHash : undefined
-    };
-
-    safe.fs.writeFileSync(USERS_FILEPATH, JSON.stringify(users, null, 4));
-}
+const USERS_FILEPATH = path.resolve(process.env.USERS_FILE || '.users.json');
 
 function profile(userId, full, callback) {
     assert.strictEqual(typeof userId, 'string');

@@ -23,21 +23,20 @@
               <ul class="dropdown-menu settings-menu">
                   <li><a href="#modalSettings" data-toggle="modal">Settings</a></li>
                   <li><a href="/public/{{ profile.username }}" target="_blank">Public Feed</a></li>
-                  <li><a href="#modalExtensions" data-toggle="modal">Browser Extensions</a></li>
                   <li><a href="#modalCheatSheet" data-toggle="modal">Cheatsheet</a></li>
                   <li><a href="/api/rss/{{ profile.username }}" target="_blank">RSS Feed</a></li>
                   <li class="divider"></li>
                   <li><a href="#" data-toggle="modal" data-target="#modalImport">Import</a></li>
                   <li><a href="#" @click.prevent="exportThings()">Export</a></li>
                   <li class="divider"></li>
-                  <li><a href="https://meemo.minimal-space.de" target="_blank">About</a></li>
+                  <li><a href="https://github.com/on195594/meemo" target="_blank">About</a></li>
                   <li><a href="#" @click.prevent="logout()">Logout</a></li>
                 </ul>
             </div>
           </div>
           <div v-else>
             <a href="" class="btn btn-default">Meemo</a>
-            <a href="https://meemo.minimal-space.de" target="_blank" class="btn btn-default pull-right">About</a>
+            <a href="https://github.com/on195594/meemo" target="_blank" class="btn btn-default pull-right">About</a>
           </div>
         </div>
       </div>

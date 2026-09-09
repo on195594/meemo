@@ -8,7 +8,7 @@
 /* global afterEach:false */
 
 var usersFilePath = '/tmp/meemo-users-test-' + process.pid + '.json';
-process.env.CLOUDRON_LOCAL_AUTH_FILE = usersFilePath;
+process.env.USERS_FILE = usersFilePath;
 
 var expect = require('expect.js'),
     fs = require('fs'),

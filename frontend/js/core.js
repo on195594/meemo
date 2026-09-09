@@ -2,7 +2,6 @@
 'use strict';
 
 var g_server = location.origin;
-var g_token = localStorage.token || '';
 
 function guid() {
     function s4() {
@@ -22,14 +21,6 @@ function errorWrapper(callback) {
 
 function url(path) {
     return g_server + path;
-}
-
-function origin() {
-    return g_server;
-}
-
-function token() {
-    return g_token;
 }
 
 function Thing(id, createdAt, modifiedAt, tags, content, richContent, attachments, isPublic, isArchived, isSticky) {
@@ -376,8 +367,6 @@ window.Guacamoly.Core = {
     onAuthFailure: function () {},
     onLogout: function () {},
     url: url,
-    origin: origin,
-    token: token,
     Thing: Thing,
     session: new SessionApi(),
     settings: new SettingsApi(),

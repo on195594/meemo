@@ -1,10 +1,12 @@
 {
   "name": "meemo-app",
   "version": "0.0.0",
+  "private": true,
   "description": "A personal ideas, notes or links manager",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
     "build": "gulp",
+    "start": "node app.js",
     "test": "./runTests"
   },
   "repository": {
@@ -13,6 +15,9 @@
   },
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
   "readme": "README.md",
   "dependencies": {
     "async": "^3.2.5",
@@ -26,7 +31,6 @@
     "cors": "^2.8.5",
     "debug": "^4.3.4",
     "express": "^4.18.3",
-    "express-openid-connect": "^2.17.1",
     "express-session": "^1.18.0",
     "markdown-it": "^13.0.1",
     "markdown-it-checkbox": "^1.1.0",
@@ -51,7 +55,6 @@
     "gulp-cssnano": "^2.1.3",
     "gulp-ejs": "^5.1.0",
     "gulp-rename": "^2.0.0",
-    "gulp-run": "^1.7.1",
     "gulp-sass": "^5.1.0",
     "gulp-sourcemaps": "^3.0.0",
     "jquery": "^3.7.1",

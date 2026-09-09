@@ -3,10 +3,10 @@
 set -eu
 
 CONTAINER_NAME="mongo-server-meemo-test"
-USERS_FILE="/tmp/meemo-users-test-$$.json"
+USERS_FILE_PATH="/tmp/meemo-users-test-$$.json"
 
 cleanup() {
-    rm -f "${USERS_FILE}"
+    rm -f "${USERS_FILE_PATH}"
     docker rm --force "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -22,7 +22,7 @@ while ! docker exec "${CONTAINER_NAME}" mongo --quiet --eval 'db.adminCommand("p
     sleep 1
 done
 
-export CLOUDRON_MONGODB_URL="mongodb://${MONGODB_IP}:27017/meemo"
-export CLOUDRON_LOCAL_AUTH_FILE="${USERS_FILE}"
+export MONGODB_URL="mongodb://${MONGODB_IP}:27017/meemo"
+export USERS_FILE="${USERS_FILE_PATH}"
 
 ./node_modules/.bin/mocha --exit src/test/*-test.js

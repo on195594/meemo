@@ -6,9 +6,9 @@ services:
     volumes:
       - meemo_data:/app/data
     environment:
-      CLOUDRON_MONGODB_URL: mongodb://mongodb:27017/meemo
-      CLOUDRON_APP_ORIGIN: ${CLOUDRON_APP_ORIGIN:-http://localhost:3000}
-      CLOUDRON_LOCAL_AUTH_FILE: /app/data/.users.json
+      MONGODB_URL: mongodb://mongodb:27017/meemo
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+      USERS_FILE: /app/data/.users.json
       ATTACHMENT_DIR: /app/data/storage
       SESSION_SECRET: ${SESSION_SECRET:-}
     ports:

@@ -6,5 +6,3 @@ data/
 database/
 users.json
 .users.json
-webextension-chrome.zip
-webextension-firefox.xpi

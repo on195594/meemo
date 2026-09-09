@@ -11,6 +11,3 @@ database/
 users.json
 .users.json
 src/test/
-screenshots/
-webextension-chrome.zip
-webextension-firefox.xpi
