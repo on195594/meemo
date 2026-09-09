@@ -10,13 +10,20 @@ exports = module.exports = {
     count,
     create,
     verify,
+
+    // Repository access
+    UserRepository,
+    LegacyFileUserRepository,
+    getRepository,
+    setRepository,
+    getUsersFilePath
 };
 
 var assert = require('assert'),
-    path = require('path'),
-    safe = require('safetydance'),
     util = require('util'),
-    bcrypt = require('bcrypt');
+    bcrypt = require('bcrypt'),
+    UserRepository = require('./database/user-repository.js'),
+    LegacyFileUserRepository = require('./database/users-file.js');
 
 function UserError(code, messageOrError) {
     assert.strictEqual(typeof code, 'string');
@@ -33,8 +40,22 @@ UserError.NOT_FOUND = 'not found';
 UserError.NOT_AUTHORIZED = 'not authorized';
 UserError.INTERNAL_ERROR = 'internal error';
 
+var g_repository = new LegacyFileUserRepository();
+
+function getRepository() {
+    return g_repository;
+}
+
+function setRepository(repo) {
+    assert(repo, 'Repository must be defined');
+    g_repository = repo;
+}
+
 function getUsersFilePath() {
-    return path.resolve(process.env.USERS_FILE || '.users.json');
+    if (g_repository && typeof g_repository.getFilePath === 'function') {
+        return g_repository.getFilePath();
+    }
+    return null;
 }
 
 function profile(userId, full, callback) {
@@ -42,18 +63,19 @@ function profile(userId, full, callback) {
     assert.strictEqual(typeof full, 'boolean');
     assert.strictEqual(typeof callback, 'function');
 
-    const users = safe.JSON.parse(safe.fs.readFileSync(getUsersFilePath()));
-    if (!users) return callback(new UserError(UserError.NOT_FOUND));
-    if (!users[userId]) return callback(new UserError(UserError.NOT_FOUND));
+    g_repository.get(userId, function (err, user) {
+        if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
+        if (!user) return callback(new UserError(UserError.NOT_FOUND));
 
-    const result = {
-        username: users[userId].username,
-        displayName: users[userId].displayName,
-        email: users[userId].email,
-        passwordHash: full ? users[userId].passwordHash : undefined
-    };
+        var result = {
+            username: user.username,
+            displayName: user.displayName,
+            email: user.email,
+            passwordHash: full ? user.passwordHash : undefined
+        };
 
-    callback(null, result);
+        callback(null, result);
+    });
 }
 
 function create(username, email, displayName, password, callback) {
@@ -63,21 +85,26 @@ function create(username, email, displayName, password, callback) {
     assert.strictEqual(typeof password, 'string');
     assert.strictEqual(typeof callback, 'function');
 
-    const users = safe.JSON.parse(safe.fs.readFileSync(getUsersFilePath())) || {};
-    if (users[username]) return callback(new UserError('user exists'));
-
-    bcrypt.hash(password, 10, function(err, hash) {
+    g_repository.getByUsername(username, function (err, existing) {
         if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
+        if (existing) return callback(new UserError('user exists'));
 
-        users[username] = {
-            username,
-            displayName,
-            email,
-            passwordHash: hash
-        };
+        bcrypt.hash(password, 10, function (err, hash) {
+            if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
 
-        safe.fs.writeFileSync(getUsersFilePath(), JSON.stringify(users, null, 4));
-        callback(null);
+            var userData = {
+                username: username,
+                displayName: displayName,
+                email: email,
+                passwordHash: hash
+            };
+
+            g_repository.create(userData, function (err) {
+                if (err && err.message === 'user exists') return callback(new UserError('user exists'));
+                if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
+                callback(null);
+            });
+        });
     });
 }
 
@@ -86,34 +113,40 @@ function verify(username, password, callback) {
     assert.strictEqual(typeof password, 'string');
     assert.strictEqual(typeof callback, 'function');
 
-    const users = safe.JSON.parse(safe.fs.readFileSync(getUsersFilePath()));
-    if (!users) return callback(new UserError(UserError.NOT_FOUND));
-    if (!users[username]) return callback(new UserError(UserError.NOT_FOUND));
-
-    bcrypt.compare(password, users[username].passwordHash, function(err, result) {
+    g_repository.getByUsername(username, function (err, user) {
         if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
-        if (!result) return callback(new UserError(UserError.NOT_AUTHORIZED));
-        callback(null);
+        if (!user) return callback(new UserError(UserError.NOT_FOUND));
+
+        bcrypt.compare(password, user.passwordHash, function (err, result) {
+            if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
+            if (!result) return callback(new UserError(UserError.NOT_AUTHORIZED));
+            callback(null);
+        });
     });
 }
 
 function list(callback) {
-    var users = safe.JSON.parse(safe.fs.readFileSync(getUsersFilePath()));
-    if (!users) return callback(null, []);
+    assert.strictEqual(typeof callback, 'function');
 
-    var result = Object.keys(users).map(function (u) {
-        return {
-            username: users[u].username,
-            displayName: users[u].displayName
-        };
+    g_repository.list(function (err, userList) {
+        if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
+
+        var result = (userList || []).map(function (u) {
+            return {
+                username: u.username,
+                displayName: u.displayName
+            };
+        });
+
+        callback(null, result);
     });
-
-    callback(null, result);
 }
 
 function count(callback) {
-    list(function (error, users) {
-        if (error) return callback(error);
-        callback(null, users.length);
+    assert.strictEqual(typeof callback, 'function');
+
+    g_repository.count(function (err, num) {
+        if (err) return callback(new UserError(UserError.INTERNAL_ERROR, err));
+        callback(null, num);
     });
 }
