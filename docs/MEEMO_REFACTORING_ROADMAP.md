@@ -535,10 +535,10 @@ settings:
 
 ## 2.7 Gate G2 验收
 
-- [ ] 新用户完全存储在 MongoDB。
-- [ ] 业务层不直接读取 `.users.json`。
-- [ ] Session 使用稳定 userId。
-- [ ] 新附件路径不包含 username。
+- [x] 新用户完全存储在 MongoDB。
+- [x] 业务层不直接读取 `.users.json`。
+- [x] Session 使用稳定 userId。
+- [x] 新附件路径不包含 username。
 - [ ] Things、Tags、Settings 全部使用统一集合 + ownerId。
 - [ ] 用户与业务数据 migration 均支持 dry-run/apply/verify。
 - [ ] 迁移失败可回滚到旧数据源。
