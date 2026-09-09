@@ -19,6 +19,7 @@ var express = require('express'),
     logic = require('./src/logic.js'),
     MongoClient = require('mongodb').MongoClient,
     morgan = require('morgan'),
+    os = require('os'),
     path = require('path'),
     serveStatic = require('serve-static');
 
@@ -39,9 +40,38 @@ function createApp(options) {
     var app = express();
     var router = new express.Router();
 
-    var storage = multer.diskStorage({});
-    var diskUpload = multer({ storage: storage }).any();
-    var memoryUpload = multer({ storage: multer.memoryStorage({}) }).any();
+    var maxAttachmentSize = parseInt(process.env.MAX_ATTACHMENT_SIZE, 10) || (10 * 1024 * 1024);
+    var maxImportSize = parseInt(process.env.MAX_IMPORT_SIZE, 10) || (50 * 1024 * 1024);
+
+    function createUploadMiddleware(uploadInstance) {
+        return function (req, res, next) {
+            uploadInstance(req, res, function (err) {
+                if (err) {
+                    if (err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_FILE_COUNT') {
+                        return next(new lastmile.HttpError(413, 'File size or count limit exceeded'));
+                    }
+                    return next(new lastmile.HttpError(400, err.message || 'Upload failed'));
+                }
+                next();
+            });
+        };
+    }
+
+    var memoryUpload = createUploadMiddleware(multer({
+        storage: multer.memoryStorage(),
+        limits: {
+            fileSize: maxAttachmentSize,
+            files: 1
+        }
+    }).any());
+
+    var diskUpload = createUploadMiddleware(multer({
+        dest: os.tmpdir(),
+        limits: {
+            fileSize: maxImportSize,
+            files: 1
+        }
+    }).any());
 
     router.del = router.delete;
 
@@ -83,7 +113,7 @@ function createApp(options) {
 
     // 404 for unhandled API endpoints
     router.all('/api/*', function (req, res, next) {
-        next(new routes.HttpError(404, 'not found'));
+        next(new lastmile.HttpError(404, 'not found'));
     });
 
     // page overlay for pretty public streams
