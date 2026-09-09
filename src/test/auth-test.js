@@ -240,4 +240,106 @@ describe('Authentication & Registration Policy (RF-101)', function () {
                 });
         });
     });
+
+    describe('POST /api/login & session hardening (RF-102)', function () {
+        beforeEach(function (done) {
+            delete process.env.LOGIN_RATE_LIMIT_MAX;
+            delete process.env.LOGIN_RATE_LIMIT_WINDOW_MS;
+            resetUserFile();
+            request(app)
+                .post('/api/register')
+                .send({
+                    username: 'validuser',
+                    password: 'password123',
+                    email: 'user@example.com',
+                    displayName: 'Valid User'
+                })
+                .expect(201, done);
+        });
+
+        it('returns 401 with unified message for nonexistent user without leaking 404', function (done) {
+            request(app)
+                .post('/api/login')
+                .send({ username: 'nonexistent', password: 'password123' })
+                .expect(401)
+                .end(function (err, res) {
+                    expect(err).to.be(null);
+                    expect(res.body.message).to.equal('Invalid username or password');
+                    done();
+                });
+        });
+
+        it('returns 401 with unified message for incorrect password', function (done) {
+            request(app)
+                .post('/api/login')
+                .send({ username: 'validuser', password: 'wrongpassword' })
+                .expect(401)
+                .end(function (err, res) {
+                    expect(err).to.be(null);
+                    expect(res.body.message).to.equal('Invalid username or password');
+                    done();
+                });
+        });
+
+        it('regenerates session and sets cookie on successful login', function (done) {
+            var agent = request.agent(app);
+            agent
+                .post('/api/login')
+                .send({ username: 'validuser', password: 'password123' })
+                .expect(200)
+                .end(function (err, res) {
+                    expect(err).to.be(null);
+                    expect(res.headers['set-cookie']).to.be.ok();
+
+                    // Profile can be accessed with authenticated session
+                    agent
+                        .get('/api/profile')
+                        .expect(200)
+                        .end(function (err, profileRes) {
+                            expect(err).to.be(null);
+                            expect(profileRes.body.user.username).to.equal('validuser');
+                            done();
+                        });
+                });
+        });
+
+        it('limits repeated failed login attempts with 429', function (done) {
+            process.env.LOGIN_RATE_LIMIT_MAX = '3';
+            process.env.LOGIN_RATE_LIMIT_WINDOW_MS = '5000';
+
+            // Attempt 1, 2, 3 -> 401
+            request(app).post('/api/login').send({ username: 'validuser', password: 'bad' }).expect(401, function () {
+                request(app).post('/api/login').send({ username: 'validuser', password: 'bad' }).expect(401, function () {
+                    request(app).post('/api/login').send({ username: 'validuser', password: 'bad' }).expect(401, function () {
+                        // Attempt 4 -> 429
+                        request(app).post('/api/login').send({ username: 'validuser', password: 'bad' }).expect(429, function (err, res) {
+                            delete process.env.LOGIN_RATE_LIMIT_MAX;
+                            delete process.env.LOGIN_RATE_LIMIT_WINDOW_MS;
+                            expect(err).to.be(null);
+                            expect(res.body.message).to.contain('Too many login attempts');
+                            done();
+                        });
+                    });
+                });
+            });
+        });
+
+        it('destroys session on logout', function (done) {
+            var agent = request.agent(app);
+            agent
+                .post('/api/login')
+                .send({ username: 'validuser', password: 'password123' })
+                .expect(200)
+                .end(function () {
+                    agent
+                        .post('/api/logout')
+                        .expect(200)
+                        .end(function () {
+                            agent
+                                .get('/api/profile')
+                                .expect(401, done);
+                        });
+                });
+        });
+    });
 });

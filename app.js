@@ -93,8 +93,15 @@ function createApp(options) {
         app.use(morgan('dev', { immediate: false, stream: { write: function (str) { console.log(str.slice(0, -1)); } } }));
     }
 
+    app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
+
     app.use(serveStatic(__dirname + '/public', { etag: false }));
-    app.use(cors());
+
+    if (process.env.CORS_ORIGIN) {
+        var allowedOrigins = process.env.CORS_ORIGIN.split(',').map(function (o) { return o.trim(); });
+        app.use(cors({ origin: allowedOrigins, credentials: true }));
+    }
+
     app.use(json({ strict: true, limit: '5mb' }));
 
     var sessionStore;
@@ -106,11 +113,17 @@ function createApp(options) {
         sessionStore = MongoStore.create({ mongoUrl: options.databaseUrl || config.databaseUrl });
     }
 
+    var secureCookie = isProduction && Boolean(process.env.APP_ORIGIN && process.env.APP_ORIGIN.indexOf('https://') === 0);
+
     app.use(session({
         secret: sessionSecret,
         saveUninitialized: false,
         resave: false,
-        cookie: { sameSite: 'strict' },
+        cookie: {
+            sameSite: 'strict',
+            httpOnly: true,
+            secure: secureCookie
+        },
         store: sessionStore
     }));
 

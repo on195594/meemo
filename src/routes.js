@@ -88,22 +88,70 @@ function auth(req, res, next) {
     next();
 }
 
-function login(req, res, next) {
-    if (!req.body.username || !req.body.password) return next(new HttpError(400, 'missing username or password'));
+var g_loginAttempts = {};
 
-    users.verify(req.body.username, req.body.password, function (error) {
-        if (error && error.code === UserError.NOT_FOUND) return next(new HttpError(404, error.message));
-        if (error && error.code === UserError.NOT_AUTHORIZED) return next(new HttpError(401, error.message));
+function checkLoginRateLimit(ip) {
+    var now = Date.now();
+    var windowMs = parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS, 10) || 60000;
+    var maxAttempts = parseInt(process.env.LOGIN_RATE_LIMIT_MAX, 10) || 10;
+
+    var record = g_loginAttempts[ip];
+    if (!record || now > record.resetAt) {
+        g_loginAttempts[ip] = { count: 1, resetAt: now + windowMs };
+        return true;
+    }
+
+    record.count++;
+    if (record.count > maxAttempts) {
+        return false;
+    }
+    return true;
+}
+
+function resetLoginRateLimit(ip) {
+    delete g_loginAttempts[ip];
+}
+
+function login(req, res, next) {
+    if (!req.body || typeof req.body.username !== 'string' || typeof req.body.password !== 'string') {
+        return next(new HttpError(400, 'missing username or password'));
+    }
+
+    var clientIp = req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
+    if (!checkLoginRateLimit(clientIp)) {
+        return next(new HttpError(429, 'Too many login attempts. Please try again later.'));
+    }
+
+    var username = req.body.username.trim().toLowerCase();
+    var password = req.body.password;
+
+    users.verify(username, password, function (error) {
+        if (error && (error.code === UserError.NOT_FOUND || error.code === UserError.NOT_AUTHORIZED)) {
+            return next(new HttpError(401, 'Invalid username or password'));
+        }
         if (error) return next(new HttpError(500, error));
 
-        req.session.username = req.body.username;
-        next(new HttpSuccess(200, {}));
+        resetLoginRateLimit(clientIp);
+
+        if (req.session && typeof req.session.regenerate === 'function') {
+            req.session.regenerate(function (regenErr) {
+                if (regenErr) return next(new HttpError(500, regenErr));
+                req.session.username = username;
+                next(new HttpSuccess(200, {}));
+            });
+        } else {
+            req.session.username = username;
+            next(new HttpSuccess(200, {}));
+        }
     });
 }
 
 function logout(req, res, next) {
+    if (!req.session) return next(new HttpSuccess(200, {}));
+
     req.session.destroy(function(err) {
         if (err) return next(new HttpError(500, err));
+        res.clearCookie('connect.sid');
         next(new HttpSuccess(200, {}));
     });
 }
