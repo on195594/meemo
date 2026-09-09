@@ -4,14 +4,71 @@
 
 exports = module.exports = {
     get: get,
-    put: put
+    put: put,
+
+    ensureIndexes: ensureIndexes,
+    getUnifiedCollection: getUnifiedCollection,
+    resetCache: resetCache
 };
 
 var assert = require('assert'),
     config = require('../config.js'),
     users = require('../users.js');
 
+var g_unifiedCollection = null;
 var g_collections = {};
+var g_indexesCreated = false;
+
+function resetCache() {
+    g_unifiedCollection = null;
+    g_collections = {};
+    g_indexesCreated = false;
+}
+
+function getUnifiedCollection() {
+    if (!config.db) throw new Error('MongoDB database is not connected');
+
+    if (!g_unifiedCollection) {
+        g_unifiedCollection = config.db.collection('settings');
+    }
+
+    if (!g_indexesCreated) {
+        g_indexesCreated = true;
+        ensureIndexes(function (err) {
+            if (err && err.codeName !== 'IndexOptionsConflict') {
+                console.error('Warning: could not create settings indexes:', err);
+            }
+        });
+    }
+
+    return g_unifiedCollection;
+}
+
+function ensureIndexes(callback) {
+    if (!config.db) {
+        if (callback) return callback(new Error('MongoDB database is not connected'));
+        return;
+    }
+
+    var collection = config.db.collection('settings');
+    collection.createIndex({ ownerId: 1 }, { unique: true }, function (err) {
+        if (err && err.codeName !== 'IndexOptionsConflict') {
+            if (callback) return callback(err);
+        }
+        g_indexesCreated = true;
+        if (callback) callback(null);
+    });
+}
+
+function getLegacyCollection(userId) {
+    assert.strictEqual(typeof userId, 'string');
+
+    if (!g_collections[userId]) {
+        g_collections[userId] = config.db.collection(userId + '_settings');
+    }
+
+    return g_collections[userId];
+}
 
 function getAlternateUserId(userId, callback) {
     if (!users || typeof users.resolveUser !== 'function') return callback(null, null);
@@ -27,23 +84,22 @@ function getAlternateUserId(userId, callback) {
     });
 }
 
-function getCollection(userId) {
-    assert.strictEqual(typeof userId, 'string');
-
-    if (!g_collections[userId]) {
-        config.db.createCollection(userId + '_settings', function (error) { if (error && error.codeName !== 'NamespaceExists') console.error(error); });
-        g_collections[userId] = config.db.collection(userId + '_settings');
-    }
-
-    return g_collections[userId];
-}
-
 function put(userId, settings, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof settings, 'object');
     assert.strictEqual(typeof callback, 'function');
 
-    getCollection(userId).updateOne({ type: 'frontend' }, { $set: { type: 'frontend', value: settings, ownerId: userId }}, { upsert: true }, function (error) {
+    var filter = { ownerId: userId };
+    var updateDoc = {
+        $set: {
+            ownerId: userId,
+            type: 'frontend',
+            value: settings,
+            modifiedAt: Date.now()
+        }
+    };
+
+    getUnifiedCollection().updateOne(filter, updateDoc, { upsert: true }, function (error) {
         if (error) return callback(error);
         callback(null);
     });
@@ -53,24 +109,34 @@ function get(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof callback, 'function');
 
-    getCollection(userId).find({ type: 'frontend' }).toArray(function (error, result) {
-        if (error) return callback(error);
-        if (!result || result.length === 0) {
-            return getAlternateUserId(userId, function (altErr, altUserId) {
-                if (altErr || !altUserId) {
-                    return callback(null, { title: 'Meemo' });
+    getAlternateUserId(userId, function (altErr, altUserId) {
+        var query = altUserId ? { $or: [{ ownerId: userId }, { ownerId: altUserId }] } : { ownerId: userId };
+
+        getUnifiedCollection().findOne(query, function (error, doc) {
+            if (error) return callback(error);
+            if (doc && typeof doc.value === 'object') {
+                return callback(null, doc.value);
+            }
+
+            // Fallback to legacy collection
+            getLegacyCollection(userId).findOne({ type: 'frontend' }, function (err2, legacyDoc) {
+                if (err2) return callback(err2);
+                if (legacyDoc && typeof legacyDoc.value === 'object') {
+                    return callback(null, legacyDoc.value);
                 }
 
-                getCollection(altUserId).find({ type: 'frontend' }).toArray(function (err2, result2) {
-                    if (err2) return callback(err2);
-                    callback(null, (result2 && result2[0] && typeof result2[0].value === 'object') ? result2[0].value : {
-                        title: 'Meemo'
+                if (altUserId) {
+                    getLegacyCollection(altUserId).findOne({ type: 'frontend' }, function (err3, altDoc) {
+                        if (err3) return callback(err3);
+                        if (altDoc && typeof altDoc.value === 'object') {
+                            return callback(null, altDoc.value);
+                        }
+                        callback(null, { title: 'Meemo' });
                     });
-                });
+                } else {
+                    callback(null, { title: 'Meemo' });
+                }
             });
-        }
-        callback(null, (result[0] && typeof result[0].value === 'object') ? result[0].value : {
-            title: 'Meemo'
         });
     });
 }

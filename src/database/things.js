@@ -11,7 +11,11 @@ exports = module.exports = {
     add: add,
     addFull: addFull,
     put: put,
-    del: del
+    del: del,
+
+    ensureIndexes: ensureIndexes,
+    getUnifiedCollection: getUnifiedCollection,
+    resetCache: resetCache
 };
 
 var assert = require('assert'),
@@ -19,10 +23,91 @@ var assert = require('assert'),
     config = require('../config.js'),
     users = require('../users.js');
 
+var g_unifiedCollection = null;
 var g_collections = {};
+var g_activeUserIds = {};
+var g_indexesCreated = false;
+
+function resetCache() {
+    g_unifiedCollection = null;
+    g_collections = {};
+    g_activeUserIds = {};
+    g_indexesCreated = false;
+}
+
+function getUnifiedCollection() {
+    if (!config.db) throw new Error('MongoDB database is not connected');
+
+    if (!g_unifiedCollection) {
+        g_unifiedCollection = config.db.collection('things');
+    }
+
+    if (!g_indexesCreated) {
+        g_indexesCreated = true;
+        ensureIndexes(function (err) {
+            if (err) console.error('Warning: could not create things indexes:', err);
+        });
+    }
+
+    return g_unifiedCollection;
+}
+
+function ensureIndexes(callback) {
+    if (!config.db) {
+        if (callback) return callback(new Error('MongoDB database is not connected'));
+        return;
+    }
+
+    var collection = config.db.collection('things');
+
+    collection.createIndex({ ownerId: 1, modifiedAt: -1 }, function (err1) {
+        if (err1 && err1.codeName !== 'IndexOptionsConflict') {
+            if (callback) return callback(err1);
+        }
+
+        collection.createIndex({ ownerId: 1, sticky: -1, modifiedAt: -1 }, function (err2) {
+            if (err2 && err2.codeName !== 'IndexOptionsConflict') {
+                if (callback) return callback(err2);
+            }
+
+            collection.createIndex({ ownerId: 1, archived: 1, modifiedAt: -1 }, function (err3) {
+                if (err3 && err3.codeName !== 'IndexOptionsConflict') {
+                    if (callback) return callback(err3);
+                }
+
+                collection.createIndex({ content: 'text' }, { default_language: 'none' }, function (err4) {
+                    if (err4 && err4.codeName !== 'IndexOptionsConflict') {
+                        if (callback) return callback(err4);
+                    }
+                    g_indexesCreated = true;
+                    if (callback) callback(null);
+                });
+            });
+        });
+    });
+}
+
+function getLegacyCollection(userId) {
+    assert.strictEqual(typeof userId, 'string');
+
+    if (!g_collections[userId]) {
+        g_collections[userId] = config.db.collection(userId + '_things');
+    }
+
+    return g_collections[userId];
+}
 
 function getAllActiveUserIds() {
-    return Object.keys(g_collections);
+    var ids = Object.keys(g_activeUserIds);
+    var legacy = Object.keys(g_collections);
+    var seen = {};
+    return ids.concat(legacy).filter(function (id) {
+        if (!seen[id]) {
+            seen[id] = true;
+            return true;
+        }
+        return false;
+    });
 }
 
 function getAlternateUserId(userId, callback) {
@@ -40,6 +125,7 @@ function getAlternateUserId(userId, callback) {
 }
 
 function postProcess(userId, thing) {
+    if (!thing) return;
     thing._id = String(thing._id);
     if (!thing.ownerId) {
         thing.ownerId = userId;
@@ -50,21 +136,6 @@ function postProcess(userId, thing) {
     thing.sticky = !!thing.sticky;
 }
 
-function getCollection(userId) {
-    assert.strictEqual(typeof userId, 'string');
-
-    if (!g_collections[userId]) {
-        console.log('Opening collection for', userId);
-
-        config.db.createCollection(userId + '_things', function (error) { if (error && error.codeName !== 'NamespaceExists') console.error(error); });
-        g_collections[userId] = config.db.collection(userId + '_things');
-        g_collections[userId].createIndex({ content: 'text' }, { default_language: 'none' });
-        g_collections[userId].createIndex({ sticky: 1 });
-    }
-
-    return g_collections[userId];
-}
-
 function getAll(userId, query, skip, limit, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof query, 'object');
@@ -72,27 +143,37 @@ function getAll(userId, query, skip, limit, callback) {
     assert.strictEqual(typeof limit, 'number');
     assert.strictEqual(typeof callback, 'function');
 
-    getCollection(userId).find(query).skip(skip).limit(limit).sort({ sticky: -1, modifiedAt: -1 }).toArray(function (error, result) {
-        if (error) return callback(error);
-        if (!result || result.length === 0) {
-            return getAlternateUserId(userId, function (altErr, altUserId) {
-                if (altErr || !altUserId) {
-                    return callback(null, result || []);
-                }
+    g_activeUserIds[userId] = true;
 
-                getCollection(altUserId).find(query).skip(skip).limit(limit).sort({ sticky: -1, modifiedAt: -1 }).toArray(function (err2, result2) {
+    getAlternateUserId(userId, function (altErr, altUserId) {
+        var ownerCondition = altUserId ? { $or: [{ ownerId: userId }, { ownerId: altUserId }] } : { ownerId: userId };
+        var unifiedQuery = (!query || Object.keys(query).length === 0) ? ownerCondition : { $and: [ownerCondition, query] };
+
+        getUnifiedCollection().find(unifiedQuery).skip(skip).limit(limit).sort({ sticky: -1, modifiedAt: -1 }).toArray(function (error, result) {
+            if (error) return callback(error);
+            if (!result || result.length === 0) {
+                // Fallback to legacy collection
+                return getLegacyCollection(userId).find(query).skip(skip).limit(limit).sort({ sticky: -1, modifiedAt: -1 }).toArray(function (err2, res2) {
                     if (err2) return callback(err2);
-                    if (!result2) return callback(null, []);
-
-                    result2.forEach(postProcess.bind(null, userId));
-                    callback(null, result2);
+                    if (!res2 || res2.length === 0) {
+                        if (altUserId) {
+                            return getLegacyCollection(altUserId).find(query).skip(skip).limit(limit).sort({ sticky: -1, modifiedAt: -1 }).toArray(function (err3, res3) {
+                                if (err3) return callback(err3);
+                                if (!res3) return callback(null, []);
+                                res3.forEach(postProcess.bind(null, userId));
+                                callback(null, res3);
+                            });
+                        }
+                        return callback(null, []);
+                    }
+                    res2.forEach(postProcess.bind(null, userId));
+                    callback(null, res2);
                 });
-            });
-        }
+            }
 
-        result.forEach(postProcess.bind(null, userId));
-
-        callback(null, result);
+            result.forEach(postProcess.bind(null, userId));
+            callback(null, result);
+        });
     });
 }
 
@@ -100,27 +181,35 @@ function getAllLean(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof callback, 'function');
 
-    getCollection(userId).find({}).sort({ modifiedAt: -1, isSticky: 1 }).toArray(function (error, result) {
-        if (error) return callback(error);
-        if (!result || result.length === 0) {
-            return getAlternateUserId(userId, function (altErr, altUserId) {
-                if (altErr || !altUserId) {
-                    return callback(null, result || []);
-                }
+    g_activeUserIds[userId] = true;
 
-                getCollection(altUserId).find({}).sort({ modifiedAt: -1, isSticky: 1 }).toArray(function (err2, result2) {
+    getAlternateUserId(userId, function (altErr, altUserId) {
+        var ownerCondition = altUserId ? { $or: [{ ownerId: userId }, { ownerId: altUserId }] } : { ownerId: userId };
+
+        getUnifiedCollection().find(ownerCondition).sort({ modifiedAt: -1, sticky: 1 }).toArray(function (error, result) {
+            if (error) return callback(error);
+            if (!result || result.length === 0) {
+                return getLegacyCollection(userId).find({}).sort({ modifiedAt: -1, sticky: 1 }).toArray(function (err2, res2) {
                     if (err2) return callback(err2);
-                    if (!result2) return callback(null, []);
-
-                    result2.forEach(postProcess.bind(null, userId));
-                    callback(null, result2);
+                    if (!res2 || res2.length === 0) {
+                        if (altUserId) {
+                            return getLegacyCollection(altUserId).find({}).sort({ modifiedAt: -1, sticky: 1 }).toArray(function (err3, res3) {
+                                if (err3) return callback(err3);
+                                if (!res3) return callback(null, []);
+                                res3.forEach(postProcess.bind(null, userId));
+                                callback(null, res3);
+                            });
+                        }
+                        return callback(null, []);
+                    }
+                    res2.forEach(postProcess.bind(null, userId));
+                    callback(null, res2);
                 });
-            });
-        }
+            }
 
-        result.forEach(postProcess.bind(null, userId));
-
-        callback(null, result);
+            result.forEach(postProcess.bind(null, userId));
+            callback(null, result);
+        });
     });
 }
 
@@ -131,25 +220,40 @@ function get(userId, thingId, callback) {
 
     if (!ObjectId.isValid(thingId)) return callback(new Error('not found'));
 
-    getCollection(userId).find({ _id: new ObjectId(thingId) }).toArray(function (error, result) {
-        if (error) return callback(error);
-        if (!result || result.length === 0) {
-            return getAlternateUserId(userId, function (altErr, altUserId) {
-                if (altErr || !altUserId) return callback(new Error('not found'));
+    g_activeUserIds[userId] = true;
 
-                getCollection(altUserId).find({ _id: new ObjectId(thingId) }).toArray(function (err2, result2) {
-                    if (err2) return callback(err2);
-                    if (!result2 || result2.length === 0) return callback(new Error('not found'));
+    getAlternateUserId(userId, function (altErr, altUserId) {
+        var ownerCondition = altUserId ? { $or: [{ ownerId: userId }, { ownerId: altUserId }] } : { ownerId: userId };
+        var unifiedQuery = { $and: [{ _id: new ObjectId(thingId) }, ownerCondition] };
 
-                    postProcess(userId, result2[0]);
-                    callback(null, result2[0]);
-                });
+        getUnifiedCollection().findOne(unifiedQuery, function (error, doc) {
+            if (error) return callback(error);
+            if (doc) {
+                postProcess(userId, doc);
+                return callback(null, doc);
+            }
+
+            // Fallback to legacy collections
+            getLegacyCollection(userId).findOne({ _id: new ObjectId(thingId) }, function (err2, res2) {
+                if (err2) return callback(err2);
+                if (res2) {
+                    postProcess(userId, res2);
+                    return callback(null, res2);
+                }
+
+                if (altUserId) {
+                    getLegacyCollection(altUserId).findOne({ _id: new ObjectId(thingId) }, function (err3, res3) {
+                        if (err3) return callback(err3);
+                        if (!res3) return callback(new Error('not found'));
+
+                        postProcess(userId, res3);
+                        callback(null, res3);
+                    });
+                } else {
+                    callback(new Error('not found'));
+                }
             });
-        }
-
-        postProcess(userId, result[0]);
-
-        callback(null, result[0]);
+        });
     });
 }
 
@@ -167,6 +271,8 @@ function addFull(userId, content, tags, attachments, externalContent, createdAt,
     assert.strictEqual(typeof modifiedAt, 'number');
     assert.strictEqual(typeof callback, 'function');
 
+    g_activeUserIds[userId] = true;
+
     var doc = {
         ownerId: userId,
         content: content,
@@ -181,7 +287,7 @@ function addFull(userId, content, tags, attachments, externalContent, createdAt,
         sticky: false
     };
 
-    getCollection(userId).insertOne(doc, function (error, result) {
+    getUnifiedCollection().insertOne(doc, function (error, result) {
         if (error) return callback(error);
         if (!result) return callback(new Error('no result returned'));
 
@@ -204,6 +310,8 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
 
     if (!ObjectId.isValid(thingId)) return callback(new Error('not found'));
 
+    g_activeUserIds[userId] = true;
+
     var data = {
         ownerId: userId,
         content: content,
@@ -217,10 +325,33 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
         sticky: isSticky
     };
 
-    getCollection(userId).updateOne({ _id: new ObjectId(thingId) }, { $set: data }, function (error) {
-        if (error) return callback(error);
+    getAlternateUserId(userId, function (altErr, altUserId) {
+        var ownerCondition = altUserId ? { $or: [{ ownerId: userId }, { ownerId: altUserId }] } : { ownerId: userId };
+        var filter = { $and: [{ _id: new ObjectId(thingId) }, ownerCondition] };
 
-        get(userId, thingId, callback);
+        getUnifiedCollection().updateOne(filter, { $set: data }, function (error, res) {
+            if (error) return callback(error);
+            if (res && res.matchedCount > 0) {
+                return get(userId, thingId, callback);
+            }
+
+            // Fallback to legacy collections
+            getLegacyCollection(userId).updateOne({ _id: new ObjectId(thingId) }, { $set: data }, function (err2, res2) {
+                if (err2) return callback(err2);
+                if (res2 && res2.matchedCount > 0) {
+                    return get(userId, thingId, callback);
+                }
+
+                if (altUserId) {
+                    getLegacyCollection(altUserId).updateOne({ _id: new ObjectId(thingId) }, { $set: data }, function (err3) {
+                        if (err3) return callback(err3);
+                        get(userId, thingId, callback);
+                    });
+                } else {
+                    get(userId, thingId, callback);
+                }
+            });
+        });
     });
 }
 
@@ -231,8 +362,25 @@ function del(userId, thingId, callback) {
 
     if (!ObjectId.isValid(thingId)) return callback(new Error('not found'));
 
-    getCollection(userId).deleteOne({ _id: new ObjectId(thingId) }, function (error) {
-        if (error) return callback(error);
-        callback(null);
+    g_activeUserIds[userId] = true;
+
+    getAlternateUserId(userId, function (altErr, altUserId) {
+        var ownerCondition = altUserId ? { $or: [{ ownerId: userId }, { ownerId: altUserId }] } : { ownerId: userId };
+        var filter = { $and: [{ _id: new ObjectId(thingId) }, ownerCondition] };
+
+        getUnifiedCollection().deleteOne(filter, function (error) {
+            if (error) return callback(error);
+
+            // Also clean legacy collections if exists
+            getLegacyCollection(userId).deleteOne({ _id: new ObjectId(thingId) }, function () {
+                if (altUserId) {
+                    getLegacyCollection(altUserId).deleteOne({ _id: new ObjectId(thingId) }, function () {
+                        callback(null);
+                    });
+                } else {
+                    callback(null);
+                }
+            });
+        });
     });
 }
