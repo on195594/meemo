@@ -16,7 +16,7 @@ npm test
 
 ## Change guidelines
 
-- Keep HTTP handling in `src/routes.js`, application behavior in `src/logic.js`, and persistence in `src/database/`.
+- Keep HTTP handling in `src/http/`, application behavior in `src/logic.js`, and persistence in `src/database/`.
 - Follow the existing JavaScript style and `.editorconfig`; do not reformat unrelated code.
 - Do not commit generated `public/`, dependency `node_modules/`, local account files, or attachments.
 - Add or update a focused test under `src/test/` for non-trivial server behavior.

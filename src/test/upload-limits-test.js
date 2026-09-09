@@ -12,7 +12,7 @@ var os = require('os');
 var request = require('supertest');
 var config = require('../config.js');
 var users = require('../users.js');
-var routes = require('../routes.js');
+var fileRoutes = require('../http/routes/files.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
 
@@ -75,30 +75,30 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
     describe('Image MIME and magic bytes verification', function () {
         it('detects valid PNG magic bytes', function () {
             var pngBuf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
-            expect(routes.detectImageType(pngBuf)).to.equal('image/png');
+            expect(fileRoutes.detectImageType(pngBuf)).to.equal('image/png');
         });
 
         it('detects valid JPEG magic bytes', function () {
             var jpegBuf = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
-            expect(routes.detectImageType(jpegBuf)).to.equal('image/jpeg');
+            expect(fileRoutes.detectImageType(jpegBuf)).to.equal('image/jpeg');
         });
 
         it('detects valid GIF magic bytes', function () {
             var gifBuf = Buffer.from('GIF89a123456');
-            expect(routes.detectImageType(gifBuf)).to.equal('image/gif');
+            expect(fileRoutes.detectImageType(gifBuf)).to.equal('image/gif');
         });
 
         it('detects valid WEBP magic bytes', function () {
             var webpBuf = Buffer.from([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x00]);
-            expect(routes.detectImageType(webpBuf)).to.equal('image/webp');
+            expect(fileRoutes.detectImageType(webpBuf)).to.equal('image/webp');
         });
 
         it('rejects spoofed images containing script or html', function () {
             var scriptBuf = Buffer.from('<script>alert("xss")</script>');
-            expect(routes.detectImageType(scriptBuf)).to.be(null);
+            expect(fileRoutes.detectImageType(scriptBuf)).to.be(null);
 
             var svgBuf = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
-            expect(routes.detectImageType(svgBuf)).to.be(null);
+            expect(fileRoutes.detectImageType(svgBuf)).to.be(null);
         });
     });
 

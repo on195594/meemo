@@ -14,8 +14,8 @@ var express = require('express'),
     session = require('express-session'),
     MongoStore = require('connect-mongo'),
     multer  = require('multer'),
-    routes = require('./src/routes.js'),
-    lastmile = require('connect-lastmile'),
+    createRouter = require('./src/http/router.js'),
+    responses = require('./src/http/responses.js'),
     logic = require('./src/logic.js'),
     lifecycle = require('./src/lifecycle.js'),
     things = require('./src/database/things.js'),
@@ -24,7 +24,6 @@ var express = require('express'),
     MongoClient = require('mongodb').MongoClient,
     morgan = require('morgan'),
     os = require('os'),
-    path = require('path'),
     serveStatic = require('serve-static');
 
 function createApp(options) {
@@ -46,7 +45,6 @@ function createApp(options) {
     }
 
     var app = express();
-    var router = new express.Router();
 
     var maxAttachmentSize = parseInt(process.env.MAX_ATTACHMENT_SIZE, 10) || (10 * 1024 * 1024);
     var maxImportSize = parseInt(process.env.MAX_IMPORT_SIZE, 10) || (50 * 1024 * 1024);
@@ -56,9 +54,9 @@ function createApp(options) {
             uploadInstance(req, res, function (err) {
                 if (err) {
                     if (err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_FILE_COUNT') {
-                        return next(new lastmile.HttpError(413, 'File size or count limit exceeded'));
+                        return next(new responses.HttpError(413, 'File size or count limit exceeded'));
                     }
-                    return next(new lastmile.HttpError(400, err.message || 'Upload failed'));
+                    return next(new responses.HttpError(400, err.message || 'Upload failed'));
                 }
                 next();
             });
@@ -80,57 +78,6 @@ function createApp(options) {
             files: 1
         }
     }).any());
-
-    router.del = router.delete;
-
-    router.post('/api/register', routes.register);
-    router.post('/api/login', routes.login);
-    router.post('/api/logout', routes.logout);
-
-    router.post('/api/things', routes.auth, routes.add);
-    router.get ('/api/things', routes.auth, routes.getAll);
-    router.get ('/api/things/:id', routes.auth, routes.get);
-    router.put ('/api/things/:id', routes.auth, routes.put);
-    router.del ('/api/things/:id', routes.auth, routes.del);
-
-    router.post('/api/files', routes.auth, memoryUpload, routes.fileAdd);
-    router.get ('/api/files/:userId/:thingId/:identifier', routes.fileGet);
-
-    router.get ('/api/tags', routes.auth, routes.getTags);
-
-    router.post('/api/settings', routes.auth, routes.settingsSave);
-    router.get ('/api/settings', routes.auth, routes.settingsGet);
-
-    router.get ('/api/export', routes.auth, routes.exportThings);
-    router.post('/api/import', routes.auth, diskUpload, routes.importThings);
-
-    router.get ('/api/profile', routes.auth, routes.profile);
-
-    // public apis
-    router.get ('/api/public/:userId/files/:fileId', routes.public.getFile);
-    router.get ('/api/public/:userId/things', routes.public.getAll);
-    router.get ('/api/public/:userId/things/:thingId', routes.public.getThing);
-    router.get ('/api/rss/:userId', routes.public.getRSS);
-
-    router.get ('/api/users', routes.public.users);
-    router.get ('/api/users/:userId', routes.public.profile);
-
-    router.get ('/api/health/live', routes.healthLive);
-    router.get ('/api/health/ready', routes.healthReady);
-    router.get ('/api/healthcheck', routes.healthcheck);
-
-    // 404 for unhandled API endpoints
-    router.all('/api/*', function (req, res, next) {
-        next(new lastmile.HttpError(404, 'not found'));
-    });
-
-    // page overlay for pretty public streams
-    router.get ('/public/:userId', routes.public.streamPage);
-
-    // Add pretty 404 handler
-    router.get ('*', function (req, res) {
-        res.status(404).sendFile(path.resolve(__dirname, 'public/error.html'));
-    });
 
     if (process.env.DEBUG) {
         app.use(morgan('dev', { immediate: false, stream: { write: function (str) { console.log(str.slice(0, -1)); } } }));
@@ -170,8 +117,11 @@ function createApp(options) {
         store: sessionStore
     }));
 
-    app.use(router);
-    app.use(lastmile());
+    app.use(createRouter({
+        attachmentUpload: memoryUpload,
+        importUpload: diskUpload
+    }));
+    app.use(responses.errorHandler);
 
     return app;
 }

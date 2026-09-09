@@ -9,7 +9,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 ## Source map
 
 - `app.js`: process entry point, middleware, sessions, authentication mode, route registration, and MongoDB startup.
-- `src/routes.js`: HTTP input/output and route handlers.
+- `src/http/`: HTTP routing, input validation, authentication middleware, and error responses.
 - `src/logic.js`: application behavior.
 - `src/database/`: MongoDB access for things, tags, and settings.
 - `src/users.js`: local account file and bcrypt password handling.
@@ -22,7 +22,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 ## Working rules
 
 1. Read the relevant route, logic, database, frontend, and test callers before changing behavior.
-2. Keep HTTP concerns in `src/routes.js`, shared behavior in `src/logic.js`, and persistence in `src/database/`.
+2. Keep HTTP concerns in `src/http/`, shared behavior in `src/logic.js`, and persistence in `src/database/`.
 3. Prefer the smallest root-cause change. Reuse existing code and dependencies; do not add speculative abstractions.
 4. Preserve the existing CommonJS, callback-based style unless the task explicitly requires a broader migration.
 5. Follow `.editorconfig` and nearby style. Use four-space JavaScript indentation and avoid unrelated formatting.
