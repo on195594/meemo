@@ -17,6 +17,10 @@ var express = require('express'),
     routes = require('./src/routes.js'),
     lastmile = require('connect-lastmile'),
     logic = require('./src/logic.js'),
+    lifecycle = require('./src/lifecycle.js'),
+    things = require('./src/database/things.js'),
+    tags = require('./src/database/tags.js'),
+    settings = require('./src/database/settings.js'),
     MongoClient = require('mongodb').MongoClient,
     morgan = require('morgan'),
     os = require('os'),
@@ -25,6 +29,10 @@ var express = require('express'),
 
 function createApp(options) {
     options = options || {};
+
+    if (options.db) {
+        config.db = options.db;
+    }
 
     var isProduction = options.isProduction !== undefined ? options.isProduction : (process.env.NODE_ENV === 'production');
     var sessionSecret = options.sessionSecret || process.env.SESSION_SECRET;
@@ -175,61 +183,82 @@ function exit(error) {
 
 function startServer(options, callback) {
     options = options || {};
-    var port = options.port || PORT;
+    var port = options.port !== undefined ? options.port : PORT;
     var bindAddress = options.bindAddress || BIND_ADDRESS;
-    var databaseUrl = options.databaseUrl || config.databaseUrl;
 
-    MongoClient.connect(databaseUrl, { useUnifiedTopology: true }, function (error, client) {
+    var databaseManager = new lifecycle.DatabaseManager();
+    var workerManager = new lifecycle.WorkerManager();
+    var shutdownManager = new lifecycle.ShutdownManager({
+        databaseManager: databaseManager,
+        workerManager: workerManager,
+        timeoutMs: options.shutdownTimeoutMs
+    });
+
+    var enableWorkers = options.enableWorkers !== undefined ? options.enableWorkers : (process.env.ENABLE_WORKERS !== 'false');
+    var cleanupIntervalMs = options.tagCleanupIntervalMs || parseInt(process.env.TAG_CLEANUP_INTERVAL_MS, 10) || (1000 * 60);
+    workerManager.register('cleanupTags', logic.cleanupTags, cleanupIntervalMs);
+
+    databaseManager.connect(options, function (error, db, client) {
         if (error) {
             if (callback) return callback(error);
             exit(error);
+            return;
         }
 
-        // stash for database code to be used
-        config.db = client.db();
+        things.ensureIndexes(function (errIdx1) {
+            if (errIdx1) console.warn('Warning: things index initialization:', errIdx1.message);
+            tags.ensureIndexes(function (errIdx2) {
+                if (errIdx2) console.warn('Warning: tags index initialization:', errIdx2.message);
+                settings.ensureIndexes(function (errIdx3) {
+                    if (errIdx3) console.warn('Warning: settings index initialization:', errIdx3.message);
 
-        var app;
-        try {
-            app = createApp(options);
-        } catch (err) {
-            if (callback) return callback(err);
-            exit(err);
-        }
+                    var app;
+                    try {
+                        app = createApp(options);
+                    } catch (err) {
+                        if (callback) return callback(err);
+                        exit(err);
+                        return;
+                    }
 
-        var server = app.listen(port, bindAddress, function () {
-            var host = server.address().address;
-            var actualPort = server.address().port;
+                    var server = app.listen(port, bindAddress, function () {
+                        var host = server.address().address;
+                        var actualPort = server.address().port;
 
-            console.log('App listening at http://%s:%s', host, actualPort);
+                        console.log('App listening at http://%s:%s', host, actualPort);
 
-            var cleanupInterval = setInterval(logic.cleanupTags, 1000 * 60);
+                        shutdownManager.trackServer(server);
 
-            function shutdown(signal, done) {
-                console.log('Received %s, starting graceful shutdown...', signal || 'shutdown');
-                clearInterval(cleanupInterval);
-                server.close(function () {
-                    console.log('HTTP server closed');
-                    client.close(false, function () {
-                        console.log('MongoDB connection closed');
-                        if (done) return done();
-                        process.exit(0);
+                        if (enableWorkers) {
+                            workerManager.start();
+                        }
+
+                        if (options.autoAttachSignals !== false) {
+                            shutdownManager.attachSignals();
+                        }
+
+                        var result = {
+                            app: app,
+                            server: server,
+                            client: client,
+                            db: db,
+                            workers: workerManager,
+                            databaseManager: databaseManager,
+                            shutdownManager: shutdownManager,
+                            close: function (done) {
+                                shutdownManager.shutdown('close', done);
+                            }
+                        };
+
+                        if (callback) callback(null, result);
+                    });
+
+                    server.on('error', function (err) {
+                        if (callback) return callback(err);
+                        exit(err);
                     });
                 });
-            }
-
-            process.on('SIGTERM', function () { shutdown('SIGTERM'); });
-            process.on('SIGINT', function () { shutdown('SIGINT'); });
-
-            var result = {
-                app: app,
-                server: server,
-                client: client,
-                close: function (done) {
-                    shutdown('close', done);
-                }
-            };
-
-            if (callback) callback(null, result);
+            });
         });
     });
 }
@@ -240,5 +269,6 @@ if (require.main === module) {
 
 module.exports = {
     createApp: createApp,
-    startServer: startServer
+    startServer: startServer,
+    lifecycle: lifecycle
 };

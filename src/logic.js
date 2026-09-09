@@ -452,32 +452,39 @@ function imp(userId, data, callback) {
     });
 }
 
-function cleanupTags() {
+function cleanupTags(callback) {
     var userIds = things.getAllActiveUserIds();
 
-    async.each(userIds, function (userId, callback) {
+    async.each(userIds, function (userId, nextUser) {
         things.getAllLean(userId, function (error, result) {
-            if (error) return console.error(new Error(error));
+            if (error) {
+                console.error(new Error(error));
+                return nextUser();
+            }
 
             var activeTags = [];
-            result.forEach(function (thing) {
+            (result || []).forEach(function (thing) {
                 activeTags = activeTags.concat(extractTags(thing.content));
             });
 
             tags.get(userId, function (error, result) {
-                if (error) return console.error(new Error(error));
+                if (error) {
+                    console.error(new Error(error));
+                    return nextUser();
+                }
 
-                async.each(result, function (tag, callback) {
-                    if (activeTags.indexOf(tag.name) !== -1) return callback(null);
+                async.each(result || [], function (tag, nextTag) {
+                    if (activeTags.indexOf(tag.name) !== -1) return nextTag(null);
 
                     debug('Cleanup tag', tag.name);
 
-                    tags.del(userId, String(tag._id), callback);
-                }, callback);
+                    tags.del(userId, String(tag._id), nextTag);
+                }, nextUser);
             });
         });
     }, function (error) {
         if (error) console.error('Cleanup tags failed:', error);
+        if (callback) callback(error);
     });
 }
 
