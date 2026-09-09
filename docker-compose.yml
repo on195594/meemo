@@ -1,31 +1,43 @@
 services:
   meemo:
-    build: .
-    image: on195594/meemo:local
-    container_name: meemo
+    build:
+      context: .
+    image: meemo:local
     volumes:
-      - ./users.json:/app/data/.users.json
-      - ./data:/app/data/storage
+      - meemo_data:/app/data
     environment:
-      - CLOUDRON_MONGODB_URL=mongodb://mongodb:27017/meemo
-      - CLOUDRON_APP_ORIGIN=http://localhost:3000
-      - CLOUDRON_LOCAL_AUTH_FILE=/app/data/.users.json
-      - ATTACHMENT_DIR=/app/data/storage
+      CLOUDRON_MONGODB_URL: mongodb://mongodb:27017/meemo
+      CLOUDRON_APP_ORIGIN: ${CLOUDRON_APP_ORIGIN:-http://localhost:3000}
+      CLOUDRON_LOCAL_AUTH_FILE: /app/data/.users.json
+      ATTACHMENT_DIR: /app/data/storage
+      SESSION_SECRET: ${SESSION_SECRET:-}
     ports:
-      - 3000:3000/tcp
+      - "${MEEMO_PORT:-3000}:3000"
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     networks:
       - backend
-    restart: always
+    restart: unless-stopped
+
   mongodb:
     image: mongo:5.0.20
-    container_name: meemo_mongo
     volumes:
-      - ./database:/data/db
+      - mongodb_data:/data/db
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "mongo --quiet --eval 'quit(db.adminCommand(\"ping\").ok ? 0 : 2)'"
+      interval: 5s
+      timeout: 5s
+      retries: 20
     networks:
       - backend
-    restart: always
+    restart: unless-stopped
+
+volumes:
+  meemo_data:
+  mongodb_data:
 
 networks:
   backend:

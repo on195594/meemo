@@ -1,17 +1,15 @@
 # Contributing
 
-Contributions are [released](https://help.github.com/articles/github-terms-of-service/#6-contributions-under-repository-license) to the public under the [open source license of this project](../LICENSE).
+Contributions are released under the open source license of this project.
 
 ## Submitting a pull request
 
-1. [Fork](https://github.com/qdm12/meemo/fork) and clone the repository
-1. Create a new branch `git checkout -b my-branch-name`
-1. Modify the code
-1. Ensure the docker build succeeds `docker build .`
-1. Commit your modifications
-1. Push to your fork and [submit a pull request](https://github.com/qdm12/meemo/compare)
+1. Fork https://github.com/on195594/meemo and clone your fork.
+2. Create a branch: `git checkout -b my-branch-name`.
+3. Make your changes.
+4. Run `npm ci && npm test`.
+5. Ensure the current repository source builds successfully with `docker build .`.
+6. Commit and push your changes.
+7. Open a pull request against https://github.com/on195594/meemo.
 
-## Resources
-
-- [Using Pull Requests](https://help.github.com/articles/about-pull-requests/)
-- [How to Contribute to Open Source](https://opensource.guide/how-to-contribute/)
+Docker CI only builds and tests images locally. Repository workflows do not publish images to a remote registry.

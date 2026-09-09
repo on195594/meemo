@@ -31,7 +31,7 @@ WORKDIR /app/code
 COPY --from=builder --chown=1000:1000 /app/code/node_modules/ node_modules/
 COPY --from=builder --chown=1000:1000 /app/code/public/ public/
 COPY --chown=1000:1000 src/ src/
-COPY --chown=1000:1000 app.js oidc_develop_user_select.html start.sh things.json ./
+COPY --chown=1000:1000 app.js start.sh things.json ./
 
 ENV PORT=3000 \
     BIND_ADDRESS=0.0.0.0 \
@@ -40,8 +40,9 @@ ENV PORT=3000 \
     ATTACHMENT_DIR=/app/data/storage \
     CLOUDRON_LOCAL_AUTH_FILE=/app/data/.users.json \
     NODE_ENV=production
+
 EXPOSE 3000
 USER 1000:1000
-HEALTHCHECK --interval=3m --timeout=5s --start-period=20s --retries=1 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD wget -q -O /dev/null "http://127.0.0.1:${PORT}/api/healthcheck" || exit 1
 CMD ["./start.sh"]

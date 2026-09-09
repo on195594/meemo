@@ -1,4 +1,5 @@
-name: Docker build
+name: Pull request validation
+
 on:
   pull_request:
     branches: [master]
@@ -6,11 +7,76 @@ on:
       - .github/workflows/build.yml
       - .dockerignore
       - Dockerfile
+      - docker-compose.yml
+      - package.json
+      - package-lock.json
+      - gulpfile.js
+      - app.js
+      - start.sh
+      - src/**
+      - frontend/**
+
 jobs:
-  build:
+  test-and-build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-      - name: Build image
-        run: docker build .
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build image from current checkout
+        run: docker build -t meemo:ci .
+
+      - name: Start compose stack
+        run: docker compose up --build -d
+
+      - name: Verify health and local username/password login
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/healthcheck >/dev/null; then
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              docker compose logs
+              exit 1
+            fi
+            sleep 2
+          done
+
+          curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"ci-user","password":"ci-password","email":"ci@example.invalid","displayName":"CI User"}' \
+            http://127.0.0.1:3000/api/register >/dev/null
+
+          curl --fail --silent --show-error \
+            -c /tmp/meemo-cookies \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"ci-user","password":"ci-password"}' \
+            http://127.0.0.1:3000/api/login >/dev/null
+
+          curl --fail --silent --show-error \
+            -b /tmp/meemo-cookies \
+            http://127.0.0.1:3000/api/profile >/dev/null
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop compose stack
+        if: always()
+        run: docker compose down -v

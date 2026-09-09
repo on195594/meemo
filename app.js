@@ -6,12 +6,16 @@ require('supererror')({ splatchError: true });
 
 const PORT = process.env.VITE_DEV_PORT || process.env.PORT || 3000;
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
+const APP_ORIGIN = process.env.CLOUDRON_APP_ORIGIN || `http://localhost:${PORT}`;
+const SESSION_SECRET = process.env.SESSION_SECRET || require('crypto').randomBytes(32).toString('hex');
 
 if (!process.env.CLOUDRON_APP_ORIGIN) {
-    console.log('No CLOUDRON_APP_ORIGIN env var set. Falling back to http://localhost');
+    console.log(`No CLOUDRON_APP_ORIGIN env var set. Falling back to ${APP_ORIGIN}`);
 }
 
-const APP_ORIGIN = process.env.CLOUDRON_APP_ORIGIN || `http://localhost:${PORT}`;
+if (!process.env.SESSION_SECRET) {
+    console.warn('SESSION_SECRET is not set. A random secret was generated for this process; existing sessions will be invalidated after restart.');
+}
 
 var express = require('express'),
     json = require('body-parser').json,
@@ -88,7 +92,7 @@ app.use(serveStatic(__dirname + '/public', { etag: false }));
 app.use(cors());
 app.use(json({ strict: true, limit: '5mb' }));
 app.use(session({
-    secret: 'guacamoly should be',
+    secret: SESSION_SECRET,
     saveUninitialized: false,
     resave: false,
     cookie: { sameSite: 'strict' },
@@ -102,7 +106,7 @@ if (process.env.CLOUDRON_OIDC_ISSUER) {
         baseURL: APP_ORIGIN,
         clientID: process.env.CLOUDRON_OIDC_CLIENT_ID,
         clientSecret: process.env.CLOUDRON_OIDC_CLIENT_SECRET,
-        secret: 'FIXME this secret',
+        secret: SESSION_SECRET,
         authorizationParams: {
             response_type: 'code',
             scope: 'openid profile email'
@@ -116,53 +120,21 @@ if (process.env.CLOUDRON_OIDC_ISSUER) {
         session: {
             name: 'MeemoSession',
             rolling: true,
-            rollingDuration: 24 * 60 * 60 * 4 // max 4 days idling
+            rollingDuration: 24 * 60 * 60 * 4
         }
     }));
 } else {
-    // mock oidc
-    console.log('CLOUDRON_OIDC_ISSUER is not set, using mock OpenID for development');
+    console.log('CLOUDRON_OIDC_ISSUER is not set. Using local username/password authentication.');
 
     app.use((req, res, next) => {
-        res.oidc = {
-            login(options) {
-                res.writeHead(200, { 'Content-Type': 'text/html' })
-                res.write(require('fs').readFileSync(__dirname + '/oidc_develop_user_select.html', 'utf8').replaceAll('REDIRECT_URI', options.authorizationParams.redirect_uri));
-                res.end()
-            }
-        };
-
         req.oidc = {
             user: {},
             isAuthenticated() {
-                return !!req.session.username;
+                return false;
             }
         };
 
-        if (req.session.username) {
-            req.oidc.user = {
-                sub: req.session.username,
-                family_name: 'Cloudron',
-                given_name: req.session.username.toUpperCase(),
-                locale: 'en-US',
-                name: 'Cloudron ' + req.session.username.toUpperCase(),
-                preferred_username: req.session.username,
-                email: req.session.username + '@cloudron.local',
-                email_verified: true
-            };
-        }
-
         next();
-    });
-
-    app.use('/api/callback', (req, res) => {
-        req.session.username = req.query.username;
-        res.redirect(`${APP_ORIGIN}/`);
-    });
-
-    app.use('/api/logout', (req, res) => {
-        req.session.username = null;
-        res.status(200).send({});
     });
 }
 
