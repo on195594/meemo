@@ -16,10 +16,15 @@ docker rm --force "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 echo "Starting ${CONTAINER_NAME}..."
 docker run --name "${CONTAINER_NAME}" -d mongo:8
 
-export MONGODB_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTAINER_NAME}")
 echo "Waiting for MongoDB server to be ready..."
 while ! docker exec "${CONTAINER_NAME}" mongosh --quiet --eval 'db.adminCommand("ping")' >/dev/null 2>&1; do
     sleep 1
+done
+
+export MONGODB_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTAINER_NAME}")
+while [ -z "${MONGODB_IP:-}" ]; do
+    sleep 1
+    MONGODB_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTAINER_NAME}")
 done
 
 export MONGODB_URL="mongodb://${MONGODB_IP}:27017/meemo"
