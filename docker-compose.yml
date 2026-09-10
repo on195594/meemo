@@ -3,16 +3,36 @@ services:
     build:
       context: .
     image: meemo:local
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     volumes:
       - meemo_data:/app/data
     environment:
+      NODE_ENV: production
       MONGODB_URL: mongodb://mongodb:27017/meemo
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
       USERS_FILE: /app/data/.users.json
       ATTACHMENT_DIR: /app/data/storage
-      SESSION_SECRET: ${SESSION_SECRET:-}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET environment variable must be set in production}
     ports:
       - "${MEEMO_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - http://127.0.0.1:3000/api/health/ready
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     depends_on:
       mongodb:
         condition: service_healthy

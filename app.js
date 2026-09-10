@@ -139,6 +139,12 @@ function startServer(options, callback) {
     options = options || {};
 
     var promise = Promise.resolve().then(async function () {
+        var isProduction = options.isProduction !== undefined ? options.isProduction : (process.env.NODE_ENV === 'production');
+        var sessionSecret = options.sessionSecret || process.env.SESSION_SECRET;
+        if (isProduction && !sessionSecret) {
+            throw new Error('FATAL: SESSION_SECRET is required when NODE_ENV=production');
+        }
+
         var databaseManager = new lifecycle.DatabaseManager();
         var workerManager = new lifecycle.WorkerManager();
         var shutdownManager = new lifecycle.ShutdownManager({

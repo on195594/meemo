@@ -42,6 +42,8 @@ jobs:
         run: docker build -t meemo:ci .
 
       - name: Start compose stack
+        env:
+          SESSION_SECRET: "ci-secret-token-for-compose-stack-32chars"
         run: docker compose up --build -d
 
       - name: Verify health and local username/password login
@@ -50,7 +52,7 @@ jobs:
           set -euo pipefail
 
           for i in {1..60}; do
-            if curl --fail --silent http://127.0.0.1:3000/api/healthcheck >/dev/null; then
+            if curl --fail --silent http://127.0.0.1:3000/api/health/ready >/dev/null; then
               break
             fi
             if [ "$i" -eq 60 ]; then
