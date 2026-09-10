@@ -48,9 +48,14 @@ function profile(userId, callback) {
     return nodeify(users.profile(userId, false), callback);
 }
 
+function _resetRateLimits() {
+    loginAttempts = {};
+}
+
 module.exports = {
     authenticate: authenticate,
     register: register,
     profile: profile,
-    UserError: users.UserError
+    UserError: users.UserError,
+    _resetRateLimits: _resetRateLimits
 };
