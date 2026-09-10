@@ -32,4 +32,4 @@ npm test
 5. Use a short imperative commit subject; Conventional Commit prefixes such as `fix:`, `feat:`, and `docs:` are preferred.
 6. Open a pull request describing the problem, the solution, and the checks run.
 
-CI builds and tests images locally. Repository workflows do not publish images to a remote registry.
+CI builds and tests images locally on pull requests. Push to `master` and published releases automatically publish multi-arch images to the GitHub Container Registry (`ghcr.io/on195594/meemo`).

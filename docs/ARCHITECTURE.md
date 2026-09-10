@@ -53,4 +53,4 @@ Meemo provides zero-downtime shadow migration scripts:
 `npm run build` compiles the modern Vue 3 + Vite + TypeScript application in `web/` into `public/`.
 `npm run build:web` compiles directly into `web/dist/`. Do not commit generated output.
 
-The Dockerfile uses a multi-stage build (`web-builder` for `web/` and `builder` for native production dependencies), running the application as an unprivileged user while serving modern Vue 3 assets from `public/`. `docker-compose.yml` supplies MongoDB and persistent named volumes.
+The Dockerfile uses a multi-stage build (`web-builder` for `web/` and `builder` for native production dependencies), running the application as an unprivileged user while serving modern Vue 3 assets from `public/`. `docker-compose.yml` supplies MongoDB and persistent named volumes. Multi-platform container images (`linux/amd64` and `linux/arm64`) are automatically published to the GitHub Container Registry (`ghcr.io/on195594/meemo`) with OCI metadata, SBOM, and provenance attestations.
