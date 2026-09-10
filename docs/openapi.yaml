@@ -1,0 +1,1135 @@
+openapi: 3.0.3
+info:
+  title: Meemo API
+  version: 2.0.0
+  description: >
+    Meemo is a personal note and knowledge management service.
+    This specification describes the authoritative HTTP REST API for Meemo v2.
+servers:
+  - url: /
+    description: Current host server
+
+tags:
+  - name: auth
+    description: Authentication, registration, and user session management
+  - name: things
+    description: Notes (Things) and tags CRUD operations
+  - name: files
+    description: Attachment uploads and secure file access
+  - name: settings
+    description: User-specific configuration and preferences
+  - name: transfer
+    description: Account data backup archive export and import
+  - name: public
+    description: Publicly shared notes, feeds, and discovery
+  - name: health
+    description: Container liveness and readiness probes
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+      description: Session cookie generated after successful login.
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - status
+        - code
+        - message
+      properties:
+        status:
+          type: string
+          example: Bad Request
+        code:
+          type: string
+          example: invalid_request
+          enum:
+            - invalid_request
+            - authentication_required
+            - invalid_credentials
+            - forbidden
+            - not_found
+            - conflict
+            - payload_too_large
+            - too_many_requests
+            - internal_error
+            - service_unavailable
+            - request_failed
+        message:
+          type: string
+          example: content must be a string
+
+    UserProfile:
+      type: object
+      required:
+        - id
+        - username
+        - displayName
+        - email
+      properties:
+        id:
+          type: string
+          example: 64f8a12b3c4d5e6f7a8b9c0d
+        username:
+          type: string
+          example: alice
+        displayName:
+          type: string
+          example: Alice Walker
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+
+    PublicUserProfile:
+      type: object
+      required:
+        - id
+        - username
+        - displayName
+      properties:
+        id:
+          type: string
+          example: 64f8a12b3c4d5e6f7a8b9c0d
+        username:
+          type: string
+          example: alice
+        displayName:
+          type: string
+          example: Alice Walker
+
+    AttachmentDescriptor:
+      type: object
+      required:
+        - identifier
+      properties:
+        identifier:
+          type: string
+          description: Opaque storage UUID
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        fileName:
+          type: string
+          example: screenshot.png
+        type:
+          type: string
+          enum: [image, unknown]
+          example: image
+        mime:
+          type: string
+          example: image/png
+        size:
+          type: integer
+          example: 1048576
+
+    Thing:
+      type: object
+      required:
+        - _id
+        - ownerId
+        - content
+        - richContent
+        - createdAt
+        - modifiedAt
+        - tags
+        - attachments
+        - public
+        - shared
+        - archived
+        - sticky
+      properties:
+        _id:
+          type: string
+          example: 64f8a12b3c4d5e6f7a8b9c0d
+        ownerId:
+          type: string
+          example: 64f8a12b3c4d5e6f7a8b9c01
+        content:
+          type: string
+          example: Hello #meeting with @bob
+        richContent:
+          type: string
+          example: Hello <a href="/tags/meeting">#meeting</a> with @bob
+        createdAt:
+          type: integer
+          description: Unix timestamp in milliseconds
+          example: 1694000000000
+        modifiedAt:
+          type: integer
+          description: Unix timestamp in milliseconds
+          example: 1694000000000
+        tags:
+          type: array
+          items:
+            type: string
+          example: [meeting]
+        externalContent:
+          type: array
+          items:
+            type: object
+          default: []
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttachmentDescriptor'
+        public:
+          type: boolean
+          example: false
+        shared:
+          type: boolean
+          example: false
+        archived:
+          type: boolean
+          example: false
+        sticky:
+          type: boolean
+          example: false
+
+    Tag:
+      type: object
+      required:
+        - name
+        - usage
+      properties:
+        name:
+          type: string
+          example: meeting
+        usage:
+          type: integer
+          example: 5
+
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - password
+        - email
+        - displayName
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[a-z0-9_\-]{3,32}$'
+          example: alice
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+          example: secret_password123
+        email:
+          type: string
+          format: email
+          maxLength: 128
+          example: alice@example.com
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 64
+          example: Alice Walker
+
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 1
+          example: alice
+        password:
+          type: string
+          example: secret_password123
+
+    CreateThingRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          example: Quick note with #idea
+        attachments:
+          type: array
+          items:
+            oneOf:
+              - type: string
+                description: Attachment identifier or safe path segment
+              - $ref: '#/components/schemas/AttachmentDescriptor'
+          default: []
+
+    UpdateThingRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          example: Updated note with #idea
+        attachments:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - $ref: '#/components/schemas/AttachmentDescriptor'
+          default: []
+        public:
+          type: boolean
+          default: false
+        shared:
+          type: boolean
+          default: false
+        archived:
+          type: boolean
+          default: false
+        sticky:
+          type: boolean
+          default: false
+
+    SaveSettingsRequest:
+      type: object
+      required:
+        - settings
+      properties:
+        settings:
+          type: object
+          additionalProperties: true
+          example:
+            title: My Meemo Journal
+            theme: dark
+
+    ImportResult:
+      type: object
+      required:
+        - imported
+        - failed
+        - total
+      properties:
+        imported:
+          type: integer
+          example: 12
+        failed:
+          type: integer
+          example: 0
+        total:
+          type: integer
+          example: 12
+
+    HealthLiveResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: ok
+
+    HealthReadyResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: ready
+
+  parameters:
+    ThingIdPath:
+      name: id
+      in: path
+      required: true
+      description: 24-character hexadecimal ObjectId of the Thing
+      schema:
+        type: string
+        pattern: '^[0-9a-fA-F]{24}$'
+        example: 64f8a12b3c4d5e6f7a8b9c0d
+
+    PublicThingIdPath:
+      name: thingId
+      in: path
+      required: true
+      description: 24-character hexadecimal ObjectId of the Thing
+      schema:
+        type: string
+        pattern: '^[0-9a-fA-F]{24}$'
+        example: 64f8a12b3c4d5e6f7a8b9c0d
+
+    UserIdPath:
+      name: userId
+      in: path
+      required: true
+      description: User identifier (stable ObjectId hex string or username)
+      schema:
+        type: string
+        example: alice
+
+    FileIdentifierPath:
+      name: identifier
+      in: path
+      required: true
+      description: Opaque storage UUID / filename
+      schema:
+        type: string
+        example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+
+    FilterQuery:
+      name: filter
+      in: query
+      required: false
+      description: Full-text search query string
+      schema:
+        type: string
+        maxLength: 1000
+
+    StickyQuery:
+      name: sticky
+      in: query
+      required: false
+      description: Filter by sticky flag
+      schema:
+        type: boolean
+        default: false
+
+    ArchivedQuery:
+      name: archived
+      in: query
+      required: false
+      description: Filter by archived flag
+      schema:
+        type: boolean
+        default: false
+
+    SkipQuery:
+      name: skip
+      in: query
+      required: false
+      description: Number of records to skip
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+    LimitQuery:
+      name: limit
+      in: query
+      required: false
+      description: Maximum records to return
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+
+  responses:
+    BadRequest:
+      description: Validation or parameter format error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Access forbidden by authorization rules
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Conflict with existing resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PayloadTooLarge:
+      description: Request body or uploaded file exceeded size limit
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Unexpected internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: Downstream service (e.g. MongoDB) unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+paths:
+  /api/register:
+    post:
+      tags: [auth]
+      summary: Register a new account
+      description: Creates a new user account subject to REGISTRATION_MODE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/login:
+    post:
+      tags: [auth]
+      summary: Authenticate user and initiate session
+      description: Validates credentials, regenerates session ID, and establishes user session cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: connect.sid=s%3A...; Path=/; HttpOnly; SameSite=Lax
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/logout:
+    post:
+      tags: [auth]
+      summary: Terminate session
+      description: Destroys current user session and clears session cookie.
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/profile:
+    get:
+      tags: [auth]
+      summary: Get current authenticated user profile
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/things:
+    get:
+      tags: [things]
+      summary: List user notes
+      description: Returns paginated notes with optional text search, sticky, and archive filters.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/FilterQuery'
+        - $ref: '#/components/parameters/StickyQuery'
+        - $ref: '#/components/parameters/ArchivedQuery'
+        - $ref: '#/components/parameters/SkipQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: List of notes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [things]
+                properties:
+                  things:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Thing'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [things]
+      summary: Create a note
+      description: Creates a new note, extracting tags and processing markdown rich content.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateThingRequest'
+      responses:
+        '201':
+          description: Note created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [thing]
+                properties:
+                  thing:
+                    $ref: '#/components/schemas/Thing'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/things/{id}:
+    get:
+      tags: [things]
+      summary: Get a note by ID
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ThingIdPath'
+      responses:
+        '200':
+          description: Note details
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [thing]
+                properties:
+                  thing:
+                    $ref: '#/components/schemas/Thing'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [things]
+      summary: Update a note
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ThingIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateThingRequest'
+      responses:
+        '201':
+          description: Note updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [thing]
+                properties:
+                  thing:
+                    $ref: '#/components/schemas/Thing'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [things]
+      summary: Delete a note
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ThingIdPath'
+      responses:
+        '200':
+          description: Note deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/tags:
+    get:
+      tags: [things]
+      summary: List user tags
+      description: Returns distinct tags and their usage counts for the authenticated user.
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: List of tags
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tags]
+                properties:
+                  tags:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tag'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/files:
+    post:
+      tags: [files]
+      summary: Upload an attachment
+      description: Uploads a single file, assigns a secure opaque storage UUID, and returns attachment metadata.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentDescriptor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/files/{userId}/{thingId}/{identifier}:
+    get:
+      tags: [files]
+      summary: Download or view an attachment
+      description: Securely retrieves an attachment after validating ownership and public/private status of the associated Thing.
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - name: thingId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - $ref: '#/components/parameters/FileIdentifierPath'
+      responses:
+        '200':
+          description: File binary stream
+          headers:
+            X-Content-Type-Options:
+              schema:
+                type: string
+                example: nosniff
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="document.pdf"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/settings:
+    get:
+      tags: [settings]
+      summary: Get user settings
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: User settings object
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [settings]
+                properties:
+                  settings:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [settings]
+      summary: Update user settings
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveSettingsRequest'
+      responses:
+        '202':
+          description: Settings accepted and saved
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/export:
+    get:
+      tags: [transfer]
+      summary: Export user data archive
+      description: Generates and streams a tar archive containing notes, tags, settings, and attachments.
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Meemo backup tar archive
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="meemo-export.tar"
+          content:
+            application/x-tar:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/import:
+    post:
+      tags: [transfer]
+      summary: Import user data archive
+      description: Safely unpacks, validates, and imports notes and attachments with transactional rollback.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Import summary report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/public/{userId}/things:
+    get:
+      tags: [public]
+      summary: List public notes of a user
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - $ref: '#/components/parameters/FilterQuery'
+        - $ref: '#/components/parameters/SkipQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Public notes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [things]
+                properties:
+                  things:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Thing'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/public/{userId}/things/{thingId}:
+    get:
+      tags: [public]
+      summary: Get a single public note
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - $ref: '#/components/parameters/PublicThingIdPath'
+      responses:
+        '200':
+          description: Single public note
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [thing]
+                properties:
+                  thing:
+                    $ref: '#/components/schemas/Thing'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/public/{userId}/files/{fileId}:
+    get:
+      tags: [public]
+      summary: Legacy public file endpoint (disabled)
+      description: Always returns 404 to avoid authorization bypass. Use `/api/files/{userId}/{thingId}/{identifier}` instead.
+      deprecated: true
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/users:
+    get:
+      tags: [public]
+      summary: List registered public users
+      responses:
+        '200':
+          description: Public user list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users]
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PublicUserProfile'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/users/{userId}:
+    get:
+      tags: [public]
+      summary: Get user public profile
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: User profile and public note counts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: '#/components/schemas/PublicUserProfile'
+                  notesCount:
+                    type: integer
+                    example: 42
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/rss/{userId}:
+    get:
+      tags: [public]
+      summary: RSS feed for public notes
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: RSS 2.0 XML feed
+          content:
+            application/rss+xml:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /public/{userId}:
+    get:
+      tags: [public]
+      summary: Public HTML notes stream page
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: Rendered HTML stream page
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/health/live:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      description: Returns 200 if the Node process is running.
+      responses:
+        '200':
+          description: Application process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthLiveResponse'
+
+  /api/health/ready:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      description: Verifies database connectivity and directory write access.
+      responses:
+        '200':
+          description: Application and dependencies ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthReadyResponse'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/healthcheck:
+    get:
+      tags: [health]
+      summary: Legacy healthcheck endpoint (deprecated)
+      deprecated: true
+      responses:
+        '200':
+          description: Legacy health status
+          headers:
+            X-Deprecated:
+              schema:
+                type: string
+                example: /api/healthcheck is deprecated, use /api/health/live or /api/health/ready
+          content:
+            application/json:
+              schema:
+                type: object

@@ -4,6 +4,7 @@
   "private": true,
   "description": "A personal ideas, notes or links manager",
   "main": "app.js",
+  "types": "types/index.d.ts",
   "scripts": {
     "build": "gulp",
     "start": "node app.js",
