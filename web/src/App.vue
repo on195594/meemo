@@ -18,10 +18,10 @@
 
     <!-- Main Navigation Header -->
     <header class="app-nav">
-      <div class="nav-container">
+      <div class="nav-container" :class="{ 'is-wide': settings.wideNavbar }">
         <router-link to="/" class="brand-logo">
           <img src="/favicon.png" alt="Meemo" class="logo-img" width="28" height="28" />
-          <span>Meemo</span>
+          <span>{{ settings.title || 'Meemo' }}</span>
         </router-link>
 
         <nav class="nav-links">
@@ -33,7 +33,7 @@
 
         <div class="nav-auth">
           <!-- Authenticated User Profile Dropdown -->
-          <div v-if="isAuthenticated && user" class="user-menu-wrapper" v-click-outside="closeUserMenu">
+          <div v-if="isAuthenticated && user" class="user-menu-wrapper">
             <button
               type="button"
               class="user-profile-btn"
@@ -52,6 +52,22 @@
                 <span class="header-username">@{{ user.username }}</span>
               </div>
               <hr class="dropdown-divider" />
+              <button
+                type="button"
+                class="dropdown-item"
+                role="menuitem"
+                @click="openSettings"
+              >
+                Settings
+              </button>
+              <button
+                type="button"
+                class="dropdown-item"
+                role="menuitem"
+                @click="openCheatsheet"
+              >
+                Cheatsheet
+              </button>
               <router-link
                 :to="`/public/${user.username}`"
                 class="dropdown-item"
@@ -69,6 +85,24 @@
                 @click="closeUserMenu"
               >
                 RSS Feed
+              </a>
+              <hr class="dropdown-divider" />
+              <button
+                type="button"
+                class="dropdown-item"
+                role="menuitem"
+                @click="openImport"
+              >
+                Import
+              </button>
+              <a
+                href="/api/export"
+                class="dropdown-item"
+                role="menuitem"
+                download="meemo-export.tar"
+                @click="closeUserMenu"
+              >
+                Export
               </a>
               <hr class="dropdown-divider" />
               <button
@@ -108,19 +142,36 @@
     <!-- Main View Content -->
     <router-view />
 
-    <!-- Auth Login / Register Modal -->
+    <!-- Modals -->
     <LoginModal
       v-model="showAuthModal"
       :initial-tab="authModalTab"
       @success="onAuthSuccess"
     />
+
+    <SettingsModal
+      v-model="showSettingsModal"
+    />
+
+    <ImportModal
+      v-model="showImportModal"
+      @imported="handleImportFinished"
+    />
+
+    <CheatsheetModal
+      v-model="showCheatsheetModal"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, provide } from 'vue';
+import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue';
 import { useAuth } from './composables/useAuth';
+import { useSettings } from './composables/useSettings';
 import LoginModal from './components/LoginModal.vue';
+import SettingsModal from './components/SettingsModal.vue';
+import ImportModal from './components/ImportModal.vue';
+import CheatsheetModal from './components/CheatsheetModal.vue';
 
 const {
   user,
@@ -132,14 +183,35 @@ const {
   dismissSessionExpired,
 } = useAuth();
 
+const { settings, loadSettings } = useSettings();
+
 const showAuthModal = ref(false);
 const authModalTab = ref<'login' | 'register'>('login');
 const showUserMenu = ref(false);
+
+const showSettingsModal = ref(false);
+const showImportModal = ref(false);
+const showCheatsheetModal = ref(false);
 
 function openLoginModal(tab: 'login' | 'register' = 'login') {
   authModalTab.value = isFirstUser.value ? 'register' : tab;
   showAuthModal.value = true;
   showUserMenu.value = false;
+}
+
+function openSettings() {
+  closeUserMenu();
+  showSettingsModal.value = true;
+}
+
+function openImport() {
+  closeUserMenu();
+  showImportModal.value = true;
+}
+
+function openCheatsheet() {
+  closeUserMenu();
+  showCheatsheetModal.value = true;
 }
 
 const userAvatarInitial = computed(() => {
@@ -149,6 +221,9 @@ const userAvatarInitial = computed(() => {
 });
 
 provide('openAuthModal', openLoginModal);
+provide('openSettingsModal', openSettings);
+provide('openImportModal', openImport);
+provide('openCheatsheetModal', openCheatsheet);
 
 function toggleUserMenu() {
   showUserMenu.value = !showUserMenu.value;
@@ -161,6 +236,13 @@ function closeUserMenu() {
 function onAuthSuccess() {
   showAuthModal.value = false;
   showUserMenu.value = false;
+  loadSettings();
+}
+
+function handleImportFinished() {
+  showImportModal.value = false;
+  // Trigger a full reload or page event to refresh notes
+  window.dispatchEvent(new CustomEvent('meemo:imported'));
 }
 
 async function handleLogout() {
@@ -175,8 +257,17 @@ function handleGlobalClick(e: MouseEvent) {
   }
 }
 
+watch(isAuthenticated, (authed) => {
+  if (authed) {
+    loadSettings();
+  }
+});
+
 onMounted(() => {
   init();
+  if (isAuthenticated.value) {
+    loadSettings();
+  }
   document.addEventListener('click', handleGlobalClick);
 });
 
@@ -197,6 +288,7 @@ body {
   color: #2d3748;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   line-height: 1.6;
+  min-height: 100vh;
 }
 
 .session-expired-banner {
@@ -257,12 +349,17 @@ body {
 }
 
 .nav-container {
-  max-width: 1000px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: 0.75rem 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  transition: max-width 0.2s;
+}
+
+.nav-container.is-wide {
+  max-width: 96%;
 }
 
 .brand-logo {

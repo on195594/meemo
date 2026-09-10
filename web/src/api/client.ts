@@ -162,14 +162,102 @@ export const api = {
   },
 
   files: {
-    upload: (file: File) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      return request<AttachmentDescriptor>('/api/files', {
-        method: 'POST',
-        body: formData,
+    upload: (file: File, onProgress?: (percent: number) => void): Promise<AttachmentDescriptor> => {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/files');
+        xhr.withCredentials = true;
+
+        if (onProgress && xhr.upload) {
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              onProgress(Math.round((event.loaded / event.total) * 100));
+            }
+          };
+        }
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.responseText));
+            } catch {
+              reject(new ApiError(xhr.status, 'parse_error', 'Failed to parse response'));
+            }
+          } else {
+            let code = 'upload_failed';
+            let message = xhr.statusText;
+            try {
+              const err = JSON.parse(xhr.responseText);
+              if (err.code) code = err.code;
+              if (err.message) message = err.message;
+            } catch {}
+            const apiError = new ApiError(xhr.status, code, message);
+            if (xhr.status === 401) {
+              notifyUnauthorized('/api/files', apiError);
+            }
+            reject(apiError);
+          }
+        };
+
+        xhr.onerror = () => {
+          reject(new ApiError(0, 'network_error', 'Upload network failed'));
+        };
+
+        const formData = new FormData();
+        formData.append('file', file);
+        xhr.send(formData);
       });
     },
+  },
+
+  transfer: {
+    importArchive: (file: File, onProgress?: (percent: number) => void): Promise<{ total: number; imported: number; failed: number }> => {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/import');
+        xhr.withCredentials = true;
+
+        if (onProgress && xhr.upload) {
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              onProgress(Math.round((event.loaded / event.total) * 100));
+            }
+          };
+        }
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.responseText));
+            } catch {
+              reject(new ApiError(xhr.status, 'parse_error', 'Failed to parse import response'));
+            }
+          } else {
+            let code = 'import_failed';
+            let message = xhr.statusText;
+            try {
+              const err = JSON.parse(xhr.responseText);
+              if (err.code) code = err.code;
+              if (err.message) message = err.message;
+            } catch {}
+            const apiError = new ApiError(xhr.status, code, message);
+            if (xhr.status === 401) {
+              notifyUnauthorized('/api/import', apiError);
+            }
+            reject(apiError);
+          }
+        };
+
+        xhr.onerror = () => {
+          reject(new ApiError(0, 'network_error', 'Import network failed'));
+        };
+
+        const formData = new FormData();
+        formData.append('file', file);
+        xhr.send(formData);
+      });
+    },
+    exportUrl: () => '/api/export',
   },
 
   settings: {

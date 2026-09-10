@@ -1,5 +1,5 @@
 <template>
-  <div class="notes-view">
+  <div class="notes-view" :class="{ 'is-wide': settings.wide }">
     <!-- Unauthenticated View States -->
     <template v-if="!isAuthenticated">
       <div v-if="authLoading" class="loading-state">
@@ -112,7 +112,7 @@
       </div>
 
       <!-- Main Layout: Cards Stream & Tags Sidebar -->
-      <div class="notes-layout">
+      <div class="notes-layout" :class="{ 'no-sidebar': settings.showTagSidebar === false }">
         <!-- Center Stream Column -->
         <main class="stream-column">
           <!-- Note Composer (visible in active notes view) -->
@@ -181,7 +181,7 @@
         </main>
 
         <!-- Right Tag Cloud Sidebar -->
-        <aside class="sidebar-column">
+        <aside v-if="settings.showTagSidebar !== false" class="sidebar-column">
           <TagSidebar
             :tags="tags"
             :selected-tag="selectedTag"
@@ -198,12 +198,14 @@
 import { ref, watch, onMounted, onUnmounted, inject } from 'vue';
 import { useAuth } from '../composables/useAuth';
 import { useNotes } from '../composables/useNotes';
+import { useSettings } from '../composables/useSettings';
 import type { Thing } from '../api/client';
 import NoteComposer from '../components/NoteComposer.vue';
 import NoteCard from '../components/NoteCard.vue';
 import TagSidebar from '../components/TagSidebar.vue';
 
 const { isAuthenticated, isLoading: authLoading, isFirstUser } = useAuth();
+const { settings } = useSettings();
 const openAuthModal = inject<((tab?: 'login' | 'register') => void) | undefined>('openAuthModal', undefined);
 
 const {
@@ -353,12 +355,19 @@ watch(hasMore, () => {
   }
 });
 
+function handleImportEvent() {
+  fetchNotes(true);
+  fetchTags();
+  showToast('Notes refreshed after import', 'info');
+}
+
 onMounted(() => {
   if (isAuthenticated.value) {
     fetchNotes(true);
     fetchTags();
   }
   setupIntersectionObserver();
+  window.addEventListener('meemo:imported', handleImportEvent);
 });
 
 onUnmounted(() => {
@@ -368,6 +377,7 @@ onUnmounted(() => {
   if (toastTimer) {
     clearTimeout(toastTimer);
   }
+  window.removeEventListener('meemo:imported', handleImportEvent);
 });
 </script>
 
@@ -377,6 +387,15 @@ onUnmounted(() => {
   margin: 0 auto;
   padding: 1.5rem;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  transition: max-width 0.2s;
+}
+
+.notes-view.is-wide {
+  max-width: 96%;
+}
+
+.notes-layout.no-sidebar {
+  grid-template-columns: 1fr;
 }
 
 .loading-state {
