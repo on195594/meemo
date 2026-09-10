@@ -13,6 +13,7 @@
           v-for="thing in things"
           :key="thing._id"
           :thing="thing"
+          :can-edit="false"
         />
       </div>
       <div v-else class="empty-state">

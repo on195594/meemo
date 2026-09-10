@@ -1,5 +1,13 @@
 <template>
-  <article class="note-card" :class="{ 'is-sticky': thing.sticky, 'is-archived': thing.archived }">
+  <article
+    class="note-card"
+    :class="{
+      'is-sticky': thing.sticky,
+      'is-archived': thing.archived,
+      'is-editing': isEditing
+    }"
+  >
+    <!-- Card Header / Meta & Action Buttons -->
     <header class="card-header">
       <div class="header-meta">
         <time :datetime="isoDate" :title="fullDate" class="note-time">
@@ -18,61 +26,217 @@
           📦 Archived
         </span>
       </div>
-    </header>
 
-    <!-- Markdown Content Body -->
-    <div class="card-body markdown-body" v-html="renderedBody"></div>
-
-    <!-- Attachments Display -->
-    <div v-if="thing.attachments && thing.attachments.length > 0" class="card-attachments">
-      <div
-        v-for="att in thing.attachments"
-        :key="att.identifier"
-        class="attachment-item"
-      >
-        <a
-          :href="attachmentUrl(att)"
-          target="_blank"
-          rel="noopener"
-          class="attachment-link"
-        >
-          <span class="attachment-icon">{{ isImageAttachment(att) ? '🖼️' : '📎' }}</span>
-          <span class="attachment-name">{{ att.fileName || att.identifier }}</span>
-          <span v-if="att.size" class="attachment-size">({{ formatFileSize(att.size) }})</span>
-        </a>
-      </div>
-    </div>
-
-    <!-- Tags Footer -->
-    <footer v-if="thing.tags && thing.tags.length > 0" class="card-footer">
-      <div class="tags-container">
+      <!-- Action Buttons (when editable and not in edit mode) -->
+      <div v-if="canEdit && !isEditing" class="card-actions">
+        <!-- Sticky Toggle -->
         <button
-          v-for="tag in thing.tags"
-          :key="tag"
           type="button"
-          class="tag-pill"
-          @click="$emit('tagClick', tag)"
-          :title="`Filter by #${tag}`"
+          class="action-btn"
+          :class="{ active: thing.sticky }"
+          :title="thing.sticky ? 'Remove pin' : 'Pin to top'"
+          @click="$emit('toggleSticky', thing)"
         >
-          #{{ tag }}
+          📌
+        </button>
+
+        <!-- Public Toggle -->
+        <button
+          type="button"
+          class="action-btn"
+          :class="{ active: thing.public }"
+          :title="thing.public ? 'Make private' : 'Make public'"
+          @click="$emit('togglePublic', thing)"
+        >
+          🌐
+        </button>
+
+        <!-- Archive / Restore Toggle -->
+        <button
+          type="button"
+          class="action-btn"
+          :class="{ active: thing.archived }"
+          :title="thing.archived ? 'Restore note' : 'Archive note'"
+          @click="$emit('toggleArchive', thing)"
+        >
+          {{ thing.archived ? '↩️' : '📦' }}
+        </button>
+
+        <!-- Edit Button -->
+        <button
+          type="button"
+          class="action-btn"
+          title="Edit note"
+          @click="startEdit"
+        >
+          ✏️
+        </button>
+
+        <!-- Delete Button -->
+        <button
+          type="button"
+          class="action-btn delete-btn"
+          title="Delete note"
+          @click="showDeleteConfirm = true"
+        >
+          🗑️
         </button>
       </div>
-    </footer>
+    </header>
+
+    <!-- Normal View: Markdown Content -->
+    <template v-if="!isEditing">
+      <div class="card-body markdown-body" v-html="renderedBody"></div>
+
+      <!-- Attachments Display -->
+      <div v-if="thing.attachments && thing.attachments.length > 0" class="card-attachments">
+        <div
+          v-for="att in thing.attachments"
+          :key="att.identifier"
+          class="attachment-item"
+        >
+          <a
+            :href="attachmentUrl(att)"
+            target="_blank"
+            rel="noopener"
+            class="attachment-link"
+          >
+            <span class="attachment-icon">{{ isImageAttachment(att) ? '🖼️' : '📎' }}</span>
+            <span class="attachment-name">{{ att.fileName || att.identifier }}</span>
+            <span v-if="att.size" class="attachment-size">({{ formatFileSize(att.size) }})</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Tags Footer -->
+      <footer v-if="thing.tags && thing.tags.length > 0" class="card-footer">
+        <div class="tags-container">
+          <button
+            v-for="tag in thing.tags"
+            :key="tag"
+            type="button"
+            class="tag-pill"
+            @click="$emit('tagClick', tag)"
+            :title="`Filter by #${tag}`"
+          >
+            #{{ tag }}
+          </button>
+        </div>
+      </footer>
+    </template>
+
+    <!-- Inline Edit Form -->
+    <template v-else>
+      <div class="inline-edit-form">
+        <textarea
+          ref="editTextareaRef"
+          v-model="editContent"
+          class="edit-textarea"
+          rows="5"
+          :disabled="isSaving"
+          @keydown="handleEditKeyDown"
+        ></textarea>
+
+        <div v-if="editError" class="edit-error" role="alert">
+          {{ editError }}
+        </div>
+
+        <div class="edit-actions">
+          <div class="edit-hint">
+            <kbd>Ctrl+S</kbd> or <kbd>Ctrl+Enter</kbd> to save, <kbd>Esc</kbd> to cancel
+          </div>
+          <div class="edit-btn-group">
+            <button
+              type="button"
+              class="btn-edit secondary"
+              :disabled="isSaving"
+              @click="cancelEdit"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn-edit primary"
+              :disabled="isSaving || !editContent.trim()"
+              @click="saveEdit"
+            >
+              <span v-if="isSaving">Saving...</span>
+              <span v-else>Save</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Delete Confirmation Modal -->
+    <div
+      v-if="showDeleteConfirm"
+      class="delete-modal-overlay"
+      @click.self="showDeleteConfirm = false"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="delete-modal-card">
+        <h3>Delete Note?</h3>
+        <p>Are you sure you want to permanently delete this note? This action cannot be undone.</p>
+        <div class="delete-modal-actions">
+          <button
+            type="button"
+            class="btn-modal cancel"
+            :disabled="isDeleting"
+            @click="showDeleteConfirm = false"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn-modal confirm-delete"
+            :disabled="isDeleting"
+            @click="confirmDelete"
+          >
+            <span v-if="isDeleting">Deleting...</span>
+            <span v-else>Delete Permanently</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </article>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import type { Thing, AttachmentDescriptor } from '../api/client';
 import { renderMarkdown } from '../utils/markdown';
 
-const props = defineProps<{
-  thing: Thing;
+const props = withDefaults(
+  defineProps<{
+    thing: Thing;
+    canEdit?: boolean;
+    onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; error?: string }>;
+    onDeleteConfirm?: (id: string) => Promise<{ success: boolean; error?: string }>;
+  }>(),
+  {
+    canEdit: true,
+  }
+);
+
+const emit = defineEmits<{
+  (e: 'tagClick', tag: string): void;
+  (e: 'toggleSticky', thing: Thing): void;
+  (e: 'togglePublic', thing: Thing): void;
+  (e: 'toggleArchive', thing: Thing): void;
+  (e: 'update', id: string, updates: Partial<Thing>): void;
+  (e: 'delete', id: string): void;
 }>();
 
-defineEmits<{
-  (e: 'tagClick', tag: string): void;
-}>();
+const isEditing = ref(false);
+const editContent = ref('');
+const isSaving = ref(false);
+const editError = ref<string | null>(null);
+const editTextareaRef = ref<HTMLTextAreaElement | null>(null);
+
+const showDeleteConfirm = ref(false);
+const isDeleting = ref(false);
 
 const dateValue = computed(() => {
   return props.thing.modifiedAt || props.thing.createdAt || Date.now();
@@ -125,6 +289,67 @@ function formatFileSize(bytes?: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+function startEdit() {
+  editContent.value = props.thing.content || '';
+  editError.value = null;
+  isEditing.value = true;
+  nextTick(() => {
+    editTextareaRef.value?.focus();
+  });
+}
+
+function cancelEdit() {
+  isEditing.value = false;
+  editError.value = null;
+}
+
+function handleEditKeyDown(e: KeyboardEvent) {
+  if (((e.ctrlKey || e.metaKey) && e.key === 'Enter') || ((e.ctrlKey || e.metaKey) && e.key === 's')) {
+    e.preventDefault();
+    saveEdit();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    cancelEdit();
+  }
+}
+
+async function saveEdit() {
+  const trimmed = editContent.value.trim();
+  if (!trimmed || isSaving.value) return;
+
+  isSaving.value = true;
+  editError.value = null;
+
+  if (props.onSaveEdit) {
+    const result = await props.onSaveEdit(props.thing._id, { content: trimmed });
+    if (result.success) {
+      isEditing.value = false;
+    } else {
+      editError.value = result.error || 'Failed to save note';
+    }
+  } else {
+    emit('update', props.thing._id, { content: trimmed });
+    isEditing.value = false;
+  }
+  isSaving.value = false;
+}
+
+async function confirmDelete() {
+  if (isDeleting.value) return;
+  isDeleting.value = true;
+
+  if (props.onDeleteConfirm) {
+    const result = await props.onDeleteConfirm(props.thing._id);
+    if (result.success) {
+      showDeleteConfirm.value = false;
+    }
+  } else {
+    emit('delete', props.thing._id);
+    showDeleteConfirm.value = false;
+  }
+  isDeleting.value = false;
+}
 </script>
 
 <style scoped>
@@ -136,6 +361,7 @@ function formatFileSize(bytes?: number): string {
   margin-bottom: 1rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   transition: box-shadow 0.2s, border-color 0.2s;
+  position: relative;
 }
 
 .note-card:hover {
@@ -153,11 +379,18 @@ function formatFileSize(bytes?: number): string {
   background-color: #fafbfc;
 }
 
+.note-card.is-editing {
+  border-color: #3182ce;
+  box-shadow: 0 0 0 2px rgba(49, 130, 206, 0.15);
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.75rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .header-meta {
@@ -197,6 +430,44 @@ function formatFileSize(bytes?: number): string {
 .badge-archived {
   background-color: #edf2f7;
   color: #4a5568;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+
+.note-card:hover .card-actions {
+  opacity: 1;
+}
+
+.action-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+  line-height: 1;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.action-btn:hover {
+  background-color: #edf2f7;
+  border-color: #cbd5e0;
+}
+
+.action-btn.active {
+  background-color: #ebf8ff;
+  border-color: #90cdf4;
+}
+
+.action-btn.delete-btn:hover {
+  background-color: #fff5f5;
+  border-color: #feb2b2;
 }
 
 .card-body {
@@ -260,5 +531,163 @@ function formatFileSize(bytes?: number): string {
   background-color: #e2e8f0;
   color: #2b6cb0;
   border-color: #cbd5e0;
+}
+
+/* Inline Edit Styles */
+.inline-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.edit-textarea {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #2d3748;
+  resize: vertical;
+  outline: none;
+}
+
+.edit-textarea:focus {
+  border-color: #3182ce;
+}
+
+.edit-error {
+  background-color: #fff5f5;
+  color: #c53030;
+  border: 1px solid #fed7d7;
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.edit-hint {
+  font-size: 0.75rem;
+  color: #718096;
+}
+
+.edit-hint kbd {
+  background: #edf2f7;
+  border: 1px solid #cbd5e0;
+  border-radius: 3px;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.7rem;
+  font-family: monospace;
+}
+
+.edit-btn-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-edit {
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-edit.primary {
+  background-color: #2b6cb0;
+  color: #ffffff;
+  border: 1px solid transparent;
+}
+
+.btn-edit.primary:hover:not(:disabled) {
+  background-color: #2c5282;
+}
+
+.btn-edit.secondary {
+  background-color: transparent;
+  color: #718096;
+  border: 1px solid #cbd5e0;
+}
+
+.btn-edit.secondary:hover:not(:disabled) {
+  background-color: #edf2f7;
+  color: #2d3748;
+}
+
+/* Delete Modal */
+.delete-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.delete-modal-card {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+.delete-modal-card h3 {
+  font-size: 1.15rem;
+  color: #e53e3e;
+  margin-bottom: 0.5rem;
+}
+
+.delete-modal-card p {
+  font-size: 0.9rem;
+  color: #4a5568;
+  line-height: 1.5;
+  margin-bottom: 1.25rem;
+}
+
+.delete-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.btn-modal {
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-modal.cancel {
+  background-color: #edf2f7;
+  color: #4a5568;
+}
+
+.btn-modal.cancel:hover:not(:disabled) {
+  background-color: #e2e8f0;
+}
+
+.btn-modal.confirm-delete {
+  background-color: #e53e3e;
+  color: #ffffff;
+}
+
+.btn-modal.confirm-delete:hover:not(:disabled) {
+  background-color: #c53030;
 }
 </style>

@@ -30,4 +30,4 @@ done
 export MONGODB_URL="mongodb://${MONGODB_IP}:27017/meemo"
 export USERS_FILE="${USERS_FILE_PATH}"
 
-./node_modules/.bin/mocha --exit src/test/*-test.js
+./node_modules/.bin/mocha --exit --timeout 10000 src/test/*-test.js

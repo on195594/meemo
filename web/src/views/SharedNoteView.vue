@@ -4,7 +4,7 @@
     <div v-else-if="error" class="error-banner">{{ error }}</div>
 
     <main v-else-if="thing" class="shared-note-content">
-      <NoteCard :thing="thing" />
+      <NoteCard :thing="thing" :can-edit="false" />
     </main>
   </div>
 </template>
