@@ -29,6 +29,11 @@ export interface PublicUserProfile {
   displayName: string;
 }
 
+export interface PublicUserSummary {
+  username: string;
+  displayName: string;
+}
+
 export interface AttachmentDescriptor {
   identifier: string;
   fileName?: string;
@@ -280,9 +285,9 @@ export const api = {
     },
     getThing: (userId: string, thingId: string) =>
       request<{ thing: Thing }>(`/api/public/${userId}/things/${thingId}`),
-    users: () => request<{ users: PublicUserProfile[] }>('/api/users'),
+    users: () => request<{ users: PublicUserSummary[] }>('/api/users'),
     userProfile: (userId: string) =>
-      request<{ user: PublicUserProfile; notesCount?: number }>(`/api/users/${userId}`),
+      request<{ user: PublicUserProfile }>(`/api/users/${userId}`),
   },
 
   health: {

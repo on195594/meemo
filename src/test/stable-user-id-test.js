@@ -346,16 +346,16 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
                 .expect(200)
                 .end(function (err, res) {
                     expect(err).to.be(null);
-                    expect(res.body.username).to.equal('alice203');
-                    expect(res.body.id).to.equal(aliceUser.id);
+                    expect(res.body.user.username).to.equal('alice203');
+                    expect(res.body.user.id).to.equal(aliceUser.id);
 
                     request(app)
                         .get('/api/users/' + aliceUser.id)
                         .expect(200)
                         .end(function (err, res2) {
                             expect(err).to.be(null);
-                            expect(res2.body.username).to.equal('alice203');
-                            expect(res2.body.id).to.equal(aliceUser.id);
+                            expect(res2.body.user.username).to.equal('alice203');
+                            expect(res2.body.user.id).to.equal(aliceUser.id);
                             done();
                         });
                 });

@@ -52,6 +52,11 @@ export interface PublicUserProfile {
     displayName: string;
 }
 
+export interface PublicUserSummary {
+    username: string;
+    displayName: string;
+}
+
 export interface AttachmentDescriptor {
     identifier: string;
     fileName?: string;
@@ -202,12 +207,11 @@ export interface GetPublicThingResponse {
 }
 
 export interface ListPublicUsersResponse {
-    users: PublicUserProfile[];
+    users: PublicUserSummary[];
 }
 
 export interface GetPublicUserResponse {
     user: PublicUserProfile;
-    notesCount?: number;
 }
 
 // Health Probes

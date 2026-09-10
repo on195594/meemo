@@ -54,7 +54,7 @@ async function listUsers(req, res, next) {
 
 async function profile(req, res, next) {
     try {
-        next(new HttpSuccess(200, await sharing.profile(req.params.userId)));
+        next(new HttpSuccess(200, { user: await sharing.profile(req.params.userId) }));
     } catch (error) {
         if (error.message === 'not found') throw new HttpError(404, 'not found');
         throw error;

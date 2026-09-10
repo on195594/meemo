@@ -87,6 +87,7 @@ components:
 
     PublicUserProfile:
       type: object
+      additionalProperties: false
       required:
         - id
         - username
@@ -95,6 +96,20 @@ components:
         id:
           type: string
           example: 64f8a12b3c4d5e6f7a8b9c0d
+        username:
+          type: string
+          example: alice
+        displayName:
+          type: string
+          example: Alice Walker
+
+    PublicUserSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+        - displayName
+      properties:
         username:
           type: string
           example: alice
@@ -1021,7 +1036,7 @@ paths:
                   users:
                     type: array
                     items:
-                      $ref: '#/components/schemas/PublicUserProfile'
+                      $ref: '#/components/schemas/PublicUserSummary'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -1033,7 +1048,7 @@ paths:
         - $ref: '#/components/parameters/UserIdPath'
       responses:
         '200':
-          description: User profile and public note counts
+          description: User public profile
           content:
             application/json:
               schema:
@@ -1042,9 +1057,6 @@ paths:
                 properties:
                   user:
                     $ref: '#/components/schemas/PublicUserProfile'
-                  notesCount:
-                    type: integer
-                    example: 42
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':

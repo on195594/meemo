@@ -9,7 +9,12 @@ var fs = require('fs'),
     request = require('supertest'),
     yaml = require('js-yaml'),
     createApp = require('../../app.js').createApp,
-    responses = require('../http/responses.js');
+    responses = require('../http/responses.js'),
+    authService = require('../services/auth-service.js'),
+    sharingService = require('../services/sharing-service.js'),
+    settingsService = require('../services/settings-service.js'),
+    thingService = require('../services/thing-service.js'),
+    users = require('../users.js');
 
 describe('API Contract and Progressive Types (RF-305)', function () {
     var specPath = path.resolve(__dirname, '../../docs/openapi.yaml');
@@ -92,6 +97,21 @@ describe('API Contract and Progressive Types (RF-305)', function () {
         });
     });
 
+    it('documents the public user response contracts exactly', function () {
+        var profileSchema = spec.components.schemas.PublicUserProfile;
+        expect(profileSchema.additionalProperties).to.be(false);
+        expect(Object.keys(profileSchema.properties)).to.eql(['id', 'username', 'displayName']);
+
+        var userResponse = spec.paths['/api/users/{userId}'].get.responses['200']
+            .content['application/json'].schema;
+        expect(Object.keys(userResponse.properties)).to.eql(['user']);
+
+        var usersResponse = spec.paths['/api/users'].get.responses['200']
+            .content['application/json'].schema;
+        expect(usersResponse.properties.users.items.$ref)
+            .to.equal('#/components/schemas/PublicUserSummary');
+    });
+
     it('produces HTTP responses strictly matching the OpenAPI schema contract', function (done) {
         var app = createApp({ sessionMemory: true, sessionSecret: 'rf-305-secret' });
 
@@ -116,5 +136,69 @@ describe('API Contract and Progressive Types (RF-305)', function () {
                         done();
                     });
             });
+    });
+
+    it('returns the documented response envelopes at runtime', async function () {
+        var originals = {
+            authenticate: authService.authenticate,
+            authProfile: authService.profile,
+            listUsers: sharingService.listUsers,
+            publicThings: sharingService.getAll,
+            settings: settingsService.get,
+            things: thingService.getAll,
+            resolveUser: users.resolveUser
+        };
+        var user = {
+            id: '507f1f77bcf86cd799439011',
+            username: 'contract-user',
+            displayName: 'Contract User'
+        };
+        var thing = { _id: '507f1f77bcf86cd799439012' };
+
+        authService.authenticate = async function () { return user; };
+        authService.profile = async function () { return Object.assign({ email: 'contract@example.com' }, user); };
+        sharingService.listUsers = async function () {
+            return [{ username: user.username, displayName: user.displayName }];
+        };
+        sharingService.getAll = async function () { return [thing]; };
+        settingsService.get = async function () { return { title: 'Contract' }; };
+        thingService.getAll = async function () { return [thing]; };
+        users.resolveUser = async function () { return user; };
+
+        try {
+            var app = createApp({ sessionMemory: true, sessionSecret: 'rf-708-secret' });
+            var agent = request.agent(app);
+            await agent.post('/api/login').send({ username: user.username, password: 'password' }).expect(200);
+
+            var profileResponse = await agent.get('/api/profile').expect(200);
+            expect(profileResponse.body).to.eql({
+                user: Object.assign({ email: 'contract@example.com' }, user)
+            });
+
+            var usersResponse = await request(app).get('/api/users').expect(200);
+            expect(usersResponse.body).to.eql({
+                users: [{ username: user.username, displayName: user.displayName }]
+            });
+
+            var userResponse = await request(app).get('/api/users/' + user.id).expect(200);
+            expect(userResponse.body).to.eql({ user: user });
+
+            var settingsResponse = await agent.get('/api/settings').expect(200);
+            expect(settingsResponse.body).to.eql({ settings: { title: 'Contract' } });
+
+            var thingsResponse = await agent.get('/api/things').expect(200);
+            expect(thingsResponse.body).to.eql({ things: [thing] });
+
+            var publicThingsResponse = await request(app).get('/api/public/' + user.id + '/things').expect(200);
+            expect(publicThingsResponse.body).to.eql({ things: [thing] });
+        } finally {
+            authService.authenticate = originals.authenticate;
+            authService.profile = originals.authProfile;
+            sharingService.listUsers = originals.listUsers;
+            sharingService.getAll = originals.publicThings;
+            settingsService.get = originals.settings;
+            thingService.getAll = originals.things;
+            users.resolveUser = originals.resolveUser;
+        }
     });
 });

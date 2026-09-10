@@ -53,22 +53,12 @@ function listUsers(callback) {
 }
 
 function profile(rawUserId, callback) {
-    var promise = resolve(rawUserId).then(async function (target) {
+    var promise = resolve(rawUserId).then(function (target) {
         if (!target.user) throw notFound();
-
-        var config;
-        try {
-            config = await settings.get(target.id);
-        } catch (error) {
-            if (target.username === target.id) throw error;
-            config = await settings.get(target.username);
-        }
         return {
             id: target.user.id,
             username: target.user.username,
-            displayName: target.user.displayName,
-            title: config.title,
-            backgroundImageDataUrl: config.publicBackground ? config.backgroundImageDataUrl : undefined
+            displayName: target.user.displayName
         };
     });
     return nodeify(promise, callback);
