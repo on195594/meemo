@@ -11,6 +11,7 @@ var assert = require('assert'),
 var unifiedCollection = null;
 var legacyCollections = {};
 var indexesCreated = false;
+var lastModifiedAt = 0;
 
 function resetCache() {
     unifiedCollection = null;
@@ -84,14 +85,57 @@ function get(userId, callback) {
 }
 
 function update(userId, name, callback) {
+    var promise = updateWithState(userId, name).then(function () { return undefined; });
+    return nodeify(promise, callback);
+}
+
+function updateWithState(userId, name, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof name, 'string');
 
-    var promise = getUnifiedCollection().updateOne({ ownerId: userId, name: name }, {
+    var modifiedAt = Math.max(Date.now(), lastModifiedAt + 1);
+    lastModifiedAt = modifiedAt;
+    var promise = getUnifiedCollection().findOneAndUpdate({ ownerId: userId, name: name }, {
         $inc: { usage: 1 },
-        $set: { ownerId: userId, name: name, modifiedAt: Date.now() },
-        $setOnInsert: { createdAt: Date.now() }
-    }, { upsert: true }).then(function () { return undefined; });
+        $set: { ownerId: userId, name: name, modifiedAt: modifiedAt },
+        $setOnInsert: { createdAt: modifiedAt }
+    }, { upsert: true, returnDocument: 'before' }).then(function (result) {
+        var previous = result.value;
+        return {
+            name: name,
+            previous: previous,
+            documentId: previous ? previous._id : result.lastErrorObject.upserted,
+            modifiedAt: modifiedAt,
+            expectedUsage: (previous && previous.usage || 0) + 1
+        };
+    });
+    return nodeify(promise, callback);
+}
+
+function restoreUpdate(userId, state, callback) {
+    assert.strictEqual(typeof userId, 'string');
+    assert(state && typeof state.name === 'string');
+
+    var collection = getUnifiedCollection();
+    var exactQuery = {
+        _id: state.documentId,
+        ownerId: userId,
+        name: state.name,
+        modifiedAt: state.modifiedAt,
+        usage: state.expectedUsage
+    };
+    var promise;
+    if (state.previous) {
+        promise = collection.replaceOne(exactQuery, state.previous).then(function (result) {
+            if (result.matchedCount) return;
+            return collection.updateOne({ _id: state.documentId, ownerId: userId, usage: { $gt: 0 } }, { $inc: { usage: -1 } });
+        });
+    } else {
+        promise = collection.deleteOne(exactQuery).then(function (result) {
+            if (result.deletedCount) return;
+            return collection.updateOne({ _id: state.documentId, ownerId: userId, usage: { $gt: 0 } }, { $inc: { usage: -1 } });
+        });
+    }
     return nodeify(promise, callback);
 }
 
@@ -114,6 +158,8 @@ module.exports = {
     get: get,
     del: del,
     update: update,
+    updateWithState: updateWithState,
+    restoreUpdate: restoreUpdate,
     ensureIndexes: ensureIndexes,
     getUnifiedCollection: getUnifiedCollection,
     resetCache: resetCache

@@ -190,6 +190,13 @@ function add(userId, content, tags, attachments, externalContent, callback) {
 }
 
 function addFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, callback) {
+    var promise = insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt).then(function (result) {
+        return get(userId, result._id);
+    });
+    return nodeify(promise, callback);
+}
+
+function insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof content, 'string');
     assert(Array.isArray(tags));
@@ -213,7 +220,9 @@ function addFull(userId, content, tags, attachments, externalContent, createdAt,
 
     var promise = getUnifiedCollection().insertOne(doc).then(function (result) {
         if (!result) throw new Error('no result returned');
-        return get(userId, result.insertedId.toString());
+        doc._id = result.insertedId.toString();
+        postProcess(userId, doc);
+        return doc;
     });
     return nodeify(promise, callback);
 }
@@ -275,6 +284,7 @@ module.exports = {
     get: get,
     add: add,
     addFull: addFull,
+    insertFull: insertFull,
     put: put,
     del: del,
     ensureIndexes: ensureIndexes,

@@ -46,6 +46,50 @@ function validateThingsData(data) {
     return null;
 }
 
+async function buildAttachmentManifest(tempExtractDir, data) {
+    var rootEntries = await files.readdir(tempExtractDir, { withFileTypes: true });
+    rootEntries.sort(function (left, right) { return left.name.localeCompare(right.name); });
+    var attachmentDirectory = null;
+
+    for (var rootEntry of rootEntries) {
+        if (rootEntry.name === 'things.json' && rootEntry.isFile()) continue;
+        if (rootEntry.name === 'attachments' && rootEntry.isDirectory()) {
+            attachmentDirectory = path.join(tempExtractDir, rootEntry.name);
+            continue;
+        }
+        throw new Error('Archive contains unsupported root entry: ' + rootEntry.name);
+    }
+
+    var manifest = [];
+    if (attachmentDirectory) {
+        var entries = await files.readdir(attachmentDirectory, { withFileTypes: true });
+        entries.sort(function (left, right) { return left.name.localeCompare(right.name); });
+        for (var entry of entries) {
+            if (!entry.isFile() || !isSafePathSegment(entry.name)) {
+                throw new Error('Archive contains nested or unsupported attachment entry: ' + entry.name);
+            }
+            manifest.push({ identifier: entry.name, sourcePath: path.join(attachmentDirectory, entry.name) });
+        }
+    }
+
+    var referenced = new Set();
+    for (var thing of data.things) {
+        for (var attachment of thing.attachments || []) {
+            var identifier = typeof attachment === 'string' ? attachment : attachment.identifier;
+            referenced.add(identifier);
+        }
+    }
+
+    var staged = new Set(manifest.map(function (entry) { return entry.identifier; }));
+    for (var identifier of referenced) {
+        if (!staged.has(identifier)) throw new Error('Archive missing referenced attachment: ' + identifier);
+    }
+    for (var stagedIdentifier of staged) {
+        if (!referenced.has(stagedIdentifier)) throw new Error('Archive contains unreferenced attachment: ' + stagedIdentifier);
+    }
+    return manifest;
+}
+
 function exportData(userId, callback) {
     var promise = things.getAllLean(userId).then(function (result) {
         return {
@@ -74,13 +118,34 @@ function createExport(userId, username, callback) {
             result = await exportData(username);
         }
 
+        var attachmentIdentifiers = Array.from(new Set(result.things.reduce(function (all, thing) {
+            return all.concat((thing.attachments || []).map(function (attachment) {
+                return typeof attachment === 'string' ? attachment : attachment.identifier;
+            }));
+        }, [])));
+        for (var identifier of attachmentIdentifiers) {
+            if (!isSafePathSegment(identifier)) throw new Error('Cannot export invalid attachment identifier: ' + identifier);
+            var attachmentStat;
+            try {
+                attachmentStat = await files.lstat(path.join(attachmentFolder, identifier));
+            } catch (error) {
+                if (error.code === 'ENOENT') throw new Error('Cannot export missing attachment: ' + identifier);
+                throw error;
+            }
+            if (!attachmentStat.isFile()) throw new Error('Cannot export unsupported attachment: ' + identifier);
+        }
         var stream = tar.pack(attachmentFolder, {
+            entries: attachmentIdentifiers,
+            finalize: false,
+            finish: function (pack) {
+                pack.entry({ name: 'things.json' }, JSON.stringify(result, null, 4));
+                pack.finalize();
+            },
             map: function (header) {
                 header.name = 'attachments/' + header.name;
                 return header;
             }
         });
-        stream.entry({ name: 'things.json' }, JSON.stringify(result, null, 4));
         return stream;
     });
     return nodeify(promise, callback);
@@ -93,36 +158,79 @@ function importData(userId, data, callback) {
     var promise = Promise.resolve().then(async function () {
         var schemaError = validateThingsData(data);
         if (schemaError) throw new Error(schemaError);
-        var insertedThingIds = [];
+        var state = { thingIds: [], tagUpdates: [] };
 
         try {
-            for (var thing of data.things) {
-                var tagObjects = thingService.extractTags(thing.content);
-                for (var tag of tagObjects) await tags.update(userId, tag);
-
-                var createdAt = thing.createdAt;
-                if (typeof createdAt === 'string') createdAt = (new Date(createdAt)).getTime();
-                if (typeof createdAt !== 'number' || isNaN(createdAt)) createdAt = Date.now();
-
-                var modifiedAt = thing.modifiedAt;
-                if (typeof modifiedAt === 'string') modifiedAt = (new Date(modifiedAt)).getTime();
-                if (typeof modifiedAt !== 'number' || isNaN(modifiedAt)) modifiedAt = createdAt;
-
-                var result = await things.addFull(userId, thing.content, tagObjects,
-                    Array.isArray(thing.attachments) ? thing.attachments : [],
-                    Array.isArray(thing.externalContent) ? thing.externalContent : [], createdAt, modifiedAt);
-                if (!result || !result._id) throw new Error('no result returned');
-                insertedThingIds.push(result._id);
-            }
+            await insertImportedData(userId, data, state);
         } catch (error) {
-            for (var id of insertedThingIds) {
-                try { await things.del(userId, String(id)); } catch (rollbackError) {}
-            }
-            throw error;
+            throw addCleanupFailures(error, await rollbackImportedData(userId, state));
         }
-        return insertedThingIds;
+        return state.thingIds;
     });
     return nodeify(promise, callback);
+}
+
+async function insertImportedData(userId, data, state) {
+    for (var thing of data.things) {
+        var tagObjects = thingService.extractTags(thing.content);
+        for (var tag of tagObjects) state.tagUpdates.push(await tags.updateWithState(userId, tag));
+
+        var createdAt = thing.createdAt;
+        if (typeof createdAt === 'string') createdAt = (new Date(createdAt)).getTime();
+        if (typeof createdAt !== 'number' || isNaN(createdAt)) createdAt = Date.now();
+
+        var modifiedAt = thing.modifiedAt;
+        if (typeof modifiedAt === 'string') modifiedAt = (new Date(modifiedAt)).getTime();
+        if (typeof modifiedAt !== 'number' || isNaN(modifiedAt)) modifiedAt = createdAt;
+
+        var result = await things.insertFull(userId, thing.content, tagObjects,
+            Array.isArray(thing.attachments) ? thing.attachments : [],
+            Array.isArray(thing.externalContent) ? thing.externalContent : [], createdAt, modifiedAt);
+        if (!result || !result._id) throw new Error('no result returned');
+        state.thingIds.push(result._id);
+        await things.get(userId, result._id);
+    }
+}
+
+async function rollbackImportedData(userId, state) {
+    var failures = [];
+    for (var i = state.thingIds.length - 1; i >= 0; i--) {
+        try {
+            await things.del(userId, String(state.thingIds[i]));
+        } catch (error) {
+            failures.push({ operation: 'remove imported thing', target: String(state.thingIds[i]), error: error });
+        }
+    }
+    for (var j = state.tagUpdates.length - 1; j >= 0; j--) {
+        try {
+            await tags.restoreUpdate(userId, state.tagUpdates[j]);
+        } catch (error) {
+            failures.push({ operation: 'restore tag', target: state.tagUpdates[j].name, error: error });
+        }
+    }
+    return failures;
+}
+
+function addCleanupFailures(error, failures) {
+    if (!failures.length) return error;
+    if (!error || typeof error !== 'object') {
+        var original = error;
+        error = new Error(String(original));
+        error.cause = original;
+    }
+    error.cleanupErrors = (error.cleanupErrors || []).concat(failures);
+    error.message += '; rollback/cleanup incomplete: ' + failures.map(function (failure) {
+        return failure.operation + ' ' + failure.target + ': ' + failure.error.message;
+    }).join('; ');
+    return error;
+}
+
+function addCleanupWarning(result, failure) {
+    result.cleanupWarnings = (result.cleanupWarnings || []).concat([{
+        operation: failure.operation,
+        target: failure.target,
+        message: failure.error.message
+    }]);
 }
 
 function extractArchive(filePath, tempExtractDir) {
@@ -130,12 +238,9 @@ function extractArchive(filePath, tempExtractDir) {
         var finished = false;
         var entryCount = 0;
         var totalSize = 0;
+        var seenEntries = new Set();
         var input = fs.createReadStream(filePath);
         var extract = tar.extract(tempExtractDir, {
-            map: function (header) {
-                if (header.name.indexOf('attachments/') === 0) header.name = header.name.slice('attachments/'.length);
-                return header;
-            },
             ignore: function (name, header) {
                 var error;
                 if (header.type !== 'file' && header.type !== 'directory') {
@@ -154,6 +259,16 @@ function extractArchive(filePath, tempExtractDir) {
                         error = new Error('Archive entry path escapes extraction directory: ' + header.name);
                     }
                 }
+
+                var normalizedName = typeof header.name === 'string' ? path.posix.normalize(header.name.replace(/\\/g, '/')) : '';
+                if (!error && seenEntries.has(normalizedName)) {
+                    if (header.type === 'file' && normalizedName.indexOf('attachments/') === 0) {
+                        error = new Error('Archive contains duplicate mapped attachment identifier: ' + normalizedName.slice('attachments/'.length));
+                    } else {
+                        error = new Error('Archive contains duplicate entry: ' + header.name);
+                    }
+                }
+                seenEntries.add(normalizedName);
 
                 entryCount++;
                 totalSize += header.size || 0;
@@ -189,6 +304,9 @@ function importArchive(userId, filePath, callback) {
     var promise = Promise.resolve().then(async function () {
         var tempExtractDir = await files.mkdtemp(path.join(os.tmpdir(), 'meemo-import-'));
         var copiedFiles = [];
+        var state = { thingIds: [], tagUpdates: [] };
+        var result;
+        var primaryError;
 
         try {
             await extractArchive(filePath, tempExtractDir);
@@ -209,31 +327,66 @@ function importArchive(userId, filePath, callback) {
             }
             var schemaError = validateThingsData(data);
             if (schemaError) throw new Error('Schema validation failed: ' + schemaError);
+            var manifest = await buildAttachmentManifest(tempExtractDir, data);
 
-            for (var file of await files.readdir(tempExtractDir)) {
-                if (file === 'things.json') continue;
-                var sourcePath = path.join(tempExtractDir, file);
-                if (!(await files.stat(sourcePath)).isFile()) continue;
-                if (!isSafePathSegment(file)) throw new Error('Unsafe attachment filename in archive: ' + file);
-                var copied = await storage.copyAttachment(userId, sourcePath, file);
-                if (copied.created) copiedFiles.push(copied.path);
+            await insertImportedData(userId, data, state);
+
+            for (var entry of manifest) {
+                var copied = await storage.copyAttachment(userId, entry.sourcePath, entry.identifier);
+                copiedFiles.push(copied.path);
             }
 
-            var insertedIds = await importData(userId, data);
-            return { total: data.things.length, imported: insertedIds.length, failed: 0 };
+            result = { total: data.things.length, imported: state.thingIds.length, failed: 0 };
         } catch (error) {
-            await storage.removeFiles(copiedFiles);
-            throw error;
-        } finally {
-            await files.rm(tempExtractDir, { recursive: true, force: true });
+            var failures = await rollbackImportedData(userId, state);
+            try {
+                var fileFailures = await storage.removeFiles(copiedFiles);
+                failures = failures.concat(fileFailures.map(function (failure) {
+                    return { operation: 'remove imported attachment', target: path.basename(failure.file), error: failure.error };
+                }));
+            } catch (cleanupError) {
+                failures.push({ operation: 'remove imported attachments', target: '<all>', error: cleanupError });
+            }
+            primaryError = addCleanupFailures(error, failures);
         }
+
+        try {
+            await files.rm(tempExtractDir, { recursive: true, force: true });
+        } catch (cleanupError) {
+            var failure = {
+                operation: 'remove temporary extraction directory',
+                target: path.basename(tempExtractDir),
+                error: cleanupError
+            };
+            if (primaryError) primaryError = addCleanupFailures(primaryError, [failure]);
+            else addCleanupWarning(result, failure);
+        }
+        if (primaryError) throw primaryError;
+        return result;
     });
     return nodeify(promise, callback);
 }
 
 function importUploadedArchive(userId, filePath, callback) {
-    var promise = importArchive(userId, filePath).finally(function () {
-        return storage.removeFile(filePath);
+    var promise = Promise.resolve().then(async function () {
+        var result;
+        var primaryError;
+        try {
+            result = await importArchive(userId, filePath);
+        } catch (error) {
+            primaryError = error;
+        }
+        try {
+            await storage.removeFile(filePath);
+        } catch (cleanupError) {
+            var failure = {
+                operation: 'remove uploaded archive', target: path.basename(filePath), error: cleanupError
+            };
+            if (primaryError) primaryError = addCleanupFailures(primaryError, [failure]);
+            else addCleanupWarning(result, failure);
+        }
+        if (primaryError) throw primaryError;
+        return result;
     });
     return nodeify(promise, callback);
 }

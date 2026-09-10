@@ -58,24 +58,24 @@ async function exportDirectory(userId, username) {
 
 async function copyAttachment(userId, sourcePath, storageKey) {
     var target = path.join(await ensureUserDirectory(userId), storageKey);
-    var created = false;
-    try {
-        await fs.access(target);
-    } catch (error) {
-        created = true;
-    }
-    await fs.copyFile(sourcePath, target);
-    return { path: target, created: created };
+    await fs.copyFile(sourcePath, target, require('fs').constants.COPYFILE_EXCL);
+    return { path: target, created: true };
 }
 
 async function removeFiles(files) {
-    await Promise.all(files.map(async function (file) {
-        try { await fs.rm(file, { force: true }); } catch (error) {}
-    }));
+    var failures = [];
+    for (var file of files) {
+        try {
+            await fs.rm(file, { force: true });
+        } catch (error) {
+            failures.push({ file: file, error: error });
+        }
+    }
+    return failures;
 }
 
 async function removeFile(file) {
-    try { await fs.rm(file, { force: true }); } catch (error) {}
+    await fs.rm(file, { force: true });
 }
 
 async function checkAccess() {

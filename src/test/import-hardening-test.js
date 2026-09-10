@@ -6,6 +6,7 @@
 /* global after:false */
 
 var expect = require('expect.js');
+var crypto = require('crypto');
 var fs = require('fs');
 var path = require('path');
 var request = require('supertest');
@@ -13,6 +14,8 @@ var tarStream = require('tar-stream');
 var config = require('../config.js');
 var users = require('../users.js');
 var logic = require('../services/import-export-service.js');
+var storage = require('../storage/local-storage.js');
+var tags = require('../database/tags.js');
 var things = require('../database/things.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
@@ -27,6 +30,30 @@ function makeTarBuffer(entries, callback) {
     pack.on('data', function (c) { chunks.push(c); });
     pack.on('end', function () { callback(null, Buffer.concat(chunks)); });
     pack.on('error', callback);
+}
+
+var archiveSequence = 0;
+function importEntries(userId, entries) {
+    return new Promise(function (resolve, reject) {
+        makeTarBuffer(entries, function (error, tarBuffer) {
+            if (error) return reject(error);
+            var archivePath = '/tmp/meemo-import-case-' + process.pid + '-' + (++archiveSequence) + '.tar';
+            fs.writeFileSync(archivePath, tarBuffer);
+            logic.importArchive(userId, archivePath, function (importError, result) {
+                fs.rmSync(archivePath, { force: true });
+                resolve({ error: importError, result: result });
+            });
+        });
+    });
+}
+
+function streamToBuffer(stream) {
+    return new Promise(function (resolve, reject) {
+        var chunks = [];
+        stream.on('data', function (chunk) { chunks.push(chunk); });
+        stream.on('end', function () { resolve(Buffer.concat(chunks)); });
+        stream.on('error', reject);
+    });
 }
 
 describe('Import Safety and Consistency (RF-106)', function () {
@@ -233,9 +260,429 @@ describe('Import Safety and Consistency (RF-106)', function () {
                     });
             });
         });
+
+        it('rejects attachment manifest mismatches before database writes', async function () {
+            var cases = [
+                {
+                    message: 'missing referenced attachment',
+                    entries: [{ header: { name: 'things.json' }, content: JSON.stringify({
+                        things: [{ content: 'missing', attachments: [{ identifier: 'missing.txt' }] }]
+                    }) }]
+                },
+                {
+                    message: 'unreferenced attachment',
+                    entries: [
+                        { header: { name: 'attachments/orphan.txt' }, content: 'orphan' },
+                        { header: { name: 'things.json' }, content: JSON.stringify({ things: [] }) }
+                    ]
+                },
+                {
+                    message: 'nested or unsupported attachment entry',
+                    entries: [
+                        { header: { name: 'attachments/nested/file.txt' }, content: 'nested' },
+                        { header: { name: 'things.json' }, content: JSON.stringify({ things: [] }) }
+                    ]
+                },
+                {
+                    message: 'duplicate mapped attachment identifier',
+                    entries: [
+                        { header: { name: 'attachments/duplicate.txt' }, content: 'first' },
+                        { header: { name: 'attachments/duplicate.txt' }, content: 'second' },
+                        { header: { name: 'things.json' }, content: JSON.stringify({
+                            things: [{ content: 'duplicate', attachments: [{ identifier: 'duplicate.txt' }] }]
+                        }) }
+                    ]
+                }
+            ];
+
+            for (var testCase of cases) {
+                var outcome = await importEntries(testUserId, testCase.entries);
+                expect(outcome.error).to.be.ok();
+                expect(outcome.error.message).to.contain(testCase.message);
+            }
+            expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(0);
+        });
     });
 
     describe('Atomic rollback and successful import', function () {
+        it('round-trips one shared attachment without exporting orphan storage files', async function () {
+            var targetUserId = 'roundtrip-target';
+            var sharedFile = 'shared-roundtrip.txt';
+            var orphanFile = 'orphan-roundtrip.txt';
+            var sourceFolder = path.join(testAttachmentDir, testUserId);
+            var targetFolder = path.join(testAttachmentDir, targetUserId);
+            var archivePath = '/tmp/meemo-roundtrip-' + process.pid + '.tar';
+            var attachment = [{ identifier: sharedFile, fileName: sharedFile, type: 'text/plain' }];
+
+            fs.mkdirSync(sourceFolder, { recursive: true });
+            fs.writeFileSync(path.join(sourceFolder, sharedFile), 'shared content');
+            fs.writeFileSync(path.join(sourceFolder, orphanFile), 'must not be exported');
+            await things.insertFull(testUserId, 'shared one', [], attachment, [], 1, 1);
+            await things.insertFull(testUserId, 'shared two', [], attachment, [], 2, 2);
+
+            try {
+                var stream = await logic.createExport(testUserId, testUserId);
+                fs.writeFileSync(archivePath, await streamToBuffer(stream));
+                var result = await logic.importArchive(targetUserId, archivePath);
+
+                expect(result.imported).to.equal(2);
+                expect(fs.readFileSync(path.join(targetFolder, sharedFile), 'utf8')).to.equal('shared content');
+                expect(fs.existsSync(path.join(targetFolder, orphanFile))).to.be(false);
+                var imported = await things.getUnifiedCollection().find({ ownerId: targetUserId }).toArray();
+                expect(imported.length).to.equal(2);
+                expect(imported.every(function (thing) {
+                    return thing.attachments[0].identifier === sharedFile;
+                })).to.be(true);
+            } finally {
+                fs.rmSync(archivePath, { force: true });
+                fs.rmSync(sourceFolder, { recursive: true, force: true });
+                fs.rmSync(targetFolder, { recursive: true, force: true });
+                await things.getUnifiedCollection().deleteMany({ ownerId: { $in: [testUserId, targetUserId] } });
+            }
+        });
+
+        it('fails before returning an export stream when referenced attachment is missing', async function () {
+            var missingFile = 'missing-export.txt';
+            await things.insertFull(testUserId, 'stale attachment metadata', [], [{ identifier: missingFile }], [], 1, 1);
+
+            var error;
+            try {
+                await logic.createExport(testUserId, testUserId);
+            } catch (caught) {
+                error = caught;
+            } finally {
+                await things.getUnifiedCollection().deleteMany({ ownerId: testUserId });
+            }
+
+            expect(error).to.be.ok();
+            expect(error.message).to.equal('Cannot export missing attachment: ' + missingFile);
+        });
+
+        it('returns success with a warning when temporary extraction cleanup fails after commit', async function () {
+            var promiseFs = fs.promises;
+            var originalRm = promiseFs.rm;
+            var cleanupError = new Error('forced temporary cleanup failure after commit');
+            var tempTarget;
+            promiseFs.rm = function (target) {
+                if (path.basename(target).indexOf('meemo-import-') === 0) {
+                    tempTarget = target;
+                    return Promise.reject(cleanupError);
+                }
+                return originalRm.apply(promiseFs, arguments);
+            };
+
+            var outcome;
+            try {
+                outcome = await importEntries(testUserId, [
+                    { header: { name: 'things.json' }, content: JSON.stringify({ things: [{ content: 'committed temp cleanup' }] }) }
+                ]);
+            } finally {
+                promiseFs.rm = originalRm;
+                if (tempTarget) fs.rmSync(tempTarget, { recursive: true, force: true });
+            }
+
+            expect(outcome.error).to.be(null);
+            expect(outcome.result.imported).to.equal(1);
+            expect(outcome.result.cleanupWarnings.length).to.equal(1);
+            expect(outcome.result.cleanupWarnings[0].operation).to.equal('remove temporary extraction directory');
+            expect(outcome.result.cleanupWarnings[0].message).to.equal(cleanupError.message);
+            expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(1);
+            await things.getUnifiedCollection().deleteMany({ ownerId: testUserId });
+        });
+
+        it('returns success with a warning when uploaded archive deletion fails after commit', async function () {
+            var archivePath = '/tmp/meemo-upload-cleanup-' + process.pid + '.tar';
+            var cleanupError = new Error('forced uploaded archive cleanup failure after commit');
+            var originalRemoveFile = storage.removeFile;
+            var tarBuffer = await new Promise(function (resolve, reject) {
+                makeTarBuffer([
+                    { header: { name: 'things.json' }, content: JSON.stringify({ things: [{ content: 'committed upload cleanup' }] }) }
+                ], function (error, buffer) { if (error) reject(error); else resolve(buffer); });
+            });
+            fs.writeFileSync(archivePath, tarBuffer);
+            storage.removeFile = function () { return Promise.reject(cleanupError); };
+
+            var result;
+            try {
+                result = await logic.importUploadedArchive(testUserId, archivePath);
+            } finally {
+                storage.removeFile = originalRemoveFile;
+                fs.rmSync(archivePath, { force: true });
+            }
+
+            expect(result.imported).to.equal(1);
+            expect(result.cleanupWarnings.length).to.equal(1);
+            expect(result.cleanupWarnings[0].operation).to.equal('remove uploaded archive');
+            expect(result.cleanupWarnings[0].message).to.equal(cleanupError.message);
+            expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(1);
+            await things.getUnifiedCollection().deleteMany({ ownerId: testUserId });
+        });
+
+        it('rejects attachment collisions without changing existing files or leaving residue', function (done) {
+            var userFolder = path.join(testAttachmentDir, testUserId);
+            var existingFile = 'z-existing-attachment.txt';
+            var newFile = 'a-new-attachment.txt';
+            var archivePath = '/tmp/meemo-import-collision-' + process.pid + '.tar';
+            var targetFile = path.join(userFolder, existingFile);
+            var newTargetFile = path.join(userFolder, newFile);
+            var copiedIdentifiers = [];
+            var originalCopyAttachment = storage.copyAttachment;
+            var hash = function () {
+                return crypto.createHash('sha256').update(fs.readFileSync(targetFile)).digest('hex');
+            };
+
+            fs.mkdirSync(userFolder, { recursive: true });
+            fs.writeFileSync(targetFile, 'original attachment content');
+            var originalHash = hash();
+
+            makeTarBuffer([
+                { header: { name: 'attachments/' + newFile }, content: 'must be rolled back' },
+                { header: { name: 'attachments/' + existingFile }, content: 'must not overwrite' },
+                { header: { name: 'things.json' }, content: JSON.stringify({
+                    things: [{
+                        content: 'Imported collision note',
+                        attachments: [
+                            { identifier: existingFile, fileName: existingFile, type: 'text/plain' },
+                            { identifier: newFile, fileName: newFile, type: 'text/plain' }
+                        ]
+                    }]
+                }) }
+            ], function (err, tarBuf) {
+                if (err) return done(err);
+                fs.writeFileSync(archivePath, tarBuf);
+                storage.copyAttachment = function (userId, sourcePath, identifier) {
+                    copiedIdentifiers.push(identifier);
+                    return originalCopyAttachment(userId, sourcePath, identifier);
+                };
+
+                logic.importArchive(testUserId, archivePath, function (err) {
+                    storage.copyAttachment = originalCopyAttachment;
+                    fs.rmSync(archivePath, { force: true });
+                    try {
+                        expect(err).to.be.ok();
+                        expect(err.code).to.equal('EEXIST');
+                        expect(copiedIdentifiers).to.eql([newFile, existingFile]);
+                        expect(hash()).to.equal(originalHash);
+                        expect(fs.existsSync(newTargetFile)).to.be(false);
+                    } catch (assertionError) {
+                        return done(assertionError);
+                    }
+
+                    things.getAll(testUserId, {}, 0, 10, function (err, result) {
+                        if (err) return done(err);
+                        expect(result.length).to.equal(0);
+                        done();
+                    });
+                });
+            });
+        });
+
+        it('tracks and removes an insert when its post-insert read fails', async function () {
+            var originalGet = things.get;
+            things.get = function () { return Promise.reject(new Error('forced post-insert read failure')); };
+            var outcome;
+            try {
+                outcome = await new Promise(function (resolve) {
+                    logic.importData(testUserId, { things: [{ content: 'post-read failure' }] }, function (error, result) {
+                        resolve({ error: error, result: result });
+                    });
+                });
+            } finally {
+                things.get = originalGet;
+            }
+
+            expect(outcome.error).to.be.ok();
+            expect(outcome.error.message).to.contain('forced post-insert read failure');
+            expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(0);
+        });
+
+        it('exactly restores repeated pre-existing tags and removes repeated newly-created tags on failure', async function () {
+            var tagCollection = tags.getUnifiedCollection();
+            await tags.update(testUserId, 'existing');
+            await tagCollection.updateOne({ ownerId: testUserId, name: 'existing' }, {
+                $set: { usage: 7, createdAt: 111, modifiedAt: 222, marker: 'preserve' }
+            });
+            var before = await tagCollection.findOne({ ownerId: testUserId, name: 'existing' });
+            var originalInsertFull = things.insertFull;
+            var insertCalls = 0;
+            things.insertFull = function () {
+                insertCalls++;
+                if (insertCalls === 2) return Promise.reject(new Error('forced second insert failure'));
+                return originalInsertFull.apply(things, arguments);
+            };
+
+            var outcome;
+            try {
+                outcome = await new Promise(function (resolve) {
+                    logic.importData(testUserId, {
+                        things: [
+                            { content: 'first #existing #newtag' },
+                            { content: 'second #existing #newtag' }
+                        ]
+                    }, function (error, result) {
+                        resolve({ error: error, result: result });
+                    });
+                });
+            } finally {
+                things.insertFull = originalInsertFull;
+            }
+
+            var after = await tagCollection.findOne({ ownerId: testUserId, name: 'existing' });
+            expect(outcome.error).to.be.ok();
+            expect(JSON.stringify(after)).to.equal(JSON.stringify(before));
+            expect(await tagCollection.findOne({ ownerId: testUserId, name: 'newtag' })).to.be(null);
+            expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(0);
+            await tagCollection.deleteMany({ ownerId: testUserId });
+        });
+
+        it('preserves concurrent tag fields and increments while rolling back only import usage', async function () {
+            var tagCollection = tags.getUnifiedCollection();
+            await tagCollection.insertOne({
+                ownerId: testUserId,
+                name: 'existing',
+                usage: 7,
+                createdAt: 111,
+                modifiedAt: 222,
+                marker: 'before'
+            });
+            var originalInsertFull = things.insertFull;
+            var insertCalls = 0;
+            things.insertFull = function () {
+                insertCalls++;
+                if (insertCalls !== 2) return originalInsertFull.apply(things, arguments);
+                return Promise.all([
+                    tagCollection.updateOne({ ownerId: testUserId, name: 'existing' }, {
+                        $inc: { usage: 3 },
+                        $set: { modifiedAt: 999999, marker: 'concurrent', concurrentField: 'keep' }
+                    }),
+                    tagCollection.updateOne({ ownerId: testUserId, name: 'newtag' }, {
+                        $inc: { usage: 2 },
+                        $set: { modifiedAt: 999999, marker: 'concurrent-new', concurrentField: 'keep-new' }
+                    })
+                ]).then(function () { throw new Error('forced failure after concurrent tag writes'); });
+            };
+
+            var outcome;
+            try {
+                outcome = await new Promise(function (resolve) {
+                    logic.importData(testUserId, {
+                        things: [
+                            { content: 'first #existing #newtag' },
+                            { content: 'second without tags' }
+                        ]
+                    }, function (error, result) { resolve({ error: error, result: result }); });
+                });
+            } finally {
+                things.insertFull = originalInsertFull;
+            }
+
+            var existing = await tagCollection.findOne({ ownerId: testUserId, name: 'existing' });
+            var newtag = await tagCollection.findOne({ ownerId: testUserId, name: 'newtag' });
+            expect(outcome.error.message).to.contain('forced failure after concurrent tag writes');
+            expect(existing.usage).to.equal(10);
+            expect(existing.modifiedAt).to.equal(999999);
+            expect(existing.marker).to.equal('concurrent');
+            expect(existing.concurrentField).to.equal('keep');
+            expect(newtag.usage).to.equal(2);
+            expect(newtag.modifiedAt).to.equal(999999);
+            expect(newtag.marker).to.equal('concurrent-new');
+            expect(newtag.concurrentField).to.equal('keep-new');
+            expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(0);
+            await tagCollection.deleteMany({ ownerId: testUserId });
+        });
+
+        it('attempts every rollback and reports failures without replacing the primary error', async function () {
+            var userFolder = path.join(testAttachmentDir, testUserId);
+            var firstFile = 'a-rollback-fails.txt';
+            var secondFile = 'b-rollback-succeeds.txt';
+            var existingFile = 'z-primary-collision.txt';
+            var firstTarget = path.join(userFolder, firstFile);
+            var secondTarget = path.join(userFolder, secondFile);
+            var existingTarget = path.join(userFolder, existingFile);
+            fs.mkdirSync(userFolder, { recursive: true });
+            fs.writeFileSync(existingTarget, 'preserve primary file');
+
+            var primaryCause = new Error('collision cause');
+            var primaryError = new Error('forced attachment collision');
+            primaryError.code = 'EEXIST';
+            primaryError.cause = primaryCause;
+            var rollbackError = new Error('forced thing rollback failure');
+            var fileRollbackError = new Error('forced file rollback failure');
+            var tempCleanupError = new Error('forced temporary cleanup failure');
+            var originalCopyAttachment = storage.copyAttachment;
+            var originalDelete = things.del;
+            var promiseFs = fs.promises;
+            var originalRm = promiseFs.rm;
+            var copiedIdentifiers = [];
+            var deletedIds = [];
+            var tempTarget;
+
+            storage.copyAttachment = function (userId, sourcePath, identifier) {
+                copiedIdentifiers.push(identifier);
+                if (identifier === existingFile) return Promise.reject(primaryError);
+                return originalCopyAttachment(userId, sourcePath, identifier);
+            };
+            things.del = function (userId, thingId) {
+                deletedIds.push(thingId);
+                if (deletedIds.length === 1) return Promise.reject(rollbackError);
+                return originalDelete(userId, thingId);
+            };
+            promiseFs.rm = function (target) {
+                if (target === firstTarget) return Promise.reject(fileRollbackError);
+                if (path.basename(target).indexOf('meemo-import-') === 0) {
+                    tempTarget = target;
+                    return Promise.reject(tempCleanupError);
+                }
+                return originalRm.apply(promiseFs, arguments);
+            };
+
+            var outcome;
+            try {
+                outcome = await importEntries(testUserId, [
+                    { header: { name: 'attachments/' + firstFile }, content: 'first' },
+                    { header: { name: 'attachments/' + secondFile }, content: 'second' },
+                    { header: { name: 'attachments/' + existingFile }, content: 'collision' },
+                    { header: { name: 'things.json' }, content: JSON.stringify({
+                        things: [
+                            {
+                                content: 'rollback one',
+                                attachments: [
+                                    { identifier: firstFile },
+                                    { identifier: secondFile },
+                                    { identifier: existingFile }
+                                ]
+                            },
+                            { content: 'rollback two' }
+                        ]
+                    }) }
+                ]);
+            } finally {
+                storage.copyAttachment = originalCopyAttachment;
+                things.del = originalDelete;
+                promiseFs.rm = originalRm;
+                if (tempTarget) fs.rmSync(tempTarget, { recursive: true, force: true });
+            }
+
+            expect(outcome.error).to.equal(primaryError);
+            expect(outcome.error.code).to.equal('EEXIST');
+            expect(outcome.error.cause).to.equal(primaryCause);
+            expect(outcome.error.message).to.contain('rollback/cleanup incomplete');
+            expect(outcome.error.cleanupErrors.length).to.equal(3);
+            expect(outcome.error.cleanupErrors.some(function (failure) {
+                return failure.error === tempCleanupError;
+            })).to.be(true);
+            expect(deletedIds.length).to.equal(2);
+            expect(copiedIdentifiers).to.eql([firstFile, secondFile, existingFile]);
+            expect(fs.existsSync(firstTarget)).to.be(true);
+            expect(fs.existsSync(secondTarget)).to.be(false);
+            expect(fs.readFileSync(existingTarget, 'utf8')).to.equal('preserve primary file');
+            expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(1);
+
+            await things.getUnifiedCollection().deleteMany({ ownerId: testUserId });
+            fs.rmSync(firstTarget, { force: true });
+            fs.rmSync(existingTarget, { force: true });
+        });
+
         it('rolls back database and file writes if import fails midway', function (done) {
             var userFolder = path.join(testAttachmentDir, testUserId);
             var orphanTestFile = 'orphan-candidate.txt';
