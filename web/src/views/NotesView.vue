@@ -101,6 +101,11 @@
         </button>
       </div>
 
+      <!-- Notification Toast -->
+      <div v-if="toastMessage" class="toast-banner" :class="toastType" role="status">
+        {{ toastMessage }}
+      </div>
+
       <!-- Error Notice -->
       <div v-if="error" class="error-banner" role="alert">
         {{ error }}
@@ -110,6 +115,13 @@
       <div class="notes-layout">
         <!-- Center Stream Column -->
         <main class="stream-column">
+          <!-- Note Composer (visible in active notes view) -->
+          <NoteComposer
+            v-if="!isArchived"
+            :on-save="createNote"
+            @created="onNoteCreated"
+          />
+
           <div v-if="isLoading" class="loading-state">
             <span class="spinner"></span>
             <p>Loading notes...</p>
@@ -121,6 +133,12 @@
               v-for="thing in things"
               :key="thing._id"
               :thing="thing"
+              :can-edit="true"
+              :on-save-edit="updateNote"
+              :on-delete-confirm="handleDeleteNote"
+              @toggle-sticky="handleToggleSticky"
+              @toggle-public="handleTogglePublic"
+              @toggle-archive="handleToggleArchive"
               @tag-click="handleTagClick"
             />
 
@@ -150,7 +168,7 @@
             <h3 v-else>No notes found</h3>
             <p v-if="hasActiveFilter">Try adjusting your search terms or clearing tag filters.</p>
             <p v-else-if="isArchived">Notes you archive will appear here.</p>
-            <p v-else>Create your first note to begin!</p>
+            <p v-else>Type a note in the composer above to begin!</p>
             <button
               v-if="hasActiveFilter"
               type="button"
@@ -180,6 +198,8 @@
 import { ref, watch, onMounted, onUnmounted, inject } from 'vue';
 import { useAuth } from '../composables/useAuth';
 import { useNotes } from '../composables/useNotes';
+import type { Thing } from '../api/client';
+import NoteComposer from '../components/NoteComposer.vue';
 import NoteCard from '../components/NoteCard.vue';
 import TagSidebar from '../components/TagSidebar.vue';
 
@@ -205,16 +225,68 @@ const {
   toggleArchived,
   clearFilters,
   clearNotes,
+  createNote,
+  updateNote,
+  deleteNote,
+  toggleSticky,
+  togglePublic,
+  toggleArchive,
 } = useNotes();
 
 const searchInput = ref('');
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
 
+const toastMessage = ref<string | null>(null);
+const toastType = ref<'success' | 'info'>('info');
+let toastTimer: number | null = null;
+
+function showToast(msg: string, type: 'success' | 'info' = 'info') {
+  toastMessage.value = msg;
+  toastType.value = type;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    toastMessage.value = null;
+  }, 2500);
+}
+
 function triggerAuthModal(tab: 'login' | 'register') {
   if (openAuthModal) {
     openAuthModal(tab);
   }
+}
+
+function onNoteCreated() {
+  showToast('Note created successfully', 'success');
+}
+
+async function handleToggleSticky(thing: Thing) {
+  const result = await toggleSticky(thing);
+  if (result.success) {
+    showToast(thing.sticky ? 'Note unpinned' : 'Note pinned to top');
+  }
+}
+
+async function handleTogglePublic(thing: Thing) {
+  const result = await togglePublic(thing);
+  if (result.success) {
+    showToast(thing.public ? 'Note is now private' : 'Note is now public');
+  }
+}
+
+async function handleToggleArchive(thing: Thing) {
+  const result = await toggleArchive(thing);
+  if (result.success) {
+    showToast(thing.archived ? 'Note restored to active' : 'Note archived');
+  }
+}
+
+async function handleDeleteNote(id: string) {
+  const result = await deleteNote(id);
+  if (result.success) {
+    showToast('Note permanently deleted');
+  }
+  return result;
 }
 
 function handleSearchSubmit() {
@@ -276,7 +348,6 @@ watch(isAuthenticated, (authenticated) => {
 });
 
 watch(hasMore, () => {
-  // Re-observe when items change
   if (loadMoreTrigger.value && observer && hasMore.value) {
     observer.observe(loadMoreTrigger.value);
   }
@@ -293,6 +364,9 @@ onMounted(() => {
 onUnmounted(() => {
   if (observer) {
     observer.disconnect();
+  }
+  if (toastTimer) {
+    clearTimeout(toastTimer);
   }
 });
 </script>
@@ -526,6 +600,31 @@ onUnmounted(() => {
   font-size: 0.8rem;
   text-decoration: underline;
   margin-left: auto;
+}
+
+.toast-banner {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.toast-banner.success {
+  background-color: #f0fff4;
+  border: 1px solid #c6f6d5;
+  color: #276749;
+}
+
+.toast-banner.info {
+  background-color: #ebf8ff;
+  border: 1px solid #bee3f8;
+  color: #2b6cb0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .error-banner {

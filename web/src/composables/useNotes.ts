@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue';
-import { api, type Thing, type Tag } from '../api/client';
+import { api, type Thing, type Tag, type AttachmentDescriptor } from '../api/client';
 
 export function useNotes() {
   const things = ref<Thing[]>([]);
@@ -124,6 +124,104 @@ export function useNotes() {
     error.value = null;
   }
 
+  // Write path operations (RF-504)
+  async function createNote(
+    content: string,
+    attachments: AttachmentDescriptor[] = []
+  ): Promise<{ success: boolean; thing?: Thing; error?: string }> {
+    if (!content || !content.trim()) {
+      return { success: false, error: 'Content cannot be empty' };
+    }
+
+    try {
+      const res = await api.things.create({ content: content.trim(), attachments });
+      if (!isArchived.value) {
+        if (res.thing.sticky) {
+          things.value.unshift(res.thing);
+        } else {
+          const firstNonStickyIndex = things.value.findIndex((t) => !t.sticky);
+          if (firstNonStickyIndex === -1) {
+            things.value.push(res.thing);
+          } else {
+            things.value.splice(firstNonStickyIndex, 0, res.thing);
+          }
+        }
+      }
+      await fetchTags();
+      return { success: true, thing: res.thing };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to create note' };
+    }
+  }
+
+  async function updateNote(
+    id: string,
+    updates: Partial<Thing>
+  ): Promise<{ success: boolean; thing?: Thing; error?: string }> {
+    const existing = things.value.find((t) => t._id === id);
+    const content = updates.content !== undefined ? updates.content : existing?.content;
+    if (!content || !content.trim()) {
+      return { success: false, error: 'Content cannot be empty' };
+    }
+
+    const payload = {
+      content: content.trim(),
+      attachments: updates.attachments !== undefined ? updates.attachments : (existing?.attachments || []),
+      public: updates.public !== undefined ? updates.public : (existing?.public || false),
+      shared: updates.shared !== undefined ? updates.shared : (existing?.shared || false),
+      archived: updates.archived !== undefined ? updates.archived : (existing?.archived || false),
+      sticky: updates.sticky !== undefined ? updates.sticky : (existing?.sticky || false),
+    };
+
+    try {
+      const res = await api.things.update(id, payload);
+      const updated = res.thing;
+
+      if (updated.archived !== isArchived.value) {
+        // Remove from current view if archived state no longer matches view
+        things.value = things.value.filter((t) => t._id !== id);
+      } else {
+        const index = things.value.findIndex((t) => t._id === id);
+        if (index !== -1) {
+          things.value.splice(index, 1, updated);
+          if (updates.sticky !== undefined) {
+            things.value.sort((a, b) => {
+              if (a.sticky !== b.sticky) return a.sticky ? -1 : 1;
+              return (b.modifiedAt || 0) - (a.modifiedAt || 0);
+            });
+          }
+        }
+      }
+      await fetchTags();
+      return { success: true, thing: updated };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to update note' };
+    }
+  }
+
+  async function deleteNote(id: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      await api.things.delete(id);
+      things.value = things.value.filter((t) => t._id !== id);
+      await fetchTags();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to delete note' };
+    }
+  }
+
+  async function toggleSticky(thing: Thing) {
+    return updateNote(thing._id, { sticky: !thing.sticky });
+  }
+
+  async function togglePublic(thing: Thing) {
+    return updateNote(thing._id, { public: !thing.public });
+  }
+
+  async function toggleArchive(thing: Thing) {
+    return updateNote(thing._id, { archived: !thing.archived });
+  }
+
   return {
     // State
     things,
@@ -138,7 +236,7 @@ export function useNotes() {
     activeFilter,
     hasActiveFilter,
 
-    // Actions
+    // Read Actions
     fetchNotes,
     fetchMore,
     fetchTags,
@@ -147,5 +245,13 @@ export function useNotes() {
     toggleArchived,
     clearFilters,
     clearNotes,
+
+    // Write Actions
+    createNote,
+    updateNote,
+    deleteNote,
+    toggleSticky,
+    togglePublic,
+    toggleArchive,
   };
 }

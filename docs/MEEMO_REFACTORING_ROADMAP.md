@@ -844,6 +844,8 @@ markdown rendering
 
 ### RF-504：Notes Write Path
 
+实施状态：已完成（已实现 NoteComposer 快速发帖组件、NoteCard 行内卡片编辑与保存/取消、永久删除二次确认弹窗、置顶/取消置顶切换、公开/私有切换、归档/取消归档双向流转与 Ctrl+Enter / Ctrl+S 键盘快捷保存）。
+
 分支：`frontend/vue3-notes-write`
 
 实现：
