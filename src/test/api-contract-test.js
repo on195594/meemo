@@ -35,14 +35,41 @@ describe('API Contract and Progressive Types (RF-305)', function () {
         expect(spec.components.schemas).to.be.an('object');
     });
 
-    it('provides TypeScript declarations in types/api.d.ts and types/index.d.ts', function () {
+    it('provides generated TypeScript declarations from the OpenAPI source', function () {
         expect(fs.existsSync(typesPath)).to.be(true);
         var typesContent = fs.readFileSync(typesPath, 'utf8');
-        expect(typesContent).to.contain('export interface Thing');
+        expect(typesContent).to.contain("import type { components, paths } from './generated/api-types'");
+        expect(typesContent).to.contain("export type Thing = components['schemas']['Thing']");
+        expect(typesContent).to.contain("export type Tag = components['schemas']['Tag']");
+        expect(typesContent).to.contain("export type ExternalContentItem = components['schemas']['ExternalContentItem']");
         expect(typesContent).to.contain('export interface User');
-        expect(typesContent).to.contain('export interface Tag');
-        expect(typesContent).to.contain('export interface ErrorResponse');
-        expect(typesContent).to.contain('export type ErrorCode');
+
+        var generatedPath = path.resolve(__dirname, '../../types/generated/api-types.ts');
+        expect(fs.existsSync(generatedPath)).to.be(true);
+        var generatedContent = fs.readFileSync(generatedPath, 'utf8');
+        expect(generatedContent).to.contain('export interface paths');
+        expect(generatedContent).to.contain('export interface components');
+        expect(generatedContent).to.contain('ExternalContentItem:');
+        expect(generatedContent).to.contain('status: "ok"');
+        expect(generatedContent).to.contain('status: "ready"');
+
+        var clientContent = fs.readFileSync(path.resolve(__dirname, '../../web/src/api/client.ts'), 'utf8');
+        expect(clientContent).to.contain("type CreateThingRequest = components['schemas']['CreateThingRequest']");
+        expect(clientContent).to.contain("type UpdateThingRequest = components['schemas']['UpdateThingRequest']");
+        expect(clientContent).to.contain('create: (data: CreateThingRequest)');
+        expect(clientContent).to.contain('update: (id: string, data: UpdateThingRequest)');
+        expect(clientContent).to.contain("type HealthLiveResponse = JsonResponse<paths['/api/health/live']['get'], 200>");
+        expect(clientContent).to.contain("type HealthReadyResponse = JsonResponse<paths['/api/health/ready']['get'], 200>");
+        expect(clientContent).to.contain("request<HealthLiveResponse>('/api/health/live')");
+        expect(clientContent).to.contain("request<HealthReadyResponse>('/api/health/ready')");
+
+        var packageJson = require('../../package.json');
+        expect(packageJson.scripts['api:generate']).to.contain('docs/openapi.yaml');
+        expect(packageJson.scripts['api:generate']).to.contain('types/generated/api-types.ts');
+
+        var workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/build.yml'), 'utf8');
+        expect(workflow).to.contain('npm run api:generate');
+        expect(workflow).to.contain('git diff --exit-code -- types/generated/api-types.ts');
 
         var indexPath = path.resolve(__dirname, '../../types/index.d.ts');
         expect(fs.existsSync(indexPath)).to.be(true);

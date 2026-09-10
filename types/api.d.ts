@@ -1,33 +1,29 @@
 /**
- * Meemo API and Domain TypeScript Type Definitions
- * RF-305: API Contract and Progressive Type Declarations
+ * Meemo API and domain TypeScript declarations.
+ * API contracts are generated from docs/openapi.yaml.
  */
 
-export type ErrorCode =
-    | 'invalid_request'
-    | 'authentication_required'
-    | 'invalid_credentials'
-    | 'forbidden'
-    | 'not_found'
-    | 'conflict'
-    | 'payload_too_large'
-    | 'too_many_requests'
-    | 'internal_error'
-    | 'service_unavailable'
-    | 'request_failed';
+import type { components, paths } from './generated/api-types';
 
-export interface ErrorResponse {
-    status: string;
-    code: ErrorCode;
-    message: string;
-}
-
-// ---------------------------------------------------------------------------
-// Domain Entities
-// ---------------------------------------------------------------------------
+export type ErrorCode = components['schemas']['ErrorResponse']['code'];
+export type ErrorResponse = components['schemas']['ErrorResponse'];
+export type UserProfile = components['schemas']['UserProfile'];
+export type PublicUserProfile = components['schemas']['PublicUserProfile'];
+export type PublicUserSummary = components['schemas']['PublicUserSummary'];
+export type AttachmentDescriptor = components['schemas']['AttachmentDescriptor'];
+export type Thing = components['schemas']['Thing'];
+export type Tag = components['schemas']['Tag'];
+export type RegisterRequest = components['schemas']['RegisterRequest'];
+export type LoginRequest = components['schemas']['LoginRequest'];
+export type CreateThingRequest = components['schemas']['CreateThingRequest'];
+export type UpdateThingRequest = components['schemas']['UpdateThingRequest'];
+export type SaveSettingsRequest = components['schemas']['SaveSettingsRequest'];
+export type ImportResult = components['schemas']['ImportResult'];
+export type Settings = SaveSettingsRequest['settings'];
 
 export type UserStatus = 'active' | 'disabled';
 
+/** Internal persisted user; not part of the public OpenAPI contract. */
 export interface User {
     id: string;
     username: string;
@@ -39,188 +35,36 @@ export interface User {
     status: UserStatus;
 }
 
-export interface UserProfile {
-    id: string;
-    username: string;
-    displayName: string;
-    email: string;
-}
+export type ExternalContentItem = components['schemas']['ExternalContentItem'];
 
-export interface PublicUserProfile {
-    id: string;
-    username: string;
-    displayName: string;
-}
+type JsonResponse<
+    Operation extends { responses: object },
+    Status extends keyof Operation['responses'],
+> = Operation['responses'][Status] extends {
+    content: { 'application/json': infer Body };
+} ? Body : never;
 
-export interface PublicUserSummary {
-    username: string;
-    displayName: string;
-}
+export type RegisterResponse = JsonResponse<paths['/api/register']['post'], 201>;
+export type LoginResponse = JsonResponse<paths['/api/login']['post'], 200>;
+export type LogoutResponse = JsonResponse<paths['/api/logout']['post'], 200>;
+export type ProfileResponse = JsonResponse<paths['/api/profile']['get'], 200>;
+export type ListThingsResponse = JsonResponse<paths['/api/things']['get'], 200>;
+export type CreateThingResponse = JsonResponse<paths['/api/things']['post'], 201>;
+export type GetThingResponse = JsonResponse<paths['/api/things/{id}']['get'], 200>;
+export type UpdateThingResponse = JsonResponse<paths['/api/things/{id}']['put'], 201>;
+export type DeleteThingResponse = JsonResponse<paths['/api/things/{id}']['delete'], 200>;
+export type ListTagsResponse = JsonResponse<paths['/api/tags']['get'], 200>;
+export type UploadFileResponse = JsonResponse<paths['/api/files']['post'], 201>;
+export type GetSettingsResponse = JsonResponse<paths['/api/settings']['get'], 200>;
+export type SaveSettingsResponse = JsonResponse<paths['/api/settings']['post'], 202>;
+export type ImportResponse = JsonResponse<paths['/api/import']['post'], 200>;
+export type ListPublicThingsResponse = JsonResponse<paths['/api/public/{userId}/things']['get'], 200>;
+export type GetPublicThingResponse = JsonResponse<paths['/api/public/{userId}/things/{thingId}']['get'], 200>;
+export type ListPublicUsersResponse = JsonResponse<paths['/api/users']['get'], 200>;
+export type GetPublicUserResponse = JsonResponse<paths['/api/users/{userId}']['get'], 200>;
+export type HealthLiveResponse = components['schemas']['HealthLiveResponse'];
+export type HealthReadyResponse = components['schemas']['HealthReadyResponse'];
+export type HealthCheckResponse = JsonResponse<paths['/api/healthcheck']['get'], 200>;
 
-export interface AttachmentDescriptor {
-    identifier: string;
-    fileName?: string;
-    type?: 'image' | 'unknown' | string;
-    mime?: string;
-    size?: number;
-}
-
-export interface ExternalContentItem {
-    url: string;
-    type?: string;
-    [key: string]: unknown;
-}
-
-export interface Thing {
-    _id: string;
-    ownerId: string;
-    content: string;
-    richContent: string;
-    createdAt: number;
-    modifiedAt: number;
-    tags: string[];
-    externalContent?: ExternalContentItem[];
-    attachments: AttachmentDescriptor[];
-    public: boolean;
-    shared: boolean;
-    archived: boolean;
-    sticky: boolean;
-}
-
-export interface Tag {
-    name: string;
-    usage: number;
-}
-
-export interface Settings {
-    [key: string]: unknown;
-}
-
-// ---------------------------------------------------------------------------
-// API Payloads & Contracts
-// ---------------------------------------------------------------------------
-
-// Auth
-export interface RegisterRequest {
-    username: string;
-    password: string;
-    email: string;
-    displayName: string;
-}
-
-export type RegisterResponse = Record<string, never>;
-
-export interface LoginRequest {
-    username: string;
-    password: string;
-}
-
-export type LoginResponse = Record<string, never>;
-
-export type LogoutResponse = Record<string, never>;
-
-export interface ProfileResponse {
-    user: UserProfile;
-}
-
-// Things & Tags
-export interface ListThingsQuery {
-    filter?: string;
-    sticky?: boolean;
-    archived?: boolean;
-    skip?: number;
-    limit?: number;
-}
-
-export interface ListThingsResponse {
-    things: Thing[];
-}
-
-export interface CreateThingRequest {
-    content: string;
-    attachments?: Array<string | AttachmentDescriptor>;
-}
-
-export interface CreateThingResponse {
-    thing: Thing;
-}
-
-export interface GetThingResponse {
-    thing: Thing;
-}
-
-export interface UpdateThingRequest {
-    content: string;
-    attachments?: Array<string | AttachmentDescriptor>;
-    public?: boolean;
-    shared?: boolean;
-    archived?: boolean;
-    sticky?: boolean;
-}
-
-export interface UpdateThingResponse {
-    thing: Thing;
-}
-
-export type DeleteThingResponse = Record<string, never>;
-
-export interface ListTagsResponse {
-    tags: Tag[];
-}
-
-// Files & Attachments
-export type UploadFileResponse = AttachmentDescriptor;
-
-// Settings
-export interface GetSettingsResponse {
-    settings: Settings;
-}
-
-export interface SaveSettingsRequest {
-    settings: Settings;
-}
-
-export type SaveSettingsResponse = Record<string, never>;
-
-// Transfer
-export interface ImportResult {
-    imported: number;
-    failed: number;
-    total: number;
-}
-
-export type ImportResponse = ImportResult;
-
-// Public & Discovery
-export interface ListPublicThingsQuery {
-    filter?: string;
-    skip?: number;
-    limit?: number;
-}
-
-export interface ListPublicThingsResponse {
-    things: Thing[];
-}
-
-export interface GetPublicThingResponse {
-    thing: Thing;
-}
-
-export interface ListPublicUsersResponse {
-    users: PublicUserSummary[];
-}
-
-export interface GetPublicUserResponse {
-    user: PublicUserProfile;
-}
-
-// Health Probes
-export interface HealthLiveResponse {
-    status: 'ok';
-}
-
-export interface HealthReadyResponse {
-    status: 'ready';
-}
-
-export type HealthCheckResponse = Record<string, never>;
+export type ListThingsQuery = paths['/api/things']['get']['parameters']['query'];
+export type ListPublicThingsQuery = paths['/api/public/{userId}/things']['get']['parameters']['query'];

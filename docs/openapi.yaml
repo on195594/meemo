@@ -140,6 +140,19 @@ components:
           type: integer
           example: 1048576
 
+    ExternalContentItem:
+      type: object
+      required:
+        - url
+        - type
+      properties:
+        url:
+          type: string
+          format: uri
+        type:
+          type: string
+          enum: [image, unknown]
+
     Thing:
       type: object
       required:
@@ -184,7 +197,7 @@ components:
         externalContent:
           type: array
           items:
-            type: object
+            $ref: '#/components/schemas/ExternalContentItem'
           default: []
         attachments:
           type: array
@@ -343,7 +356,7 @@ components:
       properties:
         status:
           type: string
-          example: ok
+          enum: [ok]
 
     HealthReadyResponse:
       type: object
@@ -352,7 +365,7 @@ components:
       properties:
         status:
           type: string
-          example: ready
+          enum: [ready]
 
   parameters:
     ThingIdPath:

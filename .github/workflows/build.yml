@@ -32,6 +32,11 @@ jobs:
           npm ci
           npm --prefix web ci
 
+      - name: Verify generated API types are current
+        run: |
+          npm run api:generate
+          git diff --exit-code -- types/generated/api-types.ts
+
       - name: Type-check frontend
         run: npm --prefix web run typecheck
 
