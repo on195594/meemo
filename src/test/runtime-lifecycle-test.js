@@ -78,18 +78,83 @@ describe('Runtime Dependency Injection and Graceful Shutdown (RF-301)', function
             });
         });
 
-        it('safely catches errors inside workers without crashing', function (done) {
+        it('does not overlap executions of the same worker', async function () {
+            this.timeout(2000);
+
             var workerManager = new lifecycle.WorkerManager();
+            var concurrentExecutions = 0;
+            var maxConcurrentExecutions = 0;
+            var runCount = 0;
+
+            workerManager.register('slowTask', function () {
+                concurrentExecutions++;
+                maxConcurrentExecutions = Math.max(maxConcurrentExecutions, concurrentExecutions);
+                runCount++;
+                return new Promise(function (resolve) {
+                    setTimeout(function () {
+                        concurrentExecutions--;
+                        resolve();
+                    }, 200);
+                });
+            }, 50);
+
+            workerManager.start();
+            await new Promise(function (resolve) { setTimeout(resolve, 500); });
+            await workerManager.stop();
+
+            expect(runCount).to.be.greaterThan(1);
+            expect(maxConcurrentExecutions).to.equal(1);
+        });
+
+        it('releases worker state after an error', function (done) {
+            var workerManager = new lifecycle.WorkerManager();
+            var attempts = 0;
 
             workerManager.register('failingTask', function (next) {
-                next(new Error('Simulated worker failure'));
+                attempts++;
+                next(attempts === 1 ? new Error('Simulated worker failure') : null);
             });
 
             workerManager.runOnce('failingTask', function (err) {
                 expect(err).to.be.ok();
                 expect(err.message).to.equal('Simulated worker failure');
-                done();
+                workerManager.runOnce('failingTask', function (secondError) {
+                    if (secondError) return done(secondError);
+                    expect(attempts).to.equal(2);
+                    done();
+                });
             });
+        });
+
+        it('does not start work after stop begins', async function () {
+            var workerManager = new lifecycle.WorkerManager();
+            var release;
+            var runCount = 0;
+            workerManager.register('task', function () {
+                runCount++;
+                return new Promise(function (resolve) { release = resolve; });
+            });
+
+            var firstRun = workerManager.runOnce('task');
+            await Promise.resolve();
+            var chainedRun = firstRun.then(function () {
+                return workerManager.runOnce('task');
+            }).catch(function (error) {
+                expect(error.message).to.equal('Worker manager is stopped');
+            });
+            var stopped = workerManager.stop();
+            release();
+
+            await Promise.all([stopped, chainedRun]);
+            expect(runCount).to.equal(1);
+            expect(workerManager.workers.task.running).to.be(false);
+
+            await workerManager.runOnce('task').then(function () {
+                throw new Error('post-stop worker unexpectedly ran');
+            }, function (error) {
+                expect(error.message).to.equal('Worker manager is stopped');
+            });
+            expect(runCount).to.equal(1);
         });
     });
 
@@ -143,6 +208,33 @@ describe('Runtime Dependency Injection and Graceful Shutdown (RF-301)', function
     });
 
     describe('ShutdownManager', function () {
+        it('waits for an active worker before disconnecting Mongo', async function () {
+            var events = [];
+            var workerManager = new lifecycle.WorkerManager();
+            workerManager.register('task', function () {
+                return new Promise(function (resolve) {
+                    setTimeout(function () {
+                        events.push('worker');
+                        resolve();
+                    }, 100);
+                });
+            });
+            workerManager.runOnce('task');
+
+            var shutdownManager = new lifecycle.ShutdownManager({
+                workerManager: workerManager,
+                databaseManager: {
+                    disconnect: function () {
+                        events.push('mongo');
+                        return Promise.resolve();
+                    }
+                }
+            });
+
+            await shutdownManager.shutdown('manual');
+            expect(events).to.eql(['worker', 'mongo']);
+        });
+
         it('lets a five-second in-flight request finish after SIGTERM', function (done) {
             this.timeout(8000);
 

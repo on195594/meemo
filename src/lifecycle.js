@@ -18,22 +18,45 @@ function WorkerManager(options) {
     this.workers = {};
     this.timers = {};
     this.running = false;
+    this.stopped = false;
+    this.stopPromise = null;
 }
 
 WorkerManager.prototype.register = function (name, workerFn, intervalMs) {
     if (typeof workerFn !== 'function') throw new TypeError('Worker task must be a function');
-    this.workers[name] = { fn: workerFn, intervalMs: intervalMs || 60000 };
+    this.workers[name] = { fn: workerFn, intervalMs: intervalMs || 60000, running: false, promise: null };
+};
+
+WorkerManager.prototype._run = function (name) {
+    var worker = this.workers[name];
+    if (!worker) return Promise.reject(new Error('Worker [' + name + '] not found'));
+    if (this.stopped) return Promise.reject(new Error('Worker manager is stopped'));
+    if (worker.running) return worker.promise;
+
+    worker.running = true;
+    worker.promise = runWorker(worker.fn).then(function (result) {
+        worker.running = false;
+        worker.promise = null;
+        return result;
+    }, function (error) {
+        worker.running = false;
+        worker.promise = null;
+        throw error;
+    });
+    return worker.promise;
 };
 
 WorkerManager.prototype.start = function () {
-    if (this.running) return;
+    if (this.running || this.stopPromise) return;
+    this.stopped = false;
     this.running = true;
 
     var self = this;
     Object.keys(this.workers).forEach(function (name) {
         var worker = self.workers[name];
         self.timers[name] = setInterval(function () {
-            runWorker(worker.fn).catch(function (error) {
+            if (worker.running) return;
+            self._run(name).catch(function (error) {
                 console.error('Worker error in [' + name + ']:', error);
             });
         }, worker.intervalMs);
@@ -41,13 +64,26 @@ WorkerManager.prototype.start = function () {
     });
 };
 
-WorkerManager.prototype.stop = function () {
+WorkerManager.prototype.stop = function (callback) {
+    if (this.stopPromise) return nodeify(this.stopPromise, callback);
+
     var self = this;
+    this.stopped = true;
     Object.keys(this.timers).forEach(function (name) {
         clearInterval(self.timers[name]);
         delete self.timers[name];
     });
     this.running = false;
+
+    var pending = Object.keys(this.workers).map(function (name) {
+        return self.workers[name].promise;
+    }).filter(Boolean).map(function (promise) {
+        return promise.catch(function () {});
+    });
+    this.stopPromise = Promise.all(pending).then(function () {
+        self.stopPromise = null;
+    });
+    return nodeify(this.stopPromise, callback);
 };
 
 WorkerManager.prototype.isRunning = function () {
@@ -55,9 +91,7 @@ WorkerManager.prototype.isRunning = function () {
 };
 
 WorkerManager.prototype.runOnce = function (name, callback) {
-    var worker = this.workers[name];
-    var promise = worker ? runWorker(worker.fn) : Promise.reject(new Error('Worker [' + name + '] not found'));
-    return nodeify(promise, callback);
+    return nodeify(this._run(name), callback);
 };
 
 function DatabaseManager() {
@@ -200,7 +234,7 @@ ShutdownManager.prototype.shutdown = function (signal, callback) {
                 });
             }
 
-            if (self.workerManager) self.workerManager.stop();
+            if (self.workerManager) await self.workerManager.stop();
             if (self.databaseManager) {
                 try { await self.databaseManager.disconnect(false); } catch (error) { console.error('Error disconnecting MongoDB:', error); }
             }
