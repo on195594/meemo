@@ -826,6 +826,8 @@ session expiration handling
 
 ### RF-503：Notes Read Path
 
+实施状态：已完成（已实现 useNotes 组合式函数、NoteCard 卡片流与附件/徽标、TagSidebar 标签云过滤、全文检索与 Enter 快捷触发展示、Active/Archive 视图双向切换、IntersectionObserver 无限加载/分页）。
+
 分支：`frontend/vue3-notes-read`
 
 实现：
