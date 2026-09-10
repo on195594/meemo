@@ -10,6 +10,66 @@ var MongoClient = require('mongodb').MongoClient,
     config = require('../src/config.js'),
     users = require('../src/users.js');
 
+function migrationError(phase, user, collection, operation, error) {
+    var detail = String(error && error.message ? error.message : error || 'unknown error');
+    detail = detail.replace(/mongodb(?:\+srv)?:\/\/[^\s]+/gi, '[redacted MongoDB URI]');
+
+    var wrapped = new Error(
+        'Migration failure: phase=' + phase +
+        '; user=' + user +
+        '; collection=' + collection +
+        '; operation=' + operation +
+        '; error=' + detail
+    );
+    if (error && error.code) wrapped.code = error.code;
+    if (error && error.codeName) wrapped.codeName = error.codeName;
+    return wrapped;
+}
+
+function closeConnection(close, phase, primaryError, callback) {
+    mongoOperation(phase, '<all>', '<database>', 'close', function (done) {
+        close(done);
+    }, function (closeError) {
+        callback(primaryError || closeError || null);
+    });
+}
+
+function mongoOperation(phase, user, collection, operation, invoke, callback) {
+    var callbackCalled = false;
+
+    try {
+        invoke(function (error, result) {
+            callbackCalled = true;
+            if (error) return callback(migrationError(phase, user, collection, operation, error));
+            callback(null, result);
+        });
+    } catch (error) {
+        if (callbackCalled) throw error;
+        callback(migrationError(phase, user, collection, operation, error));
+    }
+}
+
+function collectionOperation(db, phase, user, collectionName, operation, args, callback) {
+    mongoOperation(phase, user, collectionName, operation, function (done) {
+        var collection = db.collection(collectionName);
+        collection[operation].apply(collection, args.concat(done));
+    }, callback);
+}
+
+function findDocuments(db, phase, user, collectionName, query, callback) {
+    var cursor;
+
+    try {
+        cursor = db.collection(collectionName).find(query);
+    } catch (error) {
+        return callback(migrationError(phase, user, collectionName, 'find', error));
+    }
+
+    mongoOperation(phase, user, collectionName, 'toArray', function (done) {
+        cursor.toArray(done);
+    }, callback);
+}
+
 function parseArgs() {
     var args = process.argv.slice(2);
     var options = {
@@ -32,13 +92,15 @@ function parseArgs() {
     return options;
 }
 
-function getDbConnection(options, callback) {
+function getDbConnection(options, phase, callback) {
     if (options && options.db) {
-        return callback(null, options.db, function close(cb) { if (cb) cb(); });
+        return callback(null, options.db, options.close || function close(cb) { if (cb) cb(); });
     }
 
     var mongoUrl = (options && options.mongoUrl) || process.env.MONGODB_URL || config.databaseUrl || 'mongodb://127.0.0.1:27017/meemo';
-    MongoClient.connect(mongoUrl, { useUnifiedTopology: true }, function (err, client) {
+    mongoOperation(phase, '<all>', '<database>', 'connect', function (done) {
+        MongoClient.connect(mongoUrl, { useUnifiedTopology: true }, done);
+    }, function (err, client) {
         if (err) return callback(err);
         var db = client.db();
         callback(null, db, function close(cb) {
@@ -48,43 +110,57 @@ function getDbConnection(options, callback) {
 }
 
 function ensureUnifiedIndexes(db, callback) {
-    var thingsColl = db.collection('things');
-    var tagsColl = db.collection('tags');
-    var settingsColl = db.collection('settings');
-
     async.series([
         function (next) {
-            thingsColl.createIndex({ ownerId: 1, modifiedAt: -1 }, function (err) {
-                if (err && err.codeName !== 'IndexOptionsConflict') return next(err);
-                thingsColl.createIndex({ ownerId: 1, sticky: -1, modifiedAt: -1 }, function (err2) {
-                    if (err2 && err2.codeName !== 'IndexOptionsConflict') return next(err2);
-                    thingsColl.createIndex({ ownerId: 1, archived: 1, modifiedAt: -1 }, function (err3) {
-                        if (err3 && err3.codeName !== 'IndexOptionsConflict') return next(err3);
-                        thingsColl.createIndex({ content: 'text' }, { default_language: 'none' }, function (err4) {
-                            if (err4 && err4.codeName !== 'IndexOptionsConflict') return next(err4);
-                            next();
-                        });
-                    });
-                });
-            });
+            async.series([
+                function (done) {
+                    collectionOperation(db, 'apply:indexes', '<all>', 'things', 'createIndex', [
+                        { ownerId: 1, modifiedAt: -1 }
+                    ], done);
+                },
+                function (done) {
+                    collectionOperation(db, 'apply:indexes', '<all>', 'things', 'createIndex', [
+                        { ownerId: 1, sticky: -1, modifiedAt: -1 }
+                    ], done);
+                },
+                function (done) {
+                    collectionOperation(db, 'apply:indexes', '<all>', 'things', 'createIndex', [
+                        { ownerId: 1, archived: 1, modifiedAt: -1 }
+                    ], done);
+                },
+                function (done) {
+                    collectionOperation(db, 'apply:indexes', '<all>', 'things', 'createIndex', [
+                        { content: 'text' }, { default_language: 'none' }
+                    ], done);
+                }
+            ], next);
         },
         function (next) {
-            tagsColl.createIndex({ ownerId: 1, name: 1 }, { unique: true }, function (err) {
-                if (err && err.codeName !== 'IndexOptionsConflict') return next(err);
-                next();
-            });
+            collectionOperation(db, 'apply:indexes', '<all>', 'tags', 'createIndex', [
+                { ownerId: 1, name: 1 }, { unique: true }
+            ], next);
         },
         function (next) {
-            settingsColl.createIndex({ ownerId: 1 }, { unique: true }, function (err) {
-                if (err && err.codeName !== 'IndexOptionsConflict') return next(err);
-                next();
-            });
+            collectionOperation(db, 'apply:indexes', '<all>', 'settings', 'createIndex', [
+                { ownerId: 1 }, { unique: true }
+            ], next);
         }
     ], callback);
 }
 
-function discoverLegacyCollections(db, callback) {
-    db.listCollections().toArray(function (err, collList) {
+function discoverLegacyCollections(db, callback, phase) {
+    var cursor;
+    phase = phase || 'discovery';
+
+    try {
+        cursor = db.listCollections();
+    } catch (error) {
+        return callback(migrationError(phase, '<all>', '<database>', 'listCollections', error));
+    }
+
+    mongoOperation(phase, '<all>', '<database>', 'toArray', function (done) {
+        cursor.toArray(done);
+    }, function (err, collList) {
         if (err) return callback(err);
 
         var thingsColls = [];
@@ -129,20 +205,24 @@ function discoverLegacyCollections(db, callback) {
     });
 }
 
-function resolveCanonicalOwner(db, prefix, callback) {
+function resolveCanonicalOwner(db, prefix, callback, phase) {
+    phase = phase || 'resolve-owner';
     if (users && typeof users.resolveUser === 'function') {
         users.resolveUser(prefix, function (err, u) {
             if (!err && u && u.id) {
                 return callback(null, u.id, u.username);
             }
-            lookupInMongoUsers(db, prefix, callback);
+            if (err && (!users.UserError || err.code !== users.UserError.NOT_FOUND)) {
+                return callback(migrationError(phase, prefix, 'users', 'resolveUser', err));
+            }
+            lookupInMongoUsers(db, prefix, callback, phase);
         });
     } else {
-        lookupInMongoUsers(db, prefix, callback);
+        lookupInMongoUsers(db, prefix, callback, phase);
     }
 }
 
-function lookupInMongoUsers(db, prefix, callback) {
+function lookupInMongoUsers(db, prefix, callback, phase) {
     var query = {
         $or: [
             { usernameNorm: prefix.toLowerCase() },
@@ -154,22 +234,21 @@ function lookupInMongoUsers(db, prefix, callback) {
         query.$or.unshift({ _id: new ObjectId(prefix) });
     }
 
-    db.collection('users').findOne(query, function (err, doc) {
-        if (err || !doc) {
-            return callback(null, prefix, prefix);
-        }
+    collectionOperation(db, phase, prefix, 'users', 'findOne', [query], function (err, doc) {
+        if (err) return callback(err);
+        if (!doc) return callback(null, prefix, prefix);
         callback(null, String(doc._id), doc.username);
     });
 }
 
 function dryRun(options, callback) {
     options = options || {};
-    getDbConnection(options, function (err, db, close) {
+    getDbConnection(options, 'dry-run', function (err, db, close) {
         if (err) return callback(err);
 
         discoverLegacyCollections(db, function (err, legacy) {
             if (err) {
-                return close(function () { callback(err); });
+                return closeConnection(close, 'dry-run', err, callback);
             }
 
             var userMap = {};
@@ -194,36 +273,40 @@ function dryRun(options, callback) {
                         hasSettings: false
                     };
 
-                    async.parallel([
+                    async.series([
                         function (doneThings) {
                             var collName = prefix + '_things';
-                            db.collection(collName).countDocuments(function (e, count) {
+                            collectionOperation(db, 'dry-run', prefix, collName, 'countDocuments', [], function (e, count) {
+                                if (e) return doneThings(e);
                                 entry.thingsCount = count || 0;
                                 doneThings();
                             });
                         },
                         function (doneTags) {
                             var collName = prefix + '_tags';
-                            db.collection(collName).countDocuments(function (e, count) {
+                            collectionOperation(db, 'dry-run', prefix, collName, 'countDocuments', [], function (e, count) {
+                                if (e) return doneTags(e);
                                 entry.tagsCount = count || 0;
                                 doneTags();
                             });
                         },
                         function (doneSettings) {
                             var collName = prefix + '_settings';
-                            db.collection(collName).countDocuments(function (e, count) {
+                            collectionOperation(db, 'dry-run', prefix, collName, 'countDocuments', [], function (e, count) {
+                                if (e) return doneSettings(e);
                                 entry.hasSettings = Boolean(count && count > 0);
                                 doneSettings();
                             });
                         }
-                    ], function () {
+                    ], function (err) {
+                        if (err) return nextPrefix(err);
                         userMap[prefix] = entry;
                         nextPrefix();
                     });
-                });
+                }, 'dry-run');
             }, function (err) {
                 if (err) {
-                    return close(function () { callback(err); });
+                    return closeConnection(close, 'dry-run', err, callback);
                 }
 
                 var totalThings = 0;
@@ -244,27 +327,28 @@ function dryRun(options, callback) {
                     users: userMap
                 };
 
-                close(function () {
+                closeConnection(close, 'dry-run', null, function (closeError) {
+                    if (closeError) return callback(closeError);
                     callback(null, report);
                 });
             });
-        });
+        }, 'dry-run');
     });
 }
 
 function apply(options, callback) {
     options = options || {};
-    getDbConnection(options, function (err, db, close) {
+    getDbConnection(options, 'apply', function (err, db, close) {
         if (err) return callback(err);
 
         ensureUnifiedIndexes(db, function (err) {
             if (err) {
-                return close(function () { callback(err); });
+                return closeConnection(close, 'apply', err, callback);
             }
 
             discoverLegacyCollections(db, function (err, legacy) {
                 if (err) {
-                    return close(function () { callback(err); });
+                    return closeConnection(close, 'apply', err, callback);
                 }
 
                 var stats = {
@@ -288,8 +372,10 @@ function apply(options, callback) {
                         async.series([
                             // Migrate Things
                             function (doneThings) {
-                                db.collection(prefix + '_things').find({}).toArray(function (err, docs) {
-                                    if (err || !docs || docs.length === 0) return doneThings();
+                                var legacyCollection = prefix + '_things';
+                                findDocuments(db, 'apply:things', prefix, legacyCollection, {}, function (err, docs) {
+                                    if (err) return doneThings(err);
+                                    if (!docs || docs.length === 0) return doneThings();
 
                                     async.eachSeries(docs, function (doc, nextDoc) {
                                         doc.ownerId = canonicalId;
@@ -298,7 +384,9 @@ function apply(options, callback) {
                                         doc.archived = !!doc.archived;
                                         doc.sticky = !!doc.sticky;
 
-                                        db.collection('things').replaceOne({ _id: doc._id }, doc, { upsert: true }, function (e) {
+                                        collectionOperation(db, 'apply:things', prefix, 'things', 'replaceOne', [
+                                            { _id: doc._id }, doc, { upsert: true }
+                                        ], function (e) {
                                             if (e) return nextDoc(e);
                                             stats.migratedThings++;
                                             nextDoc();
@@ -309,8 +397,10 @@ function apply(options, callback) {
 
                             // Migrate Tags
                             function (doneTags) {
-                                db.collection(prefix + '_tags').find({}).toArray(function (err, docs) {
-                                    if (err || !docs || docs.length === 0) return doneTags();
+                                var legacyCollection = prefix + '_tags';
+                                findDocuments(db, 'apply:tags', prefix, legacyCollection, {}, function (err, docs) {
+                                    if (err) return doneTags(err);
+                                    if (!docs || docs.length === 0) return doneTags();
 
                                     async.eachSeries(docs, function (tagDoc, nextTag) {
                                         var filter = { ownerId: canonicalId, name: tagDoc.name };
@@ -326,7 +416,9 @@ function apply(options, callback) {
                                             }
                                         };
 
-                                        db.collection('tags').updateOne(filter, updateDoc, { upsert: true }, function (e) {
+                                        collectionOperation(db, 'apply:tags', prefix, 'tags', 'updateOne', [
+                                            filter, updateDoc, { upsert: true }
+                                        ], function (e) {
                                             if (e) return nextTag(e);
                                             stats.migratedTags++;
                                             nextTag();
@@ -337,8 +429,12 @@ function apply(options, callback) {
 
                             // Migrate Settings
                             function (doneSettings) {
-                                db.collection(prefix + '_settings').findOne({ type: 'frontend' }, function (err, setDoc) {
-                                    if (err || !setDoc) return doneSettings();
+                                var legacyCollection = prefix + '_settings';
+                                collectionOperation(db, 'apply:settings', prefix, legacyCollection, 'findOne', [
+                                    { type: 'frontend' }
+                                ], function (err, setDoc) {
+                                    if (err) return doneSettings(err);
+                                    if (!setDoc) return doneSettings();
 
                                     var docToSave = {
                                         ownerId: canonicalId,
@@ -347,7 +443,9 @@ function apply(options, callback) {
                                         modifiedAt: Date.now()
                                     };
 
-                                    db.collection('settings').replaceOne({ ownerId: canonicalId }, docToSave, { upsert: true }, function (e) {
+                                    collectionOperation(db, 'apply:settings', prefix, 'settings', 'replaceOne', [
+                                        { ownerId: canonicalId }, docToSave, { upsert: true }
+                                    ], function (e) {
                                         if (e) return doneSettings(e);
                                         stats.migratedSettings++;
                                         doneSettings();
@@ -359,26 +457,26 @@ function apply(options, callback) {
                             stats.usersProcessed++;
                             nextUser();
                         });
-                    });
+                    }, 'apply:resolve-owner');
                 }, function (err) {
-                    close(function () {
-                        if (err) return callback(err);
+                    closeConnection(close, 'apply', err, function (finishError) {
+                        if (finishError) return callback(finishError);
                         callback(null, stats);
                     });
                 });
-            });
+            }, 'apply:discovery');
         });
     });
 }
 
 function verify(options, callback) {
     options = options || {};
-    getDbConnection(options, function (err, db, close) {
+    getDbConnection(options, 'verify', function (err, db, close) {
         if (err) return callback(err);
 
         discoverLegacyCollections(db, function (err, legacy) {
             if (err) {
-                return close(function () { callback(err); });
+                return closeConnection(close, 'verify', err, callback);
             }
 
             var allPrefixes = {};
@@ -397,11 +495,12 @@ function verify(options, callback) {
                     async.series([
                         // Verify Things counts and contents
                         function (doneCheckThings) {
-                            db.collection(prefix + '_things').find({}).toArray(function (err, legacyDocs) {
+                            var legacyCollection = prefix + '_things';
+                            findDocuments(db, 'verify:things', prefix, legacyCollection, {}, function (err, legacyDocs) {
                                 if (err) return doneCheckThings(err);
                                 if (!legacyDocs || legacyDocs.length === 0) return doneCheckThings();
 
-                                db.collection('things').find({ ownerId: canonicalId }).toArray(function (err, unifiedDocs) {
+                                findDocuments(db, 'verify:things', prefix, 'things', { ownerId: canonicalId }, function (err, unifiedDocs) {
                                     if (err) return doneCheckThings(err);
 
                                     var unifiedMap = {};
@@ -423,11 +522,12 @@ function verify(options, callback) {
 
                         // Verify Tags
                         function (doneCheckTags) {
-                            db.collection(prefix + '_tags').find({}).toArray(function (err, legacyTags) {
+                            var legacyCollection = prefix + '_tags';
+                            findDocuments(db, 'verify:tags', prefix, legacyCollection, {}, function (err, legacyTags) {
                                 if (err) return doneCheckTags(err);
                                 if (!legacyTags || legacyTags.length === 0) return doneCheckTags();
 
-                                db.collection('tags').find({ ownerId: canonicalId }).toArray(function (err, unifiedTags) {
+                                findDocuments(db, 'verify:tags', prefix, 'tags', { ownerId: canonicalId }, function (err, unifiedTags) {
                                     if (err) return doneCheckTags(err);
 
                                     var tagNames = {};
@@ -446,11 +546,16 @@ function verify(options, callback) {
 
                         // Verify Settings
                         function (doneCheckSettings) {
-                            db.collection(prefix + '_settings').findOne({ type: 'frontend' }, function (err, legacySet) {
+                            var legacyCollection = prefix + '_settings';
+                            collectionOperation(db, 'verify:settings', prefix, legacyCollection, 'findOne', [
+                                { type: 'frontend' }
+                            ], function (err, legacySet) {
                                 if (err) return doneCheckSettings(err);
                                 if (!legacySet) return doneCheckSettings();
 
-                                db.collection('settings').findOne({ ownerId: canonicalId }, function (err, unifiedSet) {
+                                collectionOperation(db, 'verify:settings', prefix, 'settings', 'findOne', [
+                                    { ownerId: canonicalId }
+                                ], function (err, unifiedSet) {
                                     if (err) return doneCheckSettings(err);
                                     if (!unifiedSet) {
                                         mismatches.push('Missing settings in unified collection for owner ' + canonicalId);
@@ -464,10 +569,10 @@ function verify(options, callback) {
                         verifiedCount++;
                         nextUser();
                     });
-                });
+                }, 'verify:resolve-owner');
             }, function (err) {
-                close(function () {
-                    if (err) return callback(err);
+                closeConnection(close, 'verify', err, function (finishError) {
+                    if (finishError) return callback(finishError);
 
                     var result = {
                         verifiedUsers: verifiedCount,
@@ -476,13 +581,16 @@ function verify(options, callback) {
                     };
 
                     if (!result.success) {
-                        return callback(new Error('Verification failed with ' + mismatches.length + ' mismatches: ' + mismatches.join('; ')));
+                        return callback(migrationError(
+                            'verify', '<all>', '<unified>', 'fidelity-check',
+                            new Error('Verification failed with ' + mismatches.length + ' mismatches: ' + mismatches.join('; '))
+                        ));
                     }
 
                     callback(null, result);
                 });
             });
-        });
+        }, 'verify:discovery');
     });
 }
 
