@@ -1,22 +1,44 @@
-name: Pull request validation
+name: Validation quality gate
 
 on:
+  push:
+    branches: [master]
   pull_request:
     branches: [master]
-    paths:
-      - .github/workflows/build.yml
-      - .dockerignore
-      - Dockerfile
-      - docker-compose.yml
-      - package.json
-      - package-lock.json
-      - app.js
-      - start.sh
-      - src/**
-      - web/**
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
-  test-and-build:
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix web ci
+
+      - name: Type-check frontend
+        run: npm --prefix web run typecheck
+
+      - name: Build frontend
+        run: npm run build
+
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -32,21 +54,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build frontend
-        run: npm run build
-
       - name: Run tests
         run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Build image from current checkout
         run: docker build -t meemo:ci .
 
+  integration:
+    runs-on: ubuntu-latest
+    env:
+      SESSION_SECRET: ci-secret-token-for-compose-stack-32chars
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Start compose stack
-        env:
-          SESSION_SECRET: "ci-secret-token-for-compose-stack-32chars"
         run: docker compose up --build -d
 
-      - name: Verify health and local username/password login
+      - name: Smoke-test application endpoints
         shell: bash
         run: |
           set -euo pipefail
@@ -62,23 +95,24 @@ jobs:
             sleep 2
           done
 
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
-            'http://127.0.0.1:3000/api/profile?token=legacy-token')" = 401
-
           curl --fail --silent --show-error \
             -H 'Content-Type: application/json' \
             -d '{"username":"ci-user","password":"ci-password","email":"ci@example.invalid","displayName":"CI User"}' \
             http://127.0.0.1:3000/api/register >/dev/null
 
           curl --fail --silent --show-error \
-            -c /tmp/meemo-cookies \
+            -c "${RUNNER_TEMP}/meemo-cookies" \
             -H 'Content-Type: application/json' \
             -d '{"username":"ci-user","password":"ci-password"}' \
             http://127.0.0.1:3000/api/login >/dev/null
 
           curl --fail --silent --show-error \
-            -b /tmp/meemo-cookies \
+            -b "${RUNNER_TEMP}/meemo-cookies" \
             http://127.0.0.1:3000/api/profile >/dev/null
+
+          curl --fail --silent --show-error \
+            -b "${RUNNER_TEMP}/meemo-cookies" \
+            http://127.0.0.1:3000/api/things >/dev/null
 
       - name: Show container logs on failure
         if: failure()

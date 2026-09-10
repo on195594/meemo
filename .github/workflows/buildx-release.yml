@@ -5,7 +5,13 @@ on:
     types: [published]
 
 jobs:
+  validation:
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+
   build-and-push-release:
+    needs: validation
     runs-on: ubuntu-latest
     permissions:
       contents: read

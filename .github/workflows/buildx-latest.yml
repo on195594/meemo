@@ -1,30 +1,24 @@
 name: Master Docker build and publish
 
 on:
-  push:
+  workflow_run:
+    workflows: [Validation quality gate]
+    types: [completed]
     branches: [master]
-    paths:
-      - .github/workflows/buildx-latest.yml
-      - .dockerignore
-      - Dockerfile
-      - docker-compose.yml
-      - package.json
-      - package-lock.json
-      - app.js
-      - start.sh
-      - src/**
-      - web/**
 
 jobs:
   build-and-push:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout validated revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -60,7 +54,7 @@ jobs:
           provenance: mode=max
           build-args: |
             CREATED=${{ steps.meta.outputs.created }}
-            COMMIT=${{ github.sha }}
+            COMMIT=${{ github.event.workflow_run.head_sha }}
             VERSION=edge
           cache-from: type=gha
           cache-to: type=gha,mode=max
