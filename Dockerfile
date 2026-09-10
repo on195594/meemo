@@ -1,5 +1,13 @@
 ARG ALPINE_VERSION=3.20
 
+FROM alpine:${ALPINE_VERSION} AS web-builder
+RUN apk add --no-cache nodejs npm
+WORKDIR /app/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM alpine:${ALPINE_VERSION} AS builder
 ARG VERSION=dev
 RUN apk add --no-cache nodejs npm python3 make g++
@@ -30,6 +38,7 @@ RUN apk add --no-cache nodejs \
 WORKDIR /app/code
 COPY --from=builder --chown=1000:1000 /app/code/node_modules/ node_modules/
 COPY --from=builder --chown=1000:1000 /app/code/public/ public/
+COPY --from=web-builder --chown=1000:1000 /app/web/dist/ web/dist/
 COPY --chown=1000:1000 src/ src/
 COPY --chown=1000:1000 app.js start.sh ./
 
