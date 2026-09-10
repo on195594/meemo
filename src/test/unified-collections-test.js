@@ -326,6 +326,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
     describe('Data Migration Script (migrate-data-to-v2.js)', function () {
         var legacyOwner1 = 'legacyuser_alpha';
         var legacyOwner2 = 'legacyuser_beta';
+        var protectedThingId;
 
         before(function (done) {
             // Seed legacy per-user collections
@@ -333,6 +334,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 { _id: new ObjectId(), content: 'Alpha note 1 #alpha', tags: ['alpha'], createdAt: 1000, modifiedAt: 1000, attachments: [] },
                 { _id: new ObjectId(), content: 'Alpha note 2 #work', tags: ['work'], createdAt: 2000, modifiedAt: 2000, attachments: [] }
             ];
+            protectedThingId = things1[0]._id;
             var tags1 = [
                 { _id: new ObjectId(), name: 'alpha', usage: 1 },
                 { _id: new ObjectId(), name: 'work', usage: 1 }
@@ -380,52 +382,217 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             });
         });
 
-        it('--apply migrates legacy collections into unified collections idempotently', function (done) {
+        it('--apply records copied state and migrates legacy collections idempotently', function (done) {
             migrator.apply({ db: db }, function (err, stats) {
                 if (err) return done(err);
                 expect(stats.migratedThings).to.equal(3);
                 expect(stats.migratedTags).to.equal(3);
                 expect(stats.migratedSettings).to.equal(1);
 
-                // Verify docs now reside in unified things
-                db.collection('things').find({ ownerId: legacyOwner1 }).toArray(function (err, docs) {
+                db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, state) {
                     if (err) return done(err);
-                    expect(docs.length).to.equal(2);
-                    expect(docs[0].ownerId).to.equal(legacyOwner1);
+                    expect(state.sourceVersion).to.equal(1);
+                    expect(state.targetVersion).to.equal(2);
+                    expect(state.phase).to.equal('copied');
+                    expect(state.startedAt).to.be.a('number');
+                    expect(state.copiedAt).to.be.a('number');
 
-                    // Re-apply to verify idempotence (should not duplicate)
-                    migrator.apply({ db: db }, function (err2, stats2) {
-                        if (err2) return done(err2);
-
-                        db.collection('things').countDocuments({ ownerId: legacyOwner1 }, function (err, countAgain) {
-                            if (err) return done(err);
-                            expect(countAgain).to.equal(2);
-                            done();
-                        });
+                    db.collection('things').find({ ownerId: legacyOwner1 }).toArray(function (err, docs) {
+                        if (err) return done(err);
+                        expect(docs.length).to.equal(2);
+                        expect(docs[0].ownerId).to.equal(legacyOwner1);
+                        done();
                     });
                 });
             });
         });
 
-        it('--verify validates complete data fidelity between legacy and unified collections', function (done) {
-            migrator.verify({ db: db }, function (err, result) {
-                if (err) return done(err);
-                expect(result.success).to.be(true);
-                expect(result.mismatches.length).to.equal(0);
-                expect(result.verifiedUsers).to.be.greaterThan(1);
-                done();
-            });
+        it('--verify rejects pending, copying, and failed without changing phase', function (done) {
+            var phases = ['pending', 'copying', 'failed'];
+
+            function verifyPhase(index) {
+                if (index === phases.length) {
+                    return db.collection('system_migrations').updateOne(
+                        { _id: 'schema-v2' },
+                        { $set: { phase: 'copied' } },
+                        done
+                    );
+                }
+
+                var phase = phases[index];
+                db.collection('system_migrations').updateOne(
+                    { _id: 'schema-v2' },
+                    { $set: { phase: phase } },
+                    function (err) {
+                        if (err) return done(err);
+
+                        migrator.verify({ db: db }, function (err, result) {
+                            expect(err).to.be.ok();
+                            expect(err.message).to.contain('phase=verify:state');
+                            expect(err.message).to.contain('Cannot verify migration from phase ' + phase);
+                            expect(result).to.be(undefined);
+
+                            db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, state) {
+                                if (err) return done(err);
+                                expect(state.phase).to.equal(phase);
+                                verifyPhase(index + 1);
+                            });
+                        });
+                    }
+                );
+            }
+
+            verifyPhase(0);
         });
 
-        it('--verify detects tampering or missing data', function (done) {
-            // Delete one document from unified collection
+        it('--verify marks copied migration failed on fidelity errors', function (done) {
             db.collection('things').deleteOne({ ownerId: legacyOwner2 }, function (err) {
                 if (err) return done(err);
 
                 migrator.verify({ db: db }, function (err, result) {
                     expect(err).to.be.ok();
                     expect(err.message).to.contain('Verification failed');
-                    done();
+                    expect(result).to.be(undefined);
+                    db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (stateError, state) {
+                        if (stateError) return done(stateError);
+                        expect(state.phase).to.equal('failed');
+                        done();
+                    });
+                });
+            });
+        });
+
+        it('preserves newer Unified things, tags, and settings across rerun and verification', function (done) {
+            db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, state) {
+                if (err) return done(err);
+                var editedAt = state.startedAt + 1;
+
+                db.collection('things').updateOne({ _id: protectedThingId }, {
+                    $set: { content: 'edited after migration start', modifiedAt: editedAt }
+                }, function (err) {
+                    if (err) return done(err);
+
+                    db.collection('tags').updateOne({ ownerId: legacyOwner1, name: 'alpha' }, {
+                        $set: { usage: 42, modifiedAt: editedAt }
+                    }, function (err) {
+                        if (err) return done(err);
+
+                        db.collection('settings').updateOne({ ownerId: legacyOwner1 }, {
+                            $set: { value: { title: 'Edited after migration start' }, modifiedAt: editedAt }
+                        }, function (err) {
+                            if (err) return done(err);
+
+                            migrator.apply({ db: db }, function (err) {
+                                if (err) return done(err);
+
+                                migrator.verify({ db: db }, function (err, result) {
+                                    if (err) return done(err);
+                                    expect(result.success).to.be(true);
+
+                                    db.collection('things').findOne({ _id: protectedThingId }, function (err, note) {
+                                        if (err) return done(err);
+                                        expect(note.content).to.equal('edited after migration start');
+                                        expect(note.modifiedAt).to.equal(editedAt);
+
+                                        db.collection('tags').findOne({ ownerId: legacyOwner1, name: 'alpha' }, function (err, tag) {
+                                            if (err) return done(err);
+                                            expect(tag.usage).to.equal(42);
+                                            expect(tag.modifiedAt).to.equal(editedAt);
+
+                                            db.collection('settings').findOne({ ownerId: legacyOwner1 }, function (err, setting) {
+                                                if (err) return done(err);
+                                                expect(setting.value).to.eql({ title: 'Edited after migration start' });
+                                                expect(setting.modifiedAt).to.equal(editedAt);
+                                                done();
+                                            });
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+
+        it('--verify is idempotent in verified phase without changing state', function (done) {
+            db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, before) {
+                if (err) return done(err);
+                expect(before.phase).to.equal('verified');
+                expect(before.verifiedAt).to.be.a('number');
+
+                migrator.verify({ db: db }, function (err, result) {
+                    if (err) return done(err);
+                    expect(result.success).to.be(true);
+
+                    db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, after) {
+                        if (err) return done(err);
+                        expect(after.phase).to.equal('verified');
+                        expect(after.verifiedAt).to.equal(before.verifiedAt);
+                        done();
+                    });
+                });
+            });
+        });
+
+        it('--verify is read-only in cutover and complete phases', function (done) {
+            var phases = ['cutover', 'complete'];
+
+            db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, initialState) {
+                if (err) return done(err);
+
+                function verifyPhase(index) {
+                    if (index === phases.length) return done();
+
+                    var phase = phases[index];
+                    db.collection('system_migrations').updateOne(
+                        { _id: 'schema-v2' },
+                        { $set: { phase: phase } },
+                        function (err) {
+                            if (err) return done(err);
+
+                            migrator.verify({ db: db }, function (err, result) {
+                                if (err) return done(err);
+                                expect(result.success).to.be(true);
+
+                                db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, state) {
+                                    if (err) return done(err);
+                                    expect(state.phase).to.equal(phase);
+                                    expect(state.verifiedAt).to.equal(initialState.verifiedAt);
+                                    verifyPhase(index + 1);
+                                });
+                            });
+                        }
+                    );
+                }
+
+                verifyPhase(0);
+            });
+        });
+
+        it('refuses --apply after migration state is complete', function (done) {
+            migrator.apply({ db: db }, function (err, stats) {
+                expect(err).to.be.ok();
+                expect(err.message).to.contain('phase=apply:state');
+                expect(err.message).to.contain('already complete');
+                expect(stats).to.be(undefined);
+                done();
+            });
+        });
+
+        it('--verify detects tampering without changing complete phase', function (done) {
+            db.collection('things').deleteOne({ ownerId: legacyOwner2 }, function (err) {
+                if (err) return done(err);
+
+                migrator.verify({ db: db }, function (err, result) {
+                    expect(err).to.be.ok();
+                    expect(err.message).to.contain('Verification failed');
+                    expect(result).to.be(undefined);
+                    db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (stateError, state) {
+                        if (stateError) return done(stateError);
+                        expect(state.phase).to.equal('complete');
+                        done();
+                    });
                 });
             });
         });

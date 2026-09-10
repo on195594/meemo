@@ -10,6 +10,23 @@ var MongoClient = require('mongodb').MongoClient,
     config = require('../src/config.js'),
     users = require('../src/users.js');
 
+var MIGRATION_ID = 'schema-v2';
+var MIGRATION_PHASES = {
+    pending: true,
+    copying: true,
+    copied: true,
+    verified: true,
+    cutover: true,
+    complete: true,
+    failed: true
+};
+var APPLY_PHASES = {
+    pending: true,
+    copying: true,
+    copied: true,
+    failed: true
+};
+
 function migrationError(phase, user, collection, operation, error) {
     var detail = String(error && error.message ? error.message : error || 'unknown error');
     detail = detail.replace(/mongodb(?:\+srv)?:\/\/[^\s]+/gi, '[redacted MongoDB URI]');
@@ -68,6 +85,96 @@ function findDocuments(db, phase, user, collectionName, query, callback) {
     mongoOperation(phase, user, collectionName, 'toArray', function (done) {
         cursor.toArray(done);
     }, callback);
+}
+
+function newMigrationState() {
+    return {
+        _id: MIGRATION_ID,
+        sourceVersion: 1,
+        targetVersion: 2,
+        phase: 'pending',
+        startedAt: null,
+        copiedAt: null,
+        verifiedAt: null,
+        cutoverAt: null
+    };
+}
+
+function validateMigrationState(state, phase, callback) {
+    if (state.sourceVersion !== 1 || state.targetVersion !== 2 || !MIGRATION_PHASES[state.phase]) {
+        return callback(migrationError(
+            phase, '<all>', 'system_migrations', 'validate',
+            new Error('Invalid ' + MIGRATION_ID + ' migration state')
+        ));
+    }
+    callback(null, state);
+}
+
+function getMigrationState(db, phase, callback, createIfMissing) {
+    collectionOperation(db, phase, '<all>', 'system_migrations', 'findOne', [
+        { _id: MIGRATION_ID }
+    ], function (err, state) {
+        if (err) return callback(err);
+        if (state) return validateMigrationState(state, phase, callback);
+        if (createIfMissing === false) return callback(null, null);
+
+        var initialState = newMigrationState();
+        collectionOperation(db, phase, '<all>', 'system_migrations', 'updateOne', [
+            { _id: MIGRATION_ID }, { $setOnInsert: initialState }, { upsert: true }
+        ], function (err) {
+            if (err) return callback(err);
+
+            collectionOperation(db, phase, '<all>', 'system_migrations', 'findOne', [
+                { _id: MIGRATION_ID }
+            ], function (err, storedState) {
+                if (err) return callback(err);
+                validateMigrationState(storedState || initialState, phase, callback);
+            });
+        });
+    });
+}
+
+function setMigrationPhase(db, state, nextPhase, fields, phase, callback) {
+    var allowed = {
+        pending: { copying: true, failed: true },
+        copying: { copying: true, copied: true, failed: true },
+        copied: { copying: true, verified: true, failed: true },
+        verified: { cutover: true, failed: true },
+        cutover: { complete: true, failed: true },
+        complete: {},
+        failed: { copying: true, failed: true }
+    };
+
+    if (!allowed[state.phase] || !allowed[state.phase][nextPhase]) {
+        return callback(migrationError(
+            phase, '<all>', 'system_migrations', 'transition',
+            new Error('Illegal migration transition from ' + state.phase + ' to ' + nextPhase)
+        ));
+    }
+
+    var values = Object.assign({}, fields || {}, { phase: nextPhase });
+    collectionOperation(db, phase, '<all>', 'system_migrations', 'updateOne', [
+        { _id: MIGRATION_ID, phase: state.phase }, { $set: values }, {}
+    ], function (err, result) {
+        if (err) return callback(err);
+        if (result && result.matchedCount === 0) {
+            return callback(migrationError(
+                phase, '<all>', 'system_migrations', 'transition',
+                new Error('Migration state changed concurrently')
+            ));
+        }
+        Object.keys(values).forEach(function (key) { state[key] = values[key]; });
+        callback(null, state);
+    });
+}
+
+function markMigrationFailed(db, state, phase, callback) {
+    if (!state || state.phase === 'complete') return callback();
+    setMigrationPhase(db, state, 'failed', { failedAt: Date.now() }, phase, callback);
+}
+
+function isNewerUnifiedDocument(document, startedAt) {
+    return document && document.modifiedAt != null && Number(document.modifiedAt) > Number(startedAt);
 }
 
 function parseArgs() {
@@ -341,15 +448,56 @@ function apply(options, callback) {
     getDbConnection(options, 'apply', function (err, db, close) {
         if (err) return callback(err);
 
-        ensureUnifiedIndexes(db, function (err) {
-            if (err) {
-                return closeConnection(close, 'apply', err, callback);
+        var state;
+        function finishApply(error, stats) {
+            if (error) {
+                return markMigrationFailed(db, state, 'apply:state', function () {
+                    closeConnection(close, 'apply', error, callback);
+                });
             }
 
-            discoverLegacyCollections(db, function (err, legacy) {
-                if (err) {
-                    return closeConnection(close, 'apply', err, callback);
-                }
+            setMigrationPhase(db, state, 'copied', {
+                copiedAt: Date.now(),
+                failedAt: null
+            }, 'apply:state', function (stateError) {
+                closeConnection(close, 'apply', stateError, function (finishError) {
+                    if (finishError) return callback(finishError);
+                    callback(null, stats);
+                });
+            });
+        }
+
+        getMigrationState(db, 'apply:state', function (err, currentState) {
+            if (err) return closeConnection(close, 'apply', err, callback);
+            state = currentState;
+
+            if (state.phase === 'complete') {
+                return closeConnection(close, 'apply', migrationError(
+                    'apply:state', '<all>', 'system_migrations', 'transition',
+                    new Error('Migration ' + MIGRATION_ID + ' is already complete')
+                ), callback);
+            }
+            if (!APPLY_PHASES[state.phase]) {
+                return closeConnection(close, 'apply', migrationError(
+                    'apply:state', '<all>', 'system_migrations', 'transition',
+                    new Error('Cannot apply migration from phase ' + state.phase)
+                ), callback);
+            }
+
+            var startedAt = state.startedAt == null ? Date.now() : state.startedAt;
+            setMigrationPhase(db, state, 'copying', {
+                startedAt: startedAt,
+                copiedAt: null,
+                verifiedAt: null,
+                failedAt: null
+            }, 'apply:state', function (err) {
+                if (err) return closeConnection(close, 'apply', err, callback);
+
+                ensureUnifiedIndexes(db, function (err) {
+                    if (err) return finishApply(err);
+
+                    discoverLegacyCollections(db, function (err, legacy) {
+                        if (err) return finishApply(err);
 
                 var stats = {
                     migratedThings: 0,
@@ -384,12 +532,26 @@ function apply(options, callback) {
                                         doc.archived = !!doc.archived;
                                         doc.sticky = !!doc.sticky;
 
-                                        collectionOperation(db, 'apply:things', prefix, 'things', 'replaceOne', [
-                                            { _id: doc._id }, doc, { upsert: true }
-                                        ], function (e) {
+                                        collectionOperation(db, 'apply:things', prefix, 'things', 'findOne', [
+                                            { _id: doc._id }
+                                        ], function (e, unifiedDoc) {
                                             if (e) return nextDoc(e);
-                                            stats.migratedThings++;
-                                            nextDoc();
+                                            if (isNewerUnifiedDocument(unifiedDoc, startedAt)) return nextDoc();
+
+                                            collectionOperation(db, 'apply:things', prefix, 'things', 'replaceOne', [
+                                                {
+                                                    _id: doc._id,
+                                                    $or: [
+                                                        { modifiedAt: { $lte: startedAt } },
+                                                        { modifiedAt: { $exists: false } },
+                                                        { modifiedAt: null }
+                                                    ]
+                                                }, doc, { upsert: true }
+                                            ], function (e) {
+                                                if (e) return nextDoc(e);
+                                                stats.migratedThings++;
+                                                nextDoc();
+                                            });
                                         });
                                     }, doneThings);
                                 });
@@ -409,19 +571,31 @@ function apply(options, callback) {
                                                 ownerId: canonicalId,
                                                 name: tagDoc.name,
                                                 usage: tagDoc.usage || 1,
-                                                modifiedAt: Date.now()
+                                                modifiedAt: tagDoc.modifiedAt || tagDoc.createdAt || startedAt
                                             },
                                             $setOnInsert: {
-                                                createdAt: tagDoc.createdAt || Date.now()
+                                                createdAt: tagDoc.createdAt || startedAt
                                             }
                                         };
 
-                                        collectionOperation(db, 'apply:tags', prefix, 'tags', 'updateOne', [
-                                            filter, updateDoc, { upsert: true }
-                                        ], function (e) {
+                                        collectionOperation(db, 'apply:tags', prefix, 'tags', 'findOne', [
+                                            filter
+                                        ], function (e, unifiedTag) {
                                             if (e) return nextTag(e);
-                                            stats.migratedTags++;
-                                            nextTag();
+                                            if (isNewerUnifiedDocument(unifiedTag, startedAt)) return nextTag();
+
+                                            filter.$or = [
+                                                { modifiedAt: { $lte: startedAt } },
+                                                { modifiedAt: { $exists: false } },
+                                                { modifiedAt: null }
+                                            ];
+                                            collectionOperation(db, 'apply:tags', prefix, 'tags', 'updateOne', [
+                                                filter, updateDoc, { upsert: true }
+                                            ], function (e) {
+                                                if (e) return nextTag(e);
+                                                stats.migratedTags++;
+                                                nextTag();
+                                            });
                                         });
                                     }, doneTags);
                                 });
@@ -440,15 +614,29 @@ function apply(options, callback) {
                                         ownerId: canonicalId,
                                         type: 'frontend',
                                         value: (setDoc && typeof setDoc.value === 'object') ? setDoc.value : { title: 'Meemo' },
-                                        modifiedAt: Date.now()
+                                        modifiedAt: setDoc.modifiedAt || startedAt
                                     };
 
-                                    collectionOperation(db, 'apply:settings', prefix, 'settings', 'replaceOne', [
-                                        { ownerId: canonicalId }, docToSave, { upsert: true }
-                                    ], function (e) {
+                                    collectionOperation(db, 'apply:settings', prefix, 'settings', 'findOne', [
+                                        { ownerId: canonicalId }
+                                    ], function (e, unifiedSettings) {
                                         if (e) return doneSettings(e);
-                                        stats.migratedSettings++;
-                                        doneSettings();
+                                        if (isNewerUnifiedDocument(unifiedSettings, startedAt)) return doneSettings();
+
+                                        collectionOperation(db, 'apply:settings', prefix, 'settings', 'replaceOne', [
+                                            {
+                                                ownerId: canonicalId,
+                                                $or: [
+                                                    { modifiedAt: { $lte: startedAt } },
+                                                    { modifiedAt: { $exists: false } },
+                                                    { modifiedAt: null }
+                                                ]
+                                            }, docToSave, { upsert: true }
+                                        ], function (e) {
+                                            if (e) return doneSettings(e);
+                                            stats.migratedSettings++;
+                                            doneSettings();
+                                        });
                                     });
                                 });
                             }
@@ -459,12 +647,11 @@ function apply(options, callback) {
                         });
                     }, 'apply:resolve-owner');
                 }, function (err) {
-                    closeConnection(close, 'apply', err, function (finishError) {
-                        if (finishError) return callback(finishError);
-                        callback(null, stats);
-                    });
+                    finishApply(err, stats);
                 });
-            }, 'apply:discovery');
+                    }, 'apply:discovery');
+                });
+            });
         });
     });
 }
@@ -474,10 +661,46 @@ function verify(options, callback) {
     getDbConnection(options, 'verify', function (err, db, close) {
         if (err) return callback(err);
 
-        discoverLegacyCollections(db, function (err, legacy) {
-            if (err) {
-                return closeConnection(close, 'verify', err, callback);
+        var state;
+        function finishVerify(error, result) {
+            if (state.phase !== 'copied') {
+                return closeConnection(close, 'verify', error, function (finishError) {
+                    if (finishError) return callback(finishError);
+                    callback(null, result);
+                });
             }
+
+            if (error) {
+                return markMigrationFailed(db, state, 'verify:state', function () {
+                    closeConnection(close, 'verify', error, callback);
+                });
+            }
+
+            setMigrationPhase(db, state, 'verified', {
+                verifiedAt: Date.now(),
+                failedAt: null
+            }, 'verify:state', function (stateError) {
+                closeConnection(close, 'verify', stateError, function (finishError) {
+                    if (finishError) return callback(finishError);
+                    callback(null, result);
+                });
+            });
+        }
+
+        getMigrationState(db, 'verify:state', function (err, currentState) {
+            if (err) return closeConnection(close, 'verify', err, callback);
+            state = currentState || { phase: 'complete', startedAt: Infinity };
+
+            if (state.phase !== 'copied' && state.phase !== 'verified' &&
+                    state.phase !== 'cutover' && state.phase !== 'complete') {
+                return closeConnection(close, 'verify', migrationError(
+                    'verify:state', '<all>', 'system_migrations', 'transition',
+                    new Error('Cannot verify migration from phase ' + state.phase)
+                ), callback);
+            }
+
+            discoverLegacyCollections(db, function (err, legacy) {
+                if (err) return finishVerify(err);
 
             var allPrefixes = {};
             legacy.things.forEach(function (c) { allPrefixes[c.prefix] = true; });
@@ -510,7 +733,8 @@ function verify(options, callback) {
                                         var ud = unifiedMap[String(ld._id)];
                                         if (!ud) {
                                             mismatches.push('Missing thing in unified collection: ' + ld._id + ' for owner ' + canonicalId);
-                                        } else if (ud.content !== ld.content) {
+                                        } else if (ud.content !== ld.content &&
+                                                !isNewerUnifiedDocument(ud, state.startedAt)) {
                                             mismatches.push('Content mismatch on thing: ' + ld._id);
                                         }
                                     });
@@ -571,26 +795,25 @@ function verify(options, callback) {
                     });
                 }, 'verify:resolve-owner');
             }, function (err) {
-                closeConnection(close, 'verify', err, function (finishError) {
-                    if (finishError) return callback(finishError);
+                if (err) return finishVerify(err);
 
-                    var result = {
-                        verifiedUsers: verifiedCount,
-                        mismatches: mismatches,
-                        success: mismatches.length === 0
-                    };
+                var result = {
+                    verifiedUsers: verifiedCount,
+                    mismatches: mismatches,
+                    success: mismatches.length === 0
+                };
 
-                    if (!result.success) {
-                        return callback(migrationError(
-                            'verify', '<all>', '<unified>', 'fidelity-check',
-                            new Error('Verification failed with ' + mismatches.length + ' mismatches: ' + mismatches.join('; '))
-                        ));
-                    }
+                if (!result.success) {
+                    return finishVerify(migrationError(
+                        'verify', '<all>', '<unified>', 'fidelity-check',
+                        new Error('Verification failed with ' + mismatches.length + ' mismatches: ' + mismatches.join('; '))
+                    ));
+                }
 
-                    callback(null, result);
-                });
+                finishVerify(null, result);
             });
-        }, 'verify:discovery');
+            }, 'verify:discovery');
+        }, false);
     });
 }
 
