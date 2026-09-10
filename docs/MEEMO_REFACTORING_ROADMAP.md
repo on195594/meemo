@@ -882,44 +882,46 @@ RSS links
 
 ### RF-506：切换默认前端
 
+实施状态：已完成（已将 Express 静态托管与 SPA History 路由彻底切换为 Vue 3 新前端，清理 legacy Gulp 构建与 frontend/ 废弃代码，并通过 Docker 多阶段构建完成 Phase 5 前端现代化演进）。
+
 分支：`frontend/vue3-cutover`
 
 只有 Feature Parity Matrix 全绿后才允许：
 
-- Docker 默认构建 `web/`。
-- 删除 Vue 1 runtime。
-- 删除 Gulp。
-- 删除 jQuery（若新前端无依赖）。
-- 删除 vendored Bootstrap/legacy sanitizer。
-- 删除旧 `frontend/`。
-- 更新 README、ARCHITECTURE、AGENTS。
+- [x] Docker 默认构建 `web/`。
+- [x] 删除 Vue 1 runtime。
+- [x] 删除 Gulp。
+- [x] 删除 jQuery（若新前端无依赖）。
+- [x] 删除 vendored Bootstrap/legacy sanitizer。
+- [x] 删除旧 `frontend/`。
+- [x] 更新 README、ARCHITECTURE、AGENTS。
 
 ## 5.3 Feature Parity Matrix
 
 | 能力 | Legacy | Vue 3 | Cutover 必须 |
 |---|---:|---:|---:|
-| Login/logout | ✓ | [ ] | ✓ |
-| Register/first-user | ✓ | [ ] | ✓ |
-| Create/edit/delete | ✓ | [ ] | ✓ |
-| Search | ✓ | [ ] | ✓ |
-| Tags | ✓ | [ ] | ✓ |
-| Sticky | ✓ | [ ] | ✓ |
-| Archive/restore | ✓ | [ ] | ✓ |
-| Markdown | ✓ | [ ] | ✓ |
-| Attachment upload/read | ✓ | [ ] | ✓ |
-| Public/share | ✓ | [ ] | ✓ |
-| Settings | ✓ | [ ] | ✓ |
-| Import/export | ✓ | [ ] | ✓ |
-| Public stream | ✓ | [ ] | ✓ |
-| RSS | ✓ | [ ] | ✓ |
+| Login/logout | ✓ | [x] | ✓ |
+| Register/first-user | ✓ | [x] | ✓ |
+| Create/edit/delete | ✓ | [x] | ✓ |
+| Search | ✓ | [x] | ✓ |
+| Tags | ✓ | [x] | ✓ |
+| Sticky | ✓ | [x] | ✓ |
+| Archive/restore | ✓ | [x] | ✓ |
+| Markdown | ✓ | [x] | ✓ |
+| Attachment upload/read | ✓ | [x] | ✓ |
+| Public/share | ✓ | [x] | ✓ |
+| Settings | ✓ | [x] | ✓ |
+| Import/export | ✓ | [x] | ✓ |
+| Public stream | ✓ | [x] | ✓ |
+| RSS | ✓ | [x] | ✓ |
 
 ## 5.4 Gate G4 验收
 
-- [ ] Feature Parity Matrix 全绿。
-- [ ] 新前端构建进入 CI。
-- [ ] 旧 Vue 1/Gulp 不再参与 production build。
-- [ ] 旧 vendor JS/CSS 可以安全删除。
-- [ ] Docker smoke test 全部基于新前端/新后端。
+- [x] Feature Parity Matrix 全绿。
+- [x] 新前端构建进入 CI。
+- [x] 旧 Vue 1/Gulp 不再参与 production build。
+- [x] 旧 vendor JS/CSS 可以安全删除。
+- [x] Docker smoke test 全部基于新前端/新后端。
 
 ---
 
@@ -1115,18 +1117,18 @@ ADR 只记录“为什么选这个方案”和“放弃了什么”，不重复�
 必须同时满足：
 
 - [ ] G0–G5 全部通过。
-- [ ] `.users.json` 不再是生产账户数据源。
-- [ ] username 不再作为文件路径或 collection identity。
-- [ ] Things、Tags、Settings 彻底收敛为统一集合，不再按用户动态建表。
-- [ ] SSRF policy 有自动化安全回归测试。
-- [ ] Attachment 权限绑定 Thing/owner，而不是文件名保密性。
-- [ ] Import/Export 具备 round-trip 测试。
+- [x] `.users.json` 不再是生产账户数据源。
+- [x] username 不再作为文件路径或 collection identity。
+- [x] Things、Tags、Settings 彻底收敛为统一集合，不再按用户动态建表。
+- [x] SSRF policy 有自动化安全回归测试。
+- [x] Attachment 权限绑定 Thing/owner，而不是文件名保密性。
+- [x] Import/Export 具备 round-trip 测试。
 - [x] 后端业务边界不再集中于单个 `routes.js` / `logic.js`。
-- [ ] 关键后端代码具备清晰输入校验与 API 契约文档。
-- [ ] Vue 1、Gulp、jQuery、legacy vendored sanitizer 及旧多页模板已从 production build 移除。
+- [x] 关键后端代码具备清晰输入校验与 API 契约文档。
+- [x] Vue 1、Gulp、jQuery、legacy vendored sanitizer 及旧多页模板已从 production build 移除。
 - [ ] Docker image 可从 release 重新构建并通过版本标签回滚。
 - [ ] Backup/Restore 实际演练成功。
-- [ ] README、ARCHITECTURE、AGENTS 与代码现实一致。
+- [x] README、ARCHITECTURE、AGENTS 与代码现实一致。
 
 达到这些条件后，才把后续 PWA、Quick Capture、Browser Clipper、Semantic Search、AI enrichment 当作产品迭代，而不是继续把它们混在“重构”名义下。
 

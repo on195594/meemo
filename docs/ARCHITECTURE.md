@@ -12,7 +12,7 @@ Meemo is a small browser application served by Express and backed by MongoDB and
 6. `src/database/` reads and writes MongoDB collections (unified collections `things`, `tags`, and `settings` partitioned by `ownerId`, plus `users` and `sessions`).
 7. `src/storage/local-storage.js` owns persistent attachment filesystem access.
 8. `src/users.js` abstracts account storage across file and MongoDB implementations via `UserRepository`.
-9. `frontend/` is compiled by Gulp into the generated, ignored `public/` directory.
+9. `web/` is compiled by Vite into the generated, ignored `public/` directory, serving as the modern Vue 3 Single Page Application with client-side routing.
 
 Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, persistence in `src/database/`, and attachment filesystem access in `src/storage/`. HTTP routes must call services instead of database or filesystem APIs directly.
 
@@ -39,7 +39,7 @@ Routes are registered in `app.js`:
 
 The authoritative OpenAPI 3.0 specification is maintained in `docs/openapi.yaml`, and progressive TypeScript declarations for core domain models and API contracts reside in `types/api.d.ts`.
 
-When changing an endpoint, update its route handler, the OpenAPI specification, and the corresponding browser call under `frontend/js/`. Add or update a test under `src/test/` for non-trivial server behavior.
+When changing an endpoint, update its route handler, the OpenAPI specification, and the corresponding browser client call under `web/src/api/client.ts`. Add or update a test under `src/test/` for non-trivial server behavior.
 
 ## Migration and tooling
 
@@ -50,7 +50,7 @@ Meemo provides zero-downtime shadow migration scripts:
 
 ## Build and deployment
 
-`npm run build` compiles legacy `frontend/` into `public/`.
-`npm run build:web` compiles the modern Vue 3 + Vite + TypeScript application in `web/` into `web/dist/`. Do not commit generated output.
+`npm run build` compiles the modern Vue 3 + Vite + TypeScript application in `web/` into `public/`.
+`npm run build:web` compiles directly into `web/dist/`. Do not commit generated output.
 
-The Dockerfile uses multi-stage builders (`web-builder` for `web/` and `builder` for legacy assets and dependencies), running the application as an unprivileged user while keeping `public/` as default until feature parity cutover. `docker-compose.yml` supplies MongoDB and persistent named volumes.
+The Dockerfile uses a multi-stage build (`web-builder` for `web/` and `builder` for native production dependencies), running the application as an unprivileged user while serving modern Vue 3 assets from `public/`. `docker-compose.yml` supplies MongoDB and persistent named volumes.

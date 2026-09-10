@@ -13,10 +13,7 @@ ARG VERSION=dev
 RUN apk add --no-cache nodejs npm python3 make g++
 WORKDIR /app/code
 COPY package.json package-lock.json ./
-RUN npm ci
-COPY frontend/ frontend/
-COPY gulpfile.js ./
-RUN npm run build -- --revision "${VERSION}" && npm prune --omit=dev
+RUN npm ci --omit=dev
 
 FROM alpine:${ALPINE_VERSION}
 ARG CREATED
@@ -37,8 +34,7 @@ RUN apk add --no-cache nodejs \
     && chown -R 1000:1000 /app
 WORKDIR /app/code
 COPY --from=builder --chown=1000:1000 /app/code/node_modules/ node_modules/
-COPY --from=builder --chown=1000:1000 /app/code/public/ public/
-COPY --from=web-builder --chown=1000:1000 /app/web/dist/ web/dist/
+COPY --from=web-builder --chown=1000:1000 /app/web/dist/ public/
 COPY --chown=1000:1000 src/ src/
 COPY --chown=1000:1000 app.js start.sh ./
 
