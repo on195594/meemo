@@ -1,8 +1,8 @@
 # Meemo 重构执行路线图
 
-> 建议仓库路径：`docs/REFACTORING_ROADMAP.md`  
-> 状态：Proposed / Ready for execution  
-> 基线：`master` @ `3a8fa1585280b6ccff699a10120c3cafccfb90c2`（2026-09-09）  
+> 建议仓库路径：`docs/MEEMO_REFACTORING_ROADMAP.md`
+> 状态：Phase 5 实施完成，Gate G0~G4 全部通过，准备进入 Phase 6（Docker 与运维）
+> 基线：`master` @ `3a8fa1585280b6ccff699a10120c3cafccfb90c2`（2026-09-09）
 > 目标：在不进行“大爆炸式重写”的前提下，把 Meemo 演进成安全、可测试、可迁移、可持续维护的现代自托管应用。
 
 ---
@@ -185,12 +185,12 @@ docker compose down -v
 
 ## 0.3 Gate G0 验收
 
-- [ ] 新 clone 可完成 `npm ci && npm run build && npm test`。
-- [ ] `createApp` 可在测试环境下直接被 `supertest` 引用，无隐式端口监听与孤儿句柄。
-- [ ] `docker compose up --build -d` 后 readiness 成功。
-- [ ] 登录 smoke test 成功。
-- [ ] `master` 无法绕过 PR required checks。
-- [ ] 基线失败时不得进入 Phase 1 以外的大规模改动。
+- [x] 新 clone 可完成 `npm ci && npm run build && npm test`。
+- [x] `createApp` 可在测试环境下直接被 `supertest` 引用，无隐式端口监听与孤儿句柄。
+- [x] `docker compose up --build -d` 后 readiness 成功。
+- [x] 登录 smoke test 成功。
+- [x] `master` 无法绕过 PR required checks。
+- [x] 基线失败时不得进入 Phase 1 以外的大规模改动。
 
 ---
 
