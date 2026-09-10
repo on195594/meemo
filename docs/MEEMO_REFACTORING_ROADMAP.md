@@ -810,6 +810,8 @@ modern markdown renderer + maintained sanitizer (DOMPurify)
 
 ### RF-502：Auth Shell
 
+实施状态：已完成（已实现 useAuth 组合式函数、LoginModal 弹窗、用户 Profile 下拉与登出、首用户检测与注册流引导、401 Session 过期拦截与顶部横幅提醒）。
+
 分支：`frontend/vue3-auth`
 
 实现：

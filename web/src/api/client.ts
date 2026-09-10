@@ -57,6 +57,26 @@ export interface Tag {
   usage: number;
 }
 
+export type UnauthorizedHandler = (path: string, error: ApiError) => void;
+const unauthorizedHandlers = new Set<UnauthorizedHandler>();
+
+export function onUnauthorized(handler: UnauthorizedHandler): () => void {
+  unauthorizedHandlers.add(handler);
+  return () => {
+    unauthorizedHandlers.delete(handler);
+  };
+}
+
+function notifyUnauthorized(path: string, error: ApiError): void {
+  for (const handler of unauthorizedHandlers) {
+    try {
+      handler(path, error);
+    } catch (e) {
+      console.error('Unauthorized handler threw an error:', e);
+    }
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
@@ -79,7 +99,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       // Body not JSON, fallback to statusText
     }
-    throw new ApiError(response.status, errorCode, errorMessage);
+    const apiError = new ApiError(response.status, errorCode, errorMessage);
+    if (response.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/register')) {
+      notifyUnauthorized(path, apiError);
+    }
+    throw apiError;
   }
 
   if (response.status === 204 || response.headers.get('content-length') === '0') {
