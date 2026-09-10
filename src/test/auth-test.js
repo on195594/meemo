@@ -10,6 +10,7 @@ var expect = require('expect.js'),
     fs = require('fs'),
     request = require('supertest'),
     config = require('../config.js'),
+    users = require('../users.js'),
     appModule = require('../../app.js'),
     createApp = appModule.createApp;
 
@@ -238,6 +239,148 @@ describe('Authentication & Registration Policy (RF-101)', function () {
                             done();
                         });
                 });
+        });
+
+        describe('atomic first-user registration (RF-715)', function () {
+            var previousAuthUserSource;
+
+            beforeEach(async function () {
+                previousAuthUserSource = process.env.AUTH_USER_SOURCE;
+                process.env.REGISTRATION_MODE = 'first-user';
+                users.initRepository('mongo');
+                await Promise.all([
+                    config.db.collection('users').deleteMany({}),
+                    config.db.collection('system_config').deleteMany({})
+                ]);
+            });
+
+            afterEach(async function () {
+                await Promise.all([
+                    config.db.collection('users').deleteMany({}),
+                    config.db.collection('system_config').deleteMany({})
+                ]);
+                if (previousAuthUserSource === undefined) delete process.env.AUTH_USER_SOURCE;
+                else process.env.AUTH_USER_SOURCE = previousAuthUserSource;
+                users.initRepository();
+                process.env.REGISTRATION_MODE = 'open';
+                resetUserFile();
+            });
+
+            it('allows exactly one of 20 concurrent first-user registrations', async function () {
+                var responses = await Promise.all(Array.from({ length: 20 }, function (unused, index) {
+                    return request(app)
+                        .post('/api/register')
+                        .send({
+                            username: 'concurrent' + index,
+                            password: 'password123',
+                            email: 'concurrent' + index + '@example.com',
+                            displayName: 'Concurrent User ' + index
+                        });
+                }));
+                var statuses = responses.map(function (response) { return response.status; });
+
+                expect(statuses.filter(function (status) { return status === 201; }).length).to.equal(1);
+                expect(statuses.filter(function (status) { return status === 403; }).length).to.equal(19);
+                expect(await users.count()).to.equal(1);
+            });
+
+            it('closes registration when an existing database has no claim record', async function () {
+                await config.db.collection('users').insertOne({
+                    username: 'existinguser',
+                    usernameNorm: 'existinguser',
+                    displayName: 'Existing User',
+                    email: 'existing@example.com',
+                    passwordHash: 'unused',
+                    createdAt: Date.now(),
+                    status: 'active'
+                });
+
+                await request(app)
+                    .post('/api/register')
+                    .send({
+                        username: 'newuser',
+                        password: 'password123',
+                        email: 'new@example.com',
+                        displayName: 'New User'
+                    })
+                    .expect(403);
+
+                expect(await users.count()).to.equal(1);
+                expect(await config.db.collection('system_config').countDocuments({
+                    _id: 'registration-initialized'
+                })).to.equal(1);
+            });
+
+            it('releases the claim when user creation fails', async function () {
+                await config.db.collection('users').insertOne({
+                    username: 'disableduser',
+                    usernameNorm: 'disableduser',
+                    displayName: 'Disabled User',
+                    email: 'disabled@example.com',
+                    passwordHash: 'unused',
+                    createdAt: Date.now(),
+                    status: 'disabled'
+                });
+
+                await request(app)
+                    .post('/api/register')
+                    .send({
+                        username: 'disableduser',
+                        password: 'password123',
+                        email: 'replacement@example.com',
+                        displayName: 'Replacement User'
+                    })
+                    .expect(409);
+
+                expect(await config.db.collection('system_config').countDocuments({
+                    _id: 'registration-initialized'
+                })).to.equal(0);
+
+                await request(app)
+                    .post('/api/register')
+                    .send({
+                        username: 'recoveryuser',
+                        password: 'password123',
+                        email: 'recovery@example.com',
+                        displayName: 'Recovery User'
+                    })
+                    .expect(201);
+                expect(await users.count()).to.equal(1);
+            });
+
+            it('releases the claim when the default user file cannot be written', async function () {
+                var unwritablePath = '/tmp/meemo-auth-missing-' + process.pid + '/users.json';
+                process.env.USERS_FILE = unwritablePath;
+                fs.rmSync(unwritablePath, { recursive: true, force: true });
+                users.initRepository('file');
+
+                await request(app)
+                    .post('/api/register')
+                    .send({
+                        username: 'failedfileuser',
+                        password: 'password123',
+                        email: 'failed@example.com',
+                        displayName: 'Failed File User'
+                    })
+                    .expect(500);
+
+                expect(await config.db.collection('system_config').countDocuments({
+                    _id: 'registration-initialized'
+                })).to.equal(0);
+
+                resetUserFile();
+                users.initRepository('file');
+                await request(app)
+                    .post('/api/register')
+                    .send({
+                        username: 'recoveredfileuser',
+                        password: 'password123',
+                        email: 'recovered@example.com',
+                        displayName: 'Recovered File User'
+                    })
+                    .expect(201);
+                expect(await users.count()).to.equal(1);
+            });
         });
     });
 

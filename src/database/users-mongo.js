@@ -16,6 +16,10 @@ function MongoUserRepository(db) {
 }
 util.inherits(MongoUserRepository, UserRepository);
 
+function isDuplicateKey(error) {
+    return error.code === 11000 || (error.message && error.message.indexOf('E11000') !== -1);
+}
+
 MongoUserRepository.prototype.getCollection = function () {
     var collection = (this._db || config.db).collection('users');
     var self = this;
@@ -46,6 +50,31 @@ MongoUserRepository.prototype.ensureIndexes = function (callback) {
             return;
         }
         throw error;
+    });
+    return nodeify(promise, callback);
+};
+
+MongoUserRepository.prototype.claimFirstUserRegistration = function (callback) {
+    var self = this;
+    var promise = Promise.resolve().then(function () {
+        var db = self._db || config.db;
+        if (!db) throw new Error('MongoDB database is not connected');
+        return db.collection('system_config').insertOne({ _id: 'registration-initialized' });
+    }).then(function () {
+        return true;
+    }).catch(function (error) {
+        if (isDuplicateKey(error)) return false;
+        throw error;
+    });
+    return nodeify(promise, callback);
+};
+
+MongoUserRepository.prototype.releaseFirstUserRegistration = function (callback) {
+    var self = this;
+    var promise = Promise.resolve().then(function () {
+        var db = self._db || config.db;
+        if (!db) throw new Error('MongoDB database is not connected');
+        return db.collection('system_config').deleteOne({ _id: 'registration-initialized' });
     });
     return nodeify(promise, callback);
 };
@@ -112,7 +141,7 @@ MongoUserRepository.prototype.create = function (userData, callback) {
             return Object.assign({}, doc, { id: String(result.insertedId || doc._id) });
         });
     }).catch(function (error) {
-        if (error.code === 11000 || (error.message && error.message.indexOf('E11000') !== -1)) {
+        if (isDuplicateKey(error)) {
             throw new Error('user exists');
         }
         throw error;
