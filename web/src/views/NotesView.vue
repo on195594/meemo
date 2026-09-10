@@ -1,37 +1,14 @@
 <template>
   <div class="notes-view">
-    <header class="notes-header">
-      <h1>Meemo</h1>
-      <div v-if="authLoading || thingsLoading" class="status-indicator">Loading...</div>
-      <div v-else-if="isAuthenticated && user" class="user-greeting">
-        Welcome, {{ user.displayName || user.username }}
-      </div>
-    </header>
-
-    <main class="notes-content">
-      <div v-if="error" class="error-banner" role="alert">
-        {{ error }}
+    <!-- Unauthenticated View States -->
+    <template v-if="!isAuthenticated">
+      <div v-if="authLoading" class="loading-state">
+        <span class="spinner"></span>
+        <p>Loading Meemo...</p>
       </div>
 
-      <!-- Authenticated Content -->
-      <template v-if="isAuthenticated">
-        <div class="notes-list" v-if="things.length">
-          <article v-for="thing in things" :key="thing._id" class="note-card">
-            <div class="note-body" v-html="renderedContent(thing.content)"></div>
-            <footer class="note-meta">
-              <span class="note-date">{{ formatDate(thing.createdAt) }}</span>
-              <span v-for="tag in thing.tags" :key="tag" class="tag-badge">#{{ tag }}</span>
-            </footer>
-          </article>
-        </div>
-
-        <div v-else-if="!thingsLoading" class="empty-state">
-          <p>No notes found. Create your first note!</p>
-        </div>
-      </template>
-
-      <!-- Unauthenticated First User State -->
-      <div v-else-if="!authLoading && isFirstUser" class="auth-hero first-user-hero">
+      <!-- First-User Setup Prompt -->
+      <div v-else-if="isFirstUser" class="auth-hero first-user-hero">
         <div class="hero-icon">🚀</div>
         <h2>Welcome to Meemo</h2>
         <p>No user account exists yet. Create your administrator account to start writing and organizing your thoughts.</p>
@@ -40,8 +17,8 @@
         </button>
       </div>
 
-      <!-- Unauthenticated Regular State -->
-      <div v-else-if="!authLoading" class="auth-hero login-hero">
+      <!-- General Sign In Prompt -->
+      <div v-else class="auth-hero login-hero">
         <div class="hero-icon">🔒</div>
         <h2>Sign In to Meemo</h2>
         <p>Log in with your credentials to access your notes, attachments, and settings.</p>
@@ -49,30 +26,190 @@
           Log In
         </button>
       </div>
-    </main>
+    </template>
+
+    <!-- Authenticated Notes Workspace -->
+    <template v-else>
+      <!-- Search and View Control Toolbar -->
+      <section class="notes-toolbar" aria-label="Notes search and filter toolbar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input
+            type="search"
+            v-model="searchInput"
+            class="search-input"
+            placeholder="Search notes or #tags..."
+            @keydown.enter="handleSearchSubmit"
+          />
+          <button
+            v-if="searchInput"
+            type="button"
+            class="search-clear-btn"
+            @click="handleSearchClear"
+            title="Clear search"
+          >
+            &times;
+          </button>
+          <button
+            type="button"
+            class="search-submit-btn"
+            @click="handleSearchSubmit"
+          >
+            Search
+          </button>
+        </div>
+
+        <div class="view-toggles">
+          <button
+            type="button"
+            class="view-toggle-btn"
+            :class="{ active: !isArchived }"
+            @click="handleViewSwitch(false)"
+            title="View active notes"
+          >
+            📝 Active
+          </button>
+          <button
+            type="button"
+            class="view-toggle-btn"
+            :class="{ active: isArchived }"
+            @click="handleViewSwitch(true)"
+            title="View archived notes"
+          >
+            📦 Archive
+          </button>
+        </div>
+      </section>
+
+      <!-- Active Filters Summary Banner -->
+      <div v-if="hasActiveFilter" class="active-filter-bar">
+        <span class="filter-label">Filter:</span>
+        <span v-if="selectedTag" class="filter-chip">
+          Tag: #{{ selectedTag }}
+          <button type="button" class="chip-remove" @click="selectTag(null)">&times;</button>
+        </span>
+        <span v-if="searchQuery" class="filter-chip">
+          Query: "{{ searchQuery }}"
+          <button type="button" class="chip-remove" @click="handleQueryRemove">&times;</button>
+        </span>
+        <span v-if="isArchived" class="filter-chip archive-chip">
+          Archived View
+          <button type="button" class="chip-remove" @click="handleViewSwitch(false)">&times;</button>
+        </span>
+        <button type="button" class="clear-all-link" @click="clearFilters">
+          Reset all filters
+        </button>
+      </div>
+
+      <!-- Error Notice -->
+      <div v-if="error" class="error-banner" role="alert">
+        {{ error }}
+      </div>
+
+      <!-- Main Layout: Cards Stream & Tags Sidebar -->
+      <div class="notes-layout">
+        <!-- Center Stream Column -->
+        <main class="stream-column">
+          <div v-if="isLoading" class="loading-state">
+            <span class="spinner"></span>
+            <p>Loading notes...</p>
+          </div>
+
+          <!-- Notes Card List -->
+          <div v-else-if="things.length > 0" class="notes-card-list">
+            <NoteCard
+              v-for="thing in things"
+              :key="thing._id"
+              :thing="thing"
+              @tag-click="handleTagClick"
+            />
+
+            <!-- Infinite Scroll / Load More Footer -->
+            <div ref="loadMoreTrigger" class="load-more-section">
+              <button
+                v-if="hasMore"
+                type="button"
+                class="load-more-btn"
+                :disabled="isLoadingMore"
+                @click="fetchMore"
+              >
+                <span v-if="isLoadingMore">Loading more notes...</span>
+                <span v-else>Load more notes</span>
+              </button>
+              <p v-else class="end-marker">
+                — You have reached the end of the notes —
+              </p>
+            </div>
+          </div>
+
+          <!-- Empty Results State -->
+          <div v-else class="empty-state">
+            <div class="empty-icon">{{ isArchived ? '📦' : '📝' }}</div>
+            <h3 v-if="hasActiveFilter">No notes found matching your filter</h3>
+            <h3 v-else-if="isArchived">No archived notes</h3>
+            <h3 v-else>No notes found</h3>
+            <p v-if="hasActiveFilter">Try adjusting your search terms or clearing tag filters.</p>
+            <p v-else-if="isArchived">Notes you archive will appear here.</p>
+            <p v-else>Create your first note to begin!</p>
+            <button
+              v-if="hasActiveFilter"
+              type="button"
+              class="clear-filters-btn"
+              @click="clearFilters"
+            >
+              Clear filters
+            </button>
+          </div>
+        </main>
+
+        <!-- Right Tag Cloud Sidebar -->
+        <aside class="sidebar-column">
+          <TagSidebar
+            :tags="tags"
+            :selected-tag="selectedTag"
+            @select-tag="handleTagClick"
+            @clear-tag="selectTag(null)"
+          />
+        </aside>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, inject } from 'vue';
-import { api, type Thing } from '../api/client';
+import { ref, watch, onMounted, onUnmounted, inject } from 'vue';
 import { useAuth } from '../composables/useAuth';
-import { renderMarkdown } from '../utils/markdown';
+import { useNotes } from '../composables/useNotes';
+import NoteCard from '../components/NoteCard.vue';
+import TagSidebar from '../components/TagSidebar.vue';
 
-const { user, isAuthenticated, isLoading: authLoading, isFirstUser } = useAuth();
+const { isAuthenticated, isLoading: authLoading, isFirstUser } = useAuth();
 const openAuthModal = inject<((tab?: 'login' | 'register') => void) | undefined>('openAuthModal', undefined);
 
-const things = ref<Thing[]>([]);
-const thingsLoading = ref(false);
-const error = ref<string | null>(null);
+const {
+  things,
+  tags,
+  isLoading,
+  isLoadingMore,
+  hasMore,
+  error,
+  searchQuery,
+  selectedTag,
+  isArchived,
+  hasActiveFilter,
+  fetchNotes,
+  fetchMore,
+  fetchTags,
+  setSearch,
+  selectTag,
+  toggleArchived,
+  clearFilters,
+  clearNotes,
+} = useNotes();
 
-function renderedContent(content: string) {
-  return renderMarkdown(content);
-}
-
-function formatDate(timestamp: number) {
-  return new Date(timestamp).toLocaleDateString();
-}
+const searchInput = ref('');
+const loadMoreTrigger = ref<HTMLElement | null>(null);
+let observer: IntersectionObserver | null = null;
 
 function triggerAuthModal(tab: 'login' | 'register') {
   if (openAuthModal) {
@@ -80,103 +217,115 @@ function triggerAuthModal(tab: 'login' | 'register') {
   }
 }
 
-async function loadNotes() {
-  if (!isAuthenticated.value) {
-    things.value = [];
-    return;
+function handleSearchSubmit() {
+  const q = searchInput.value.trim();
+  if (q.startsWith('#')) {
+    selectTag(q.slice(1));
+    searchInput.value = '';
+  } else {
+    setSearch(q);
+  }
+}
+
+function handleSearchClear() {
+  searchInput.value = '';
+  setSearch('');
+}
+
+function handleQueryRemove() {
+  searchInput.value = '';
+  setSearch('');
+}
+
+function handleViewSwitch(archived: boolean) {
+  if (isArchived.value !== archived) {
+    toggleArchived();
+  }
+}
+
+function handleTagClick(tag: string) {
+  selectTag(tag);
+}
+
+function setupIntersectionObserver() {
+  if (observer) {
+    observer.disconnect();
+    observer = null;
   }
 
-  thingsLoading.value = true;
-  error.value = null;
-  try {
-    const thingsRes = await api.things.list();
-    things.value = thingsRes.things || [];
-  } catch (err: any) {
-    if (err.status !== 401) {
-      error.value = err.message || 'Failed to load notes';
+  if (typeof IntersectionObserver !== 'undefined') {
+    observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting && hasMore.value && !isLoading.value && !isLoadingMore.value) {
+        fetchMore();
+      }
+    }, { rootMargin: '200px' });
+
+    if (loadMoreTrigger.value) {
+      observer.observe(loadMoreTrigger.value);
     }
-  } finally {
-    thingsLoading.value = false;
   }
 }
 
 watch(isAuthenticated, (authenticated) => {
   if (authenticated) {
-    loadNotes();
+    fetchNotes(true);
+    fetchTags();
   } else {
-    things.value = [];
+    clearNotes();
+  }
+});
+
+watch(hasMore, () => {
+  // Re-observe when items change
+  if (loadMoreTrigger.value && observer && hasMore.value) {
+    observer.observe(loadMoreTrigger.value);
   }
 });
 
 onMounted(() => {
   if (isAuthenticated.value) {
-    loadNotes();
+    fetchNotes(true);
+    fetchTags();
+  }
+  setupIntersectionObserver();
+});
+
+onUnmounted(() => {
+  if (observer) {
+    observer.disconnect();
   }
 });
 </script>
 
 <style scoped>
 .notes-view {
-  max-width: 800px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: 1.5rem;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
-.notes-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 1rem;
-}
-
-.status-indicator {
-  font-size: 0.9rem;
-  color: #718096;
-}
-
-.user-greeting {
-  font-size: 0.95rem;
-  color: #4a5568;
-  font-weight: 500;
-}
-
-.note-card {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-top: 1rem;
-  background: #fff;
-}
-
-.note-meta {
-  margin-top: 0.75rem;
-  font-size: 0.85rem;
-  color: #718096;
-  display: flex;
-  gap: 0.5rem;
-}
-
-.tag-badge {
-  background: #edf2f7;
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
-  color: #4a5568;
-}
-
-.error-banner {
-  background: #fed7d7;
-  color: #9b2c2c;
-  padding: 0.75rem;
-  border-radius: 4px;
-  margin-top: 1rem;
-}
-
-.empty-state {
+.loading-state {
   text-align: center;
-  color: #a0aec0;
-  margin-top: 3rem;
+  padding: 3rem 1rem;
+  color: #718096;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #3182ce;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .auth-hero {
@@ -226,6 +375,254 @@ onMounted(() => {
 }
 
 .hero-btn.primary:hover {
+  background-color: #2c5282;
+}
+
+/* Toolbar */
+.notes-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  flex: 1;
+  min-width: 240px;
+  max-width: 480px;
+}
+
+.search-icon {
+  font-size: 0.9rem;
+  margin-right: 0.4rem;
+  color: #a0aec0;
+}
+
+.search-input {
+  border: none;
+  outline: none;
+  width: 100%;
+  font-size: 0.9rem;
+  color: #2d3748;
+}
+
+.search-clear-btn {
+  background: none;
+  border: none;
+  color: #a0aec0;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 0.3rem;
+}
+
+.search-submit-btn {
+  background-color: #edf2f7;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #4a5568;
+  cursor: pointer;
+  margin-left: 0.25rem;
+}
+
+.search-submit-btn:hover {
+  background-color: #e2e8f0;
+  color: #2b6cb0;
+}
+
+.view-toggles {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.view-toggle-btn {
+  background: #ffffff;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-toggle-btn:hover {
+  border-color: #3182ce;
+  color: #2b6cb0;
+}
+
+.view-toggle-btn.active {
+  background-color: #ebf8ff;
+  border-color: #3182ce;
+  color: #2b6cb0;
+  font-weight: 600;
+}
+
+/* Active filter banner */
+.active-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #edf2f7;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.filter-label {
+  font-weight: 600;
+  color: #4a5568;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #ffffff;
+  border: 1px solid #cbd5e0;
+  border-radius: 12px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  color: #2d3748;
+}
+
+.filter-chip.archive-chip {
+  background-color: #fefcbf;
+  border-color: #faf089;
+  color: #744210;
+}
+
+.chip-remove {
+  background: none;
+  border: none;
+  color: #718096;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.chip-remove:hover {
+  color: #e53e3e;
+}
+
+.clear-all-link {
+  background: none;
+  border: none;
+  color: #3182ce;
+  cursor: pointer;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  margin-left: auto;
+}
+
+.error-banner {
+  background: #fed7d7;
+  color: #9b2c2c;
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+/* Layout */
+.notes-layout {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .notes-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stream-column {
+  min-width: 0;
+}
+
+.sidebar-column {
+  position: sticky;
+  top: 5rem;
+}
+
+.load-more-section {
+  text-align: center;
+  padding: 1.5rem 0;
+}
+
+.load-more-btn {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  padding: 0.6rem 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #3182ce;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.load-more-btn:hover:not(:disabled) {
+  background-color: #ebf8ff;
+  border-color: #3182ce;
+}
+
+.load-more-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.end-marker {
+  font-size: 0.85rem;
+  color: #a0aec0;
+}
+
+.empty-state {
+  text-align: center;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 3rem 1.5rem;
+  color: #718096;
+}
+
+.empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.empty-state h3 {
+  font-size: 1.2rem;
+  color: #2d3748;
+  margin-bottom: 0.5rem;
+}
+
+.clear-filters-btn {
+  margin-top: 1rem;
+  background-color: #2b6cb0;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.clear-filters-btn:hover {
   background-color: #2c5282;
 }
 </style>
