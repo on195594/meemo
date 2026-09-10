@@ -3,7 +3,8 @@
 var http = require('http'),
     lastmile = require('connect-lastmile'),
     BaseHttpError = lastmile.HttpError,
-    HttpSuccess = lastmile.HttpSuccess;
+    HttpSuccess = lastmile.HttpSuccess,
+    logger = require('./middleware/logger.js');
 
 var ERROR_CODES = {
     400: 'invalid_request',
@@ -49,7 +50,14 @@ function errorHandler(error, req, res, next) {
         message = 'Request body limit exceeded';
     }
 
-    if (status === 500) console.error(error);
+    if (res && res.locals) {
+        res.locals.errorCode = code;
+    }
+
+    if (status === 500) {
+        logger.logError(error, req);
+        console.error(error);
+    }
 
     res.status(status).send({
         status: http.STATUS_CODES[status] || 'Error',
