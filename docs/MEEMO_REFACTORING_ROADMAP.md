@@ -863,6 +863,8 @@ keyboard save
 
 ### RF-505：Attachment / Settings / Import Export
 
+实施状态：已完成（已实现文件与图片拖拽粘贴上传与进度展示、SettingsModal 应用设置与宽屏/背景图定制、ImportModal 归档包解压合并与进度反馈、Export 归档包一键下载、CheatsheetModal 快捷键与 Markdown 帮助模态窗）。
+
 分支：`frontend/vue3-feature-parity`
 
 实现：
