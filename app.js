@@ -24,7 +24,8 @@ var express = require('express'),
     nodeify = require('./src/promise.js'),
     morgan = require('morgan'),
     os = require('os'),
-    serveStatic = require('serve-static');
+    serveStatic = require('serve-static'),
+    logger = require('./src/http/middleware/logger.js');
 
 function createApp(options) {
     options = options || {};
@@ -78,6 +79,9 @@ function createApp(options) {
             files: 1
         }
     }).any());
+
+    var structuredLogger = options.logger || logger.defaultLogger;
+    app.use(structuredLogger.middleware);
 
     if (process.env.DEBUG) {
         app.use(morgan('dev', { immediate: false, stream: { write: function (str) { console.log(str.slice(0, -1)); } } }));
