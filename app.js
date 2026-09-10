@@ -55,7 +55,7 @@ function createApp(options) {
             uploadInstance(req, res, function (err) {
                 if (err) {
                     if (err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_FILE_COUNT') {
-                        return next(new responses.HttpError(413, 'File size or count limit exceeded'));
+                        return next(new responses.HttpError(413, err.message || 'File limit exceeded'));
                     }
                     return next(new responses.HttpError(400, err.message || 'Upload failed'));
                 }
@@ -64,20 +64,26 @@ function createApp(options) {
         };
     }
 
+    function uploadLimits(fileSize) {
+        return {
+            fileSize: fileSize,
+            files: 1,
+            fields: 10,
+            parts: 12,
+            fieldNameSize: 100,
+            fieldSize: 1024 * 1024,
+            fieldNestingDepth: 0
+        };
+    }
+
     var memoryUpload = createUploadMiddleware(multer({
         storage: multer.memoryStorage(),
-        limits: {
-            fileSize: maxAttachmentSize,
-            files: 1
-        }
+        limits: uploadLimits(maxAttachmentSize)
     }).any());
 
     var diskUpload = createUploadMiddleware(multer({
         dest: os.tmpdir(),
-        limits: {
-            fileSize: maxImportSize,
-            files: 1
-        }
+        limits: uploadLimits(maxImportSize)
     }).any());
 
     var structuredLogger = options.logger || logger.defaultLogger;

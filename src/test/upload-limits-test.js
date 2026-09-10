@@ -149,34 +149,104 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
     });
 
     describe('Upload limits enforcement', function () {
-        it('returns 413 when attachment file exceeds size limit', function (done) {
-            // MAX_ATTACHMENT_SIZE is configured as 1024 bytes (1 KB)
-            var oversizedBuffer = Buffer.alloc(2048, 'a');
+        var uploadRoutes = [
+            { name: 'attachment', path: '/api/files' },
+            { name: 'import', path: '/api/import' }
+        ];
 
-            authAgent
-                .post('/api/files')
-                .attach('file', oversizedBuffer, 'oversized.txt')
-                .expect(413)
+        function expectUploadError(pendingRequest, status, message, done) {
+            pendingRequest
+                .expect(status)
                 .end(function (err, res) {
-                    expect(err).to.be(null);
-                    expect(res.body.message).to.contain('limit');
-                    done();
+                    if (err) return done(err);
+                    try {
+                        expect(res.body.code).to.equal(status === 413 ? 'payload_too_large' : 'invalid_request');
+                        expect(res.body.message).to.equal(message);
+                        done();
+                    } catch (assertionError) {
+                        done(assertionError);
+                    }
                 });
+        }
+
+        it('returns 413 when attachment file exceeds size limit', function (done) {
+            var oversizedBuffer = Buffer.alloc(2048, 'a');
+            expectUploadError(
+                authAgent.post('/api/files').attach('file', oversizedBuffer, 'oversized.txt'),
+                413,
+                'File too large',
+                done
+            );
         });
 
         it('returns 413 when import archive exceeds size limit', function (done) {
-            // MAX_IMPORT_SIZE is configured as 2048 bytes (2 KB)
             var oversizedImport = Buffer.alloc(4096, 'x');
+            expectUploadError(
+                authAgent.post('/api/import').attach('file', oversizedImport, 'big-backup.tar'),
+                413,
+                'File too large',
+                done
+            );
+        });
 
-            authAgent
-                .post('/api/import')
-                .attach('import', oversizedImport, 'big-backup.tar')
-                .expect(413)
-                .end(function (err, res) {
-                    expect(err).to.be(null);
-                    expect(res.body.message).to.contain('limit');
-                    done();
-                });
+        it('configures an aggregate parts cap in addition to stricter file and field caps', function () {
+            // files (1) + fields (10) is stricter than parts (12), so a valid
+            // multipart body cannot reach LIMIT_PART_COUNT before another cap.
+            var appSource = fs.readFileSync(path.resolve(__dirname, '../../app.js'), 'utf8');
+            expect(appSource).to.contain('parts: 12');
+        });
+
+        uploadRoutes.forEach(function (route) {
+            it('rejects too many files for ' + route.name + ' uploads', function (done) {
+                expectUploadError(
+                    authAgent.post(route.path)
+                        .attach('file', Buffer.from('first'), 'first.txt')
+                        .attach('file', Buffer.from('second'), 'second.txt'),
+                    413,
+                    'Too many files',
+                    done
+                );
+            });
+
+            it('rejects too many fields for ' + route.name + ' uploads', function (done) {
+                var pendingRequest = authAgent.post(route.path);
+                for (var i = 0; i < 11; i++) pendingRequest.field('field' + i, 'value');
+                expectUploadError(pendingRequest, 400, 'Too many fields', done);
+            });
+
+            it('rejects large fields for ' + route.name + ' uploads', function (done) {
+                expectUploadError(
+                    authAgent.post(route.path).field('large', 'x'.repeat((1024 * 1024) + 1)),
+                    400,
+                    'Field value too long',
+                    done
+                );
+            });
+
+            it('rejects nested multipart fields for ' + route.name + ' uploads', function (done) {
+                expectUploadError(
+                    authAgent.post(route.path).field('metadata[nested]', 'value'),
+                    400,
+                    'Field name nesting too deep',
+                    done
+                );
+            });
+
+            it('returns a controlled error for malformed ' + route.name + ' multipart bodies', function (done) {
+                var boundary = 'rf710-malformed-boundary';
+                var body = '--' + boundary + '\r\n' +
+                    'Content-Disposition: form-data; name="file"; filename="broken.txt"\r\n' +
+                    'Content-Type: text/plain\r\n\r\n' +
+                    'unterminated';
+                expectUploadError(
+                    authAgent.post(route.path)
+                        .set('Content-Type', 'multipart/form-data; boundary=' + boundary)
+                        .send(body),
+                    400,
+                    'Unexpected end of form',
+                    done
+                );
+            });
         });
     });
 });
