@@ -50,6 +50,7 @@ Meemo provides zero-downtime shadow migration scripts:
 
 ## Build and deployment
 
-`npm run build` compiles `frontend/` into `public/`. Do not commit generated output.
+`npm run build` compiles legacy `frontend/` into `public/`.
+`npm run build:web` compiles the modern Vue 3 + Vite + TypeScript application in `web/` into `web/dist/`. Do not commit generated output.
 
-The Dockerfile uses a builder stage for frontend assets and dependencies, then runs the application as an unprivileged user. `docker-compose.yml` supplies MongoDB and persistent named volumes.
+The Dockerfile uses multi-stage builders (`web-builder` for `web/` and `builder` for legacy assets and dependencies), running the application as an unprivileged user while keeping `public/` as default until feature parity cutover. `docker-compose.yml` supplies MongoDB and persistent named volumes.

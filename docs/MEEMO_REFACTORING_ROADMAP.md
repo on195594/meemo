@@ -797,6 +797,8 @@ modern markdown renderer + maintained sanitizer (DOMPurify)
 
 ### RF-501：前端工程骨架与路由体系
 
+实施状态：已完成（已搭建 web/ 下的 Vue 3 + Vite + TypeScript 骨架、Vue Router 路由体系、Markdown/DOMPurify 清洗基座、API 客户端与 Docker 多阶段构建）。
+
 分支：`frontend/vue3-foundation`
 
 - Vite build 与 TypeScript 配置。
