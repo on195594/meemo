@@ -6,7 +6,9 @@
 
 var MongoClient = require('mongodb').MongoClient,
     ObjectId = require('mongodb').ObjectId,
+    EJSON = require('mongodb').BSON.EJSON,
     async = require('async'),
+    crypto = require('crypto'),
     config = require('../src/config.js'),
     users = require('../src/users.js');
 
@@ -175,6 +177,225 @@ function markMigrationFailed(db, state, phase, callback) {
 
 function isNewerUnifiedDocument(document, startedAt) {
     return document && document.modifiedAt != null && Number(document.modifiedAt) > Number(startedAt);
+}
+
+var THING_FIELDS = [
+    '_id', 'content', 'createdAt', 'modifiedAt', 'attachments',
+    'externalContent', 'public', 'shared', 'archived', 'sticky'
+];
+var TAG_FIELDS = ['name', 'usage', 'createdAt'];
+
+function sortFields(value) {
+    if (Array.isArray(value)) return value.map(sortFields);
+    if (!value || typeof value !== 'object') return value;
+    if (Object.getPrototypeOf(value) !== Object.prototype &&
+            Object.getPrototypeOf(value) !== null) return value;
+
+    var sorted = Object.create(null);
+    Object.keys(value).sort().forEach(function (key) {
+        sorted[key] = sortFields(value[key]);
+    });
+    return sorted;
+}
+
+function canonicalJson(value) {
+    return EJSON.stringify(sortFields(value), { relaxed: false });
+}
+
+function canonicalField(document, field, expectedValue) {
+    if (arguments.length === 3) return { present: true, value: expectedValue };
+    if (!Object.prototype.hasOwnProperty.call(document, field)) return { present: false };
+    return { present: true, value: document[field] };
+}
+
+function canonicalThing(document, source) {
+    var record = {};
+    THING_FIELDS.forEach(function (field) {
+        if (source && (field === 'public' || field === 'shared' ||
+                field === 'archived' || field === 'sticky')) {
+            record[field] = canonicalField(document, field, !!document[field]);
+        } else {
+            record[field] = canonicalField(document, field);
+        }
+    });
+    return record;
+}
+
+function canonicalTag(document, source, startedAt) {
+    return {
+        name: canonicalField(document, 'name'),
+        usage: source ? canonicalField(document, 'usage', document.usage || 1) :
+            canonicalField(document, 'usage'),
+        createdAt: source ? canonicalField(document, 'createdAt', document.createdAt || startedAt) :
+            canonicalField(document, 'createdAt')
+    };
+}
+
+function canonicalSettings(document, source) {
+    var expectedValue = document && typeof document.value === 'object' ?
+        document.value : { title: 'Meemo' };
+    return {
+        value: source ? canonicalField(document, 'value', expectedValue) :
+            canonicalField(document, 'value')
+    };
+}
+
+function addCanonicalRecord(records, user, id, fields) {
+    records.push({ user: user, id: id, fields: fields });
+}
+
+function compareCanonicalRecords(user, entity, id, fieldNames, source, target, mismatches) {
+    fieldNames.forEach(function (field) {
+        if (canonicalJson(source[field]) !== canonicalJson(target[field])) {
+            mismatches.push({ user: user, entity: entity, id: String(id), field: field });
+        }
+    });
+}
+
+function sortedRecords(records) {
+    return records.slice().sort(function (left, right) {
+        var leftIdentity = canonicalJson([left.user, left.id]);
+        var rightIdentity = canonicalJson([right.user, right.id]);
+        if (leftIdentity < rightIdentity) return -1;
+        if (leftIdentity > rightIdentity) return 1;
+        return 0;
+    });
+}
+
+function recordsHash(records) {
+    return crypto.createHash('sha256')
+        .update(canonicalJson(sortedRecords(records)))
+        .digest('hex');
+}
+
+function buildManifest(records) {
+    return {
+        thingsCount: records.things.length,
+        thingsHash: recordsHash(records.things),
+        tagsCount: records.tags.length,
+        tagsHash: recordsHash(records.tags),
+        settingsHash: recordsHash(records.settings)
+    };
+}
+
+function formatMismatch(mismatch) {
+    return [
+        'Mismatch:',
+        'user=' + mismatch.user,
+        'entity=' + mismatch.entity,
+        'id=' + mismatch.id,
+        'field=' + mismatch.field
+    ].join('\n');
+}
+
+function groupPrefixesByOwner(db, prefixes, phase, callback) {
+    var groupsByOwner = new Map();
+    var groups = [];
+
+    async.eachSeries(prefixes, function (prefix, nextPrefix) {
+        resolveCanonicalOwner(db, prefix, function (err, canonicalId) {
+            if (err) return nextPrefix(err);
+
+            var key = canonicalJson(canonicalId);
+            var group = groupsByOwner.get(key);
+            if (!group) {
+                group = { canonicalId: canonicalId, prefixes: [] };
+                groupsByOwner.set(key, group);
+                groups.push(group);
+            }
+            group.prefixes.push(prefix);
+            nextPrefix();
+        }, phase);
+    }, function (err) {
+        callback(err, groups);
+    });
+}
+
+function findLegacyOwnerDocuments(db, phase, group, suffix, query, callback) {
+    async.mapSeries(group.prefixes, function (prefix, nextPrefix) {
+        findDocuments(db, phase, prefix, prefix + suffix, query, function (err, documents) {
+            if (err) return nextPrefix(err);
+            nextPrefix(null, (documents || []).map(function (document) {
+                return { document: document, prefix: prefix };
+            }));
+        });
+    }, function (err, documentGroups) {
+        if (err) return callback(err);
+        callback(null, (documentGroups || []).reduce(function (all, documents) {
+            return all.concat(documents);
+        }, []));
+    });
+}
+
+function indexCanonicalDocuments(entries, getIdentity, entity, mismatches) {
+    var byIdentity = new Map();
+
+    entries.forEach(function (entry) {
+        var id = getIdentity(entry.document);
+        var key = canonicalJson(id);
+        if (byIdentity.has(key)) {
+            mismatches.push({
+                user: entry.prefix, entity: entity, id: String(id), field: 'identity'
+            });
+            return;
+        }
+        byIdentity.set(key, { document: entry.document, prefix: entry.prefix, id: id });
+    });
+    return byIdentity;
+}
+
+function compareOwnerDocuments(options) {
+    var sourceMap = indexCanonicalDocuments(
+        options.sourceEntries, options.getIdentity, options.entity, options.mismatches
+    );
+    var targetMap = indexCanonicalDocuments(
+        options.targetDocuments.map(function (document) {
+            return { document: document, prefix: options.group.canonicalId };
+        }), options.getIdentity, options.entity, options.mismatches
+    );
+
+    sourceMap.forEach(function (source, key) {
+        var target = targetMap.get(key);
+        if (!target) {
+            addCanonicalRecord(
+                options.sourceRecords, options.group.canonicalId, source.id,
+                options.canonicalSource(source.document)
+            );
+            options.mismatches.push({
+                user: source.prefix, entity: options.entity,
+                id: String(source.id), field: options.identityField
+            });
+            return;
+        }
+
+        targetMap.delete(key);
+        if (isNewerUnifiedDocument(target.document, options.startedAt)) return;
+
+        var sourceFields = options.canonicalSource(source.document);
+        var targetFields = options.canonicalTarget(target.document);
+        addCanonicalRecord(
+            options.sourceRecords, options.group.canonicalId, source.id, sourceFields
+        );
+        addCanonicalRecord(
+            options.targetRecords, options.group.canonicalId, target.id, targetFields
+        );
+        compareCanonicalRecords(
+            source.prefix, options.entity, source.id, options.fieldNames,
+            sourceFields, targetFields, options.mismatches
+        );
+    });
+
+    targetMap.forEach(function (target) {
+        if (isNewerUnifiedDocument(target.document, options.startedAt)) return;
+        addCanonicalRecord(
+            options.targetRecords, options.group.canonicalId, target.id,
+            options.canonicalTarget(target.document)
+        );
+        options.mismatches.push({
+            user: options.group.canonicalId, entity: options.entity,
+            id: String(target.id), field: options.identityField
+        });
+    });
 }
 
 function parseArgs() {
@@ -702,7 +923,7 @@ function verify(options, callback) {
             discoverLegacyCollections(db, function (err, legacy) {
                 if (err) return finishVerify(err);
 
-            var allPrefixes = {};
+            var allPrefixes = Object.create(null);
             legacy.things.forEach(function (c) { allPrefixes[c.prefix] = true; });
             legacy.tags.forEach(function (c) { allPrefixes[c.prefix] = true; });
             legacy.settings.forEach(function (c) { allPrefixes[c.prefix] = true; });
@@ -710,107 +931,157 @@ function verify(options, callback) {
             var prefixes = Object.keys(allPrefixes);
             var mismatches = [];
             var verifiedCount = 0;
+            var sourceRecords = { things: [], tags: [], settings: [] };
+            var targetRecords = { things: [], tags: [], settings: [] };
 
-            async.eachSeries(prefixes, function (prefix, nextUser) {
-                resolveCanonicalOwner(db, prefix, function (err, canonicalId) {
-                    if (err) return nextUser(err);
-
-                    async.series([
-                        // Verify Things counts and contents
-                        function (doneCheckThings) {
-                            var legacyCollection = prefix + '_things';
-                            findDocuments(db, 'verify:things', prefix, legacyCollection, {}, function (err, legacyDocs) {
-                                if (err) return doneCheckThings(err);
-                                if (!legacyDocs || legacyDocs.length === 0) return doneCheckThings();
-
-                                findDocuments(db, 'verify:things', prefix, 'things', { ownerId: canonicalId }, function (err, unifiedDocs) {
-                                    if (err) return doneCheckThings(err);
-
-                                    var unifiedMap = {};
-                                    (unifiedDocs || []).forEach(function (d) { unifiedMap[String(d._id)] = d; });
-
-                                    legacyDocs.forEach(function (ld) {
-                                        var ud = unifiedMap[String(ld._id)];
-                                        if (!ud) {
-                                            mismatches.push('Missing thing in unified collection: ' + ld._id + ' for owner ' + canonicalId);
-                                        } else if (ud.content !== ld.content &&
-                                                !isNewerUnifiedDocument(ud, state.startedAt)) {
-                                            mismatches.push('Content mismatch on thing: ' + ld._id);
-                                        }
-                                    });
-
-                                    doneCheckThings();
-                                });
-                            });
-                        },
-
-                        // Verify Tags
-                        function (doneCheckTags) {
-                            var legacyCollection = prefix + '_tags';
-                            findDocuments(db, 'verify:tags', prefix, legacyCollection, {}, function (err, legacyTags) {
-                                if (err) return doneCheckTags(err);
-                                if (!legacyTags || legacyTags.length === 0) return doneCheckTags();
-
-                                findDocuments(db, 'verify:tags', prefix, 'tags', { ownerId: canonicalId }, function (err, unifiedTags) {
-                                    if (err) return doneCheckTags(err);
-
-                                    var tagNames = {};
-                                    (unifiedTags || []).forEach(function (t) { tagNames[t.name] = true; });
-
-                                    legacyTags.forEach(function (lt) {
-                                        if (!tagNames[lt.name]) {
-                                            mismatches.push('Missing tag in unified collection: ' + lt.name + ' for owner ' + canonicalId);
-                                        }
-                                    });
-
-                                    doneCheckTags();
-                                });
-                            });
-                        },
-
-                        // Verify Settings
-                        function (doneCheckSettings) {
-                            var legacyCollection = prefix + '_settings';
-                            collectionOperation(db, 'verify:settings', prefix, legacyCollection, 'findOne', [
-                                { type: 'frontend' }
-                            ], function (err, legacySet) {
-                                if (err) return doneCheckSettings(err);
-                                if (!legacySet) return doneCheckSettings();
-
-                                collectionOperation(db, 'verify:settings', prefix, 'settings', 'findOne', [
-                                    { ownerId: canonicalId }
-                                ], function (err, unifiedSet) {
-                                    if (err) return doneCheckSettings(err);
-                                    if (!unifiedSet) {
-                                        mismatches.push('Missing settings in unified collection for owner ' + canonicalId);
-                                    }
-                                    doneCheckSettings();
-                                });
-                            });
-                        }
-                    ], function (err) {
-                        if (err) return nextUser(err);
-                        verifiedCount++;
-                        nextUser();
-                    });
-                }, 'verify:resolve-owner');
-            }, function (err) {
+            groupPrefixesByOwner(db, prefixes, 'verify:resolve-owner', function (err, ownerGroups) {
                 if (err) return finishVerify(err);
 
-                var result = {
-                    verifiedUsers: verifiedCount,
-                    mismatches: mismatches,
-                    success: mismatches.length === 0
-                };
+                async.eachSeries(ownerGroups, function (group, nextOwner) {
+                    async.series([
+                        function (doneCheckThings) {
+                            findLegacyOwnerDocuments(
+                                db, 'verify:things', group, '_things', {}, function (err, sourceEntries) {
+                                    if (err) return doneCheckThings(err);
+                                    findDocuments(
+                                        db, 'verify:things', group.canonicalId, 'things',
+                                        { ownerId: group.canonicalId }, function (err, targetDocuments) {
+                                            if (err) return doneCheckThings(err);
+                                            compareOwnerDocuments({
+                                                group: group,
+                                                sourceEntries: sourceEntries,
+                                                targetDocuments: targetDocuments || [],
+                                                getIdentity: function (document) { return document._id; },
+                                                entity: 'thing',
+                                                identityField: '_id',
+                                                fieldNames: THING_FIELDS,
+                                                canonicalSource: function (document) {
+                                                    return canonicalThing(document, true);
+                                                },
+                                                canonicalTarget: function (document) {
+                                                    return canonicalThing(document, false);
+                                                },
+                                                sourceRecords: sourceRecords.things,
+                                                targetRecords: targetRecords.things,
+                                                mismatches: mismatches,
+                                                startedAt: state.startedAt
+                                            });
+                                            doneCheckThings();
+                                        }
+                                    );
+                                }
+                            );
+                        },
+                        function (doneCheckTags) {
+                            findLegacyOwnerDocuments(
+                                db, 'verify:tags', group, '_tags', {}, function (err, sourceEntries) {
+                                    if (err) return doneCheckTags(err);
+                                    findDocuments(
+                                        db, 'verify:tags', group.canonicalId, 'tags',
+                                        { ownerId: group.canonicalId }, function (err, targetDocuments) {
+                                            if (err) return doneCheckTags(err);
+                                            compareOwnerDocuments({
+                                                group: group,
+                                                sourceEntries: sourceEntries,
+                                                targetDocuments: targetDocuments || [],
+                                                getIdentity: function (document) { return document.name; },
+                                                entity: 'tag',
+                                                identityField: 'name',
+                                                fieldNames: TAG_FIELDS,
+                                                canonicalSource: function (document) {
+                                                    return canonicalTag(document, true, state.startedAt);
+                                                },
+                                                canonicalTarget: function (document) {
+                                                    return canonicalTag(document, false, state.startedAt);
+                                                },
+                                                sourceRecords: sourceRecords.tags,
+                                                targetRecords: targetRecords.tags,
+                                                mismatches: mismatches,
+                                                startedAt: state.startedAt
+                                            });
+                                            doneCheckTags();
+                                        }
+                                    );
+                                }
+                            );
+                        },
+                        function (doneCheckSettings) {
+                            findLegacyOwnerDocuments(
+                                db, 'verify:settings', group, '_settings',
+                                { type: 'frontend' }, function (err, sourceEntries) {
+                                    if (err) return doneCheckSettings(err);
+                                    findDocuments(
+                                        db, 'verify:settings', group.canonicalId, 'settings',
+                                        { ownerId: group.canonicalId }, function (err, targetDocuments) {
+                                            if (err) return doneCheckSettings(err);
+                                            compareOwnerDocuments({
+                                                group: group,
+                                                sourceEntries: sourceEntries,
+                                                targetDocuments: targetDocuments || [],
+                                                getIdentity: function () { return 'frontend'; },
+                                                entity: 'settings',
+                                                identityField: 'value',
+                                                fieldNames: ['value'],
+                                                canonicalSource: function (document) {
+                                                    return canonicalSettings(document, true);
+                                                },
+                                                canonicalTarget: function (document) {
+                                                    return canonicalSettings(document, false);
+                                                },
+                                                sourceRecords: sourceRecords.settings,
+                                                targetRecords: targetRecords.settings,
+                                                mismatches: mismatches,
+                                                startedAt: state.startedAt
+                                            });
+                                            doneCheckSettings();
+                                        }
+                                    );
+                                }
+                            );
+                        }
+                    ], function (err) {
+                        if (err) return nextOwner(err);
+                        verifiedCount++;
+                        nextOwner();
+                    });
+                }, function (err) {
+                    if (err) return finishVerify(err);
 
-                if (!result.success) {
-                    return finishVerify(migrationError(
-                        'verify', '<all>', '<unified>', 'fidelity-check',
-                        new Error('Verification failed with ' + mismatches.length + ' mismatches: ' + mismatches.join('; '))
-                    ));
-                }
+                    var sourceManifest = buildManifest(sourceRecords);
+                    var targetManifest = buildManifest(targetRecords);
+                    var manifestFields = [
+                        'thingsCount', 'thingsHash', 'tagsCount', 'tagsHash', 'settingsHash'
+                    ];
 
-                finishVerify(null, result);
+                    if (mismatches.length === 0) {
+                        manifestFields.some(function (field) {
+                            if (sourceManifest[field] === targetManifest[field]) return false;
+                            mismatches.push({
+                                user: '<all>', entity: 'manifest', id: '<all>', field: field
+                            });
+                            return true;
+                        });
+                    }
+
+                    var result = {
+                        verifiedUsers: verifiedCount,
+                        mismatches: mismatches,
+                        success: mismatches.length === 0,
+                        manifest: sourceManifest
+                    };
+
+                    if (!result.success) {
+                        return finishVerify(migrationError(
+                            'verify', '<all>', '<unified>', 'fidelity-check',
+                            new Error(
+                                'Verification failed with ' + mismatches.length + ' mismatches:\n' +
+                                mismatches.map(formatMismatch).join('\n')
+                            )
+                        ));
+                    }
+
+                    finishVerify(null, result);
+                });
             });
             }, 'verify:discovery');
         }, false);
@@ -860,7 +1131,9 @@ function main() {
                 console.error('Verification failed:', err.message || err);
                 process.exit(1);
             }
-            console.log('Verification succeeded! 100% data fidelity confirmed across', result.verifiedUsers, 'users.');
+            console.log(JSON.stringify(result.manifest, null, 2));
+            console.log('Migration verification succeeded.');
+            console.log('Canonical source and target manifests match.');
             process.exit(0);
         });
     }
