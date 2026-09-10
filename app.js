@@ -22,7 +22,6 @@ var express = require('express'),
     tags = require('./src/database/tags.js'),
     settings = require('./src/database/settings.js'),
     nodeify = require('./src/promise.js'),
-    morgan = require('morgan'),
     os = require('os'),
     serveStatic = require('serve-static'),
     logger = require('./src/http/middleware/logger.js');
@@ -87,10 +86,6 @@ function createApp(options) {
 
     var structuredLogger = options.logger || logger.defaultLogger;
     app.use(structuredLogger.middleware);
-
-    if (process.env.DEBUG) {
-        app.use(morgan('dev', { immediate: false, stream: { write: function (str) { console.log(str.slice(0, -1)); } } }));
-    }
 
     app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
 
