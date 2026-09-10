@@ -83,6 +83,44 @@ async function checkAccess() {
     await fs.access(config.attachmentDir, require('fs').constants.R_OK | require('fs').constants.W_OK);
 }
 
+function isSafePathSegment(segment) {
+    return typeof segment === 'string' && segment && path.basename(segment) === segment && segment !== '.' && segment !== '..' && segment.indexOf('\0') === -1;
+}
+
+async function listAttachments() {
+    var root = path.resolve(config.attachmentDir);
+    var rootStat;
+    try {
+        rootStat = await fs.lstat(root);
+    } catch (error) {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+    }
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('Unsafe attachment root: ' + root);
+
+    var result = [];
+    var userEntries = await fs.readdir(root, { withFileTypes: true });
+    userEntries.sort(function (left, right) { return left.name.localeCompare(right.name); });
+    for (var userEntry of userEntries) {
+        if (!isSafePathSegment(userEntry.name) || !userEntry.isDirectory() || userEntry.isSymbolicLink()) {
+            throw new Error('Unsafe attachment path: ' + userEntry.name);
+        }
+        var userRoot = path.join(root, userEntry.name);
+        var fileEntries = await fs.readdir(userRoot, { withFileTypes: true });
+        fileEntries.sort(function (left, right) { return left.name.localeCompare(right.name); });
+        for (var fileEntry of fileEntries) {
+            if (!isSafePathSegment(fileEntry.name) || !fileEntry.isFile() || fileEntry.isSymbolicLink()) {
+                throw new Error('Unsafe attachment path: ' + userEntry.name + '/' + fileEntry.name);
+            }
+            var filePath = path.join(userRoot, fileEntry.name);
+            var stat = await fs.lstat(filePath);
+            if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Unsafe attachment path: ' + userEntry.name + '/' + fileEntry.name);
+            result.push({ root: userEntry.name, identifier: fileEntry.name, path: filePath, mtimeMs: stat.mtimeMs });
+        }
+    }
+    return result;
+}
+
 module.exports = {
     userDirectory: userDirectory,
     ensureUserDirectory: ensureUserDirectory,
@@ -92,5 +130,6 @@ module.exports = {
     copyAttachment: copyAttachment,
     removeFiles: removeFiles,
     removeFile: removeFile,
-    checkAccess: checkAccess
+    checkAccess: checkAccess,
+    listAttachments: listAttachments
 };
