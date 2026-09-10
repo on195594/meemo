@@ -66,14 +66,19 @@ function get(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
 
     var promise = getAlternateUserId(userId).then(async function (alternateUserId) {
-        var query = alternateUserId ? { $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { ownerId: userId };
-        var result = await getUnifiedCollection().find(query).sort({ usage: -1, createdAt: -1 }).toArray();
-        if (result && result.length) return result;
-        result = await getLegacyCollection(userId).find({}).sort({ createdAt: -1 }).toArray();
-        if ((!result || !result.length) && alternateUserId) {
-            result = await getLegacyCollection(alternateUserId).find({}).sort({ createdAt: -1 }).toArray();
-        }
-        return result || [];
+        var userIds = alternateUserId ? [alternateUserId, userId] : [userId];
+        var results = await Promise.all(userIds.map(function (id) {
+            return getLegacyCollection(id).find({}).toArray();
+        }).concat(userIds.map(function (id) {
+            return getUnifiedCollection().find({ ownerId: id }).toArray();
+        })));
+        var byName = new Map();
+        results.reduce(function (all, result) { return all.concat(result); }, []).forEach(function (tag) {
+            byName.set(tag.name, tag);
+        });
+        return Array.from(byName.values()).sort(function (left, right) {
+            return (right.usage || 0) - (left.usage || 0) || (right.createdAt || 0) - (left.createdAt || 0);
+        });
     });
     return nodeify(promise, callback);
 }

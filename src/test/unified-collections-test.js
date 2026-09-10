@@ -207,6 +207,122 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         });
     });
 
+    describe('Migration dual-read correctness (RF-703)', function () {
+        var thingOwner = 'rf703_partial_owner';
+        var tagOwner = 'rf703_tag_owner';
+        var settingsOwner = 'rf703_settings_owner';
+        var legacyThings;
+
+        before(function (done) {
+            legacyThings = Array.from({ length: 100 }, function (_, index) {
+                return {
+                    _id: new ObjectId(),
+                    content: 'legacy-' + index,
+                    tags: [],
+                    attachments: [],
+                    externalContent: [],
+                    createdAt: index,
+                    modifiedAt: index,
+                    sticky: index % 25 === 0
+                };
+            });
+
+            var copiedThings = legacyThings.slice(0, 40).map(function (thing) {
+                return Object.assign({}, thing, {
+                    ownerId: thingOwner,
+                    content: 'unified-' + thing.modifiedAt,
+                    archived: thing.modifiedAt === 0
+                });
+            });
+
+            Promise.all([
+                db.collection(thingOwner + '_things').insertMany(legacyThings),
+                db.collection('things').insertMany(copiedThings),
+                db.collection(tagOwner + '_tags').insertMany([
+                    { _id: new ObjectId(), name: 'alpha', usage: 1, createdAt: 1 },
+                    { _id: new ObjectId(), name: 'beta', usage: 5, createdAt: 2 }
+                ]),
+                db.collection('tags').insertMany([
+                    { ownerId: tagOwner, name: 'alpha', usage: 10, createdAt: 3 },
+                    { ownerId: tagOwner, name: 'gamma', usage: 2, createdAt: 4 }
+                ]),
+                db.collection(settingsOwner + '_settings').insertOne({
+                    type: 'frontend',
+                    value: { title: 'Legacy title', legacyOnly: true }
+                }),
+                db.collection('settings').insertOne({
+                    ownerId: settingsOwner,
+                    type: 'frontend',
+                    value: { title: 'Unified title' }
+                })
+            ]).then(function () { done(); }, done);
+        });
+
+        after(function (done) {
+            Promise.all([
+                db.collection(thingOwner + '_things').drop().catch(function () {}),
+                db.collection('things').deleteMany({ ownerId: thingOwner }),
+                db.collection(tagOwner + '_tags').drop().catch(function () {}),
+                db.collection('tags').deleteMany({ ownerId: tagOwner }),
+                db.collection(settingsOwner + '_settings').drop().catch(function () {}),
+                db.collection('settings').deleteMany({ ownerId: settingsOwner })
+            ]).then(function () { done(); }, done);
+        });
+
+        it('shows all 100 unique things when 40 have been copied and Unified wins duplicates', function () {
+            return things.getAll(thingOwner, {}, 0, 0).then(function (list) {
+                expect(list.length).to.equal(100);
+                expect(new Set(list.map(function (thing) { return thing._id; })).size).to.equal(100);
+                expect(list.find(function (thing) {
+                    return thing._id === String(legacyThings[0]._id);
+                }).content).to.equal('unified-0');
+            });
+        });
+
+        it('sorts and paginates only after merging both thing sources', function () {
+            return things.getAll(thingOwner, {}, 2, 5).then(function (list) {
+                expect(list.map(function (thing) { return thing.modifiedAt; })).to.eql([25, 0, 99, 98, 97]);
+            });
+        });
+
+        it('filters the winning Unified version instead of exposing a stale Legacy duplicate', function () {
+            var query = { $or: [{ archived: false }, { archived: { $exists: false } }] };
+            return things.getAll(thingOwner, query, 0, 0).then(function (list) {
+                expect(list.length).to.equal(99);
+                expect(list.some(function (thing) {
+                    return thing._id === String(legacyThings[0]._id);
+                })).to.be(false);
+            });
+        });
+
+        it('keeps all 100 things visible after an interrupted copy and restart', function () {
+            var nextCopies = legacyThings.slice(40, 50).map(function (thing) {
+                return Object.assign({}, thing, { ownerId: thingOwner });
+            });
+
+            return db.collection('things').insertMany(nextCopies).then(function () {
+                things.resetCache();
+                return things.getAllLean(thingOwner);
+            }).then(function (list) {
+                expect(list.length).to.equal(100);
+                expect(new Set(list.map(function (thing) { return thing._id; })).size).to.equal(100);
+            });
+        });
+
+        it('merges tags by name, prefers Unified, and sorts the merged result', function () {
+            return tags.get(tagOwner).then(function (list) {
+                expect(list.map(function (tag) { return tag.name; })).to.eql(['alpha', 'beta', 'gamma']);
+                expect(list[0].usage).to.equal(10);
+            });
+        });
+
+        it('treats settings as a singleton and prefers Unified without field merging', function () {
+            return settings.get(settingsOwner).then(function (value) {
+                expect(value).to.eql({ title: 'Unified title' });
+            });
+        });
+    });
+
     describe('Data Migration Script (migrate-data-to-v2.js)', function () {
         var legacyOwner1 = 'legacyuser_alpha';
         var legacyOwner2 = 'legacyuser_beta';
