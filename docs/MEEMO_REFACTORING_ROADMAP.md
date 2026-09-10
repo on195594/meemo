@@ -929,7 +929,9 @@ RSS links
 
 ## 6.1 RF-601：镜像发布
 
-建议分支：`release/ghcr-pipeline`
+实施状态：已完成（已配置 GitHub Actions Buildx 多架构发布流水线，支持 linux/amd64 与 linux/arm64、GHCR 自动推送、OCI 标签、SBOM 与 Provenance 凭证，并在 Dockerfile 中通过 BUILDPLATFORM 优化跨平台构建）。
+
+分支：`release/ghcr-pipeline`
 
 目标标签策略：
 

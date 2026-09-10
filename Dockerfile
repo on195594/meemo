@@ -1,6 +1,6 @@
 ARG ALPINE_VERSION=3.20
 
-FROM alpine:${ALPINE_VERSION} AS web-builder
+FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS web-builder
 RUN apk add --no-cache nodejs npm
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
