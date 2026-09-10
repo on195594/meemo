@@ -119,7 +119,7 @@ function ShutdownManager(options) {
     this.server = options.server || null;
     this.databaseManager = options.databaseManager || null;
     this.workerManager = options.workerManager || null;
-    this.timeoutMs = options.timeoutMs || parseInt(process.env.SHUTDOWN_TIMEOUT_MS, 10) || 10000;
+    this.timeoutMs = options.timeoutMs !== undefined ? options.timeoutMs : (parseInt(process.env.SHUTDOWN_TIMEOUT_MS, 10) || 15000);
     this.isShuttingDown = false;
     this.shutdownPromise = null;
     this.trackedSockets = new Set();
@@ -169,44 +169,44 @@ ShutdownManager.prototype.shutdown = function (signal, callback) {
 
     var self = this;
     this.isShuttingDown = true;
-    var timeoutTimer;
-    this.shutdownPromise = Promise.race([
-        Promise.resolve().then(async function () {
-            if (self.workerManager) self.workerManager.stop();
-            self.trackedSockets.forEach(function (socket) {
-                try { socket.destroy(); } catch (error) {}
-            });
-
+    this.shutdownPromise = Promise.resolve().then(async function () {
+        try {
             if (self.server) {
                 await new Promise(function (resolve) {
-                    try {
-                        self.server.close(function (error) {
-                            if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') console.error('Error closing HTTP server:', error);
-                            resolve();
-                        });
-                    } catch (error) {
+                    var timeoutTimer;
+                    var settled = false;
+                    function finish(error) {
+                        if (settled) return;
+                        settled = true;
+                        clearTimeout(timeoutTimer);
+                        if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') console.error('Error closing HTTP server:', error);
                         resolve();
+                    }
+
+                    timeoutTimer = setTimeout(function () {
+                        console.warn('Graceful shutdown timed out after ' + self.timeoutMs + 'ms, forcing socket termination');
+                        self.trackedSockets.forEach(function (socket) {
+                            try { socket.destroy(); } catch (error) {}
+                        });
+                        finish();
+                    }, self.timeoutMs);
+                    if (timeoutTimer.unref) timeoutTimer.unref();
+
+                    try {
+                        self.server.close(finish);
+                    } catch (error) {
+                        finish(error);
                     }
                 });
             }
+
+            if (self.workerManager) self.workerManager.stop();
             if (self.databaseManager) {
                 try { await self.databaseManager.disconnect(false); } catch (error) { console.error('Error disconnecting MongoDB:', error); }
             }
+        } finally {
             self.detachSignals();
-        }),
-        new Promise(function (resolve, reject) {
-            timeoutTimer = setTimeout(function () {
-                console.warn('Graceful shutdown timed out after ' + self.timeoutMs + 'ms, forcing socket termination');
-                self.trackedSockets.forEach(function (socket) {
-                    try { socket.destroy(); } catch (error) {}
-                });
-                self.detachSignals();
-                reject(new Error('Graceful shutdown timed out'));
-            }, self.timeoutMs);
-            if (timeoutTimer.unref) timeoutTimer.unref();
-        })
-    ]).finally(function () {
-        clearTimeout(timeoutTimer);
+        }
     });
 
     return nodeify(this.shutdownPromise, callback);

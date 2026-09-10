@@ -57,7 +57,7 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `MAX_IMPORT_SIZE` | `52428800` (50MB) | `52428800` | Maximum import archive size in bytes |
 | `ENABLE_WORKERS` | `true` | `true` | Enable background cleanup workers |
 | `TAG_CLEANUP_INTERVAL_MS` | `60000` | `60000` | Tag cleanup worker interval in milliseconds |
-| `SHUTDOWN_TIMEOUT_MS` | `10000` | `10000` | Graceful shutdown timeout in milliseconds |
+| `SHUTDOWN_TIMEOUT_MS` | `15000` | `15000` | Graceful shutdown timeout in milliseconds |
 | `MONGO_MAX_POOL_SIZE` | `50` | `50` | Maximum MongoDB connection pool size |
 | `MONGO_MIN_POOL_SIZE` | `1` | `1` | Minimum MongoDB connection pool size |
 | `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |

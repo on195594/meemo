@@ -33,7 +33,6 @@ function createApp(options) {
     if (options.db) {
         config.db = options.db;
     }
-
     var isProduction = options.isProduction !== undefined ? options.isProduction : (process.env.NODE_ENV === 'production');
     var sessionSecret = options.sessionSecret || process.env.SESSION_SECRET;
 
@@ -104,6 +103,13 @@ function createApp(options) {
 
     app.use(json({ strict: true, limit: '5mb' }));
 
+    app.use('/api/health/ready', function (req, res, next) {
+        if (options.shutdownManager && options.shutdownManager.isShuttingDown) {
+            return next(new responses.HttpError(503, 'Service is shutting down'));
+        }
+        next();
+    });
+
     var sessionStore;
     if (options.sessionStore) {
         sessionStore = options.sessionStore;
@@ -168,7 +174,7 @@ function startServer(options, callback) {
             settings.ensureIndexes()
         ]);
 
-        var app = createApp(options);
+        var app = createApp(Object.assign({}, options, { shutdownManager: shutdownManager }));
         var port = options.port !== undefined ? options.port : PORT;
         var bindAddress = options.bindAddress || BIND_ADDRESS;
         var server = await new Promise(function (resolve, reject) {

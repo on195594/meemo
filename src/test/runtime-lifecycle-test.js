@@ -9,6 +9,7 @@
 var expect = require('expect.js');
 var http = require('http');
 var MongoClient = require('mongodb').MongoClient;
+var request = require('supertest');
 var config = require('../config.js');
 var appModule = require('../../app.js');
 var lifecycle = require('../lifecycle.js');
@@ -142,6 +143,195 @@ describe('Runtime Dependency Injection and Graceful Shutdown (RF-301)', function
     });
 
     describe('ShutdownManager', function () {
+        it('lets a five-second in-flight request finish after SIGTERM', function (done) {
+            this.timeout(8000);
+
+            var events = [];
+            var newConnectionRefused = false;
+            var port;
+            var server = http.createServer(function (req, res) {
+                res.on('finish', function () { events.push('response'); });
+                setTimeout(function () {
+                    process.emit('SIGTERM');
+                    setTimeout(function () {
+                        var newRequest = http.get({ hostname: '127.0.0.1', port: port });
+                        newRequest.on('error', function (error) {
+                            if (error.code === 'ECONNREFUSED') newConnectionRefused = true;
+                        });
+                    }, 50);
+                }, 1000);
+                setTimeout(function () { res.end('finished'); }, 5000);
+            });
+
+            server.listen(0, '127.0.0.1', function () {
+                port = server.address().port;
+                var shutdownManager = new lifecycle.ShutdownManager({
+                    server: server,
+                    workerManager: { stop: function () { events.push('workers'); } },
+                    databaseManager: {
+                        disconnect: function () {
+                            events.push('mongo');
+                            return Promise.resolve();
+                        }
+                    },
+                    timeoutMs: 6000
+                });
+                shutdownManager.attachSignals(function (err) {
+                    if (err) return done(err);
+                    expect(events).to.eql(['response', 'workers', 'mongo']);
+                    expect(newConnectionRefused).to.be(true);
+                    done();
+                });
+
+                var responseBody = '';
+                var req = http.get({
+                    hostname: '127.0.0.1',
+                    port: port,
+                    headers: { Connection: 'close' }
+                }, function (res) {
+                    res.on('data', function (chunk) { responseBody += chunk; });
+                    res.on('end', function () { expect(responseBody).to.equal('finished'); });
+                });
+                req.on('error', done);
+            });
+        });
+
+        it('force-closes a 30-second hanging request after the shutdown timeout', async function () {
+            var events = [];
+            var shutdownStarted;
+            var startShutdown;
+            var requestClosed;
+            var closeRequest;
+            var server = http.createServer(function (req, res) {
+                res.write('hanging');
+                var hangingTimer = setTimeout(function () { res.end(); }, 30000);
+                if (hangingTimer.unref) hangingTimer.unref();
+                res.on('close', function () { clearTimeout(hangingTimer); });
+                setImmediate(startShutdown);
+            });
+            server.on('connection', function (socket) {
+                var destroy = socket.destroy;
+                socket.destroy = function () {
+                    events.push('socket');
+                    return destroy.apply(socket, arguments);
+                };
+            });
+            var shutdownManager = new lifecycle.ShutdownManager({
+                server: server,
+                workerManager: { stop: function () { events.push('workers'); } },
+                databaseManager: {
+                    disconnect: function () {
+                        events.push('mongo');
+                        return Promise.resolve();
+                    }
+                },
+                timeoutMs: 100
+            });
+
+            shutdownStarted = new Promise(function (resolve, reject) {
+                startShutdown = function () { shutdownManager.shutdown('SIGTERM').then(resolve, reject); };
+            });
+            requestClosed = new Promise(function (resolve, reject) {
+                closeRequest = function (response) {
+                    response.on('aborted', resolve);
+                    response.on('end', function () {
+                        if (response.complete) reject(new Error('Hanging response completed normally'));
+                    });
+                };
+            });
+
+            await new Promise(function (resolve) { server.listen(0, '127.0.0.1', resolve); });
+            var startedAt = Date.now();
+            var req = http.get({
+                hostname: '127.0.0.1',
+                port: server.address().port
+            }, closeRequest);
+            req.on('error', function (error) {
+                if (error.code === 'ECONNRESET') return;
+                throw error;
+            });
+
+            await Promise.all([shutdownStarted, requestClosed]);
+            expect(Date.now() - startedAt).to.be.greaterThan(80);
+            expect(Date.now() - startedAt).to.be.lessThan(1000);
+            expect(events).to.eql(['socket', 'workers', 'mongo']);
+        });
+
+        it('defaults the shutdown timeout to 15 seconds', function () {
+            var originalTimeout = process.env.SHUTDOWN_TIMEOUT_MS;
+            delete process.env.SHUTDOWN_TIMEOUT_MS;
+            try {
+                expect(new lifecycle.ShutdownManager().timeoutMs).to.equal(15000);
+            } finally {
+                if (originalTimeout === undefined) delete process.env.SHUTDOWN_TIMEOUT_MS;
+                else process.env.SHUTDOWN_TIMEOUT_MS = originalTimeout;
+            }
+        });
+
+        it('returns readiness 503 during shutdown, closes Mongo, and removes signal handlers', async function () {
+            var sigtermListeners = process.listenerCount('SIGTERM');
+            var sigintListeners = process.listenerCount('SIGINT');
+            var releaseMongo;
+            var mongoClosed = false;
+            var shutdownManager = new lifecycle.ShutdownManager({
+                databaseManager: {
+                    disconnect: function () {
+                        mongoClosed = true;
+                        return new Promise(function (resolve) { releaseMongo = resolve; });
+                    }
+                },
+                timeoutMs: 500
+            });
+            var app = appModule.createApp({
+                db: { command: function () { return Promise.resolve(); } },
+                sessionMemory: true,
+                sessionSecret: 'runtime-lifecycle-test-secret',
+                shutdownManager: shutdownManager
+            });
+            var shutdownComplete = new Promise(function (resolve, reject) {
+                shutdownManager.attachSignals(function (error) {
+                    if (error) reject(error); else resolve();
+                });
+            });
+
+            process.emit('SIGTERM');
+            expect(shutdownManager.isShuttingDown).to.be(true);
+
+            var response;
+            try {
+                response = await request(app).get('/api/health/ready');
+            } finally {
+                if (releaseMongo) releaseMongo();
+                await shutdownComplete;
+            }
+            expect(response.status).to.equal(503);
+            expect(response.body.message).to.contain('shutting down');
+            expect(mongoClosed).to.be(true);
+            expect(process.listenerCount('SIGTERM')).to.equal(sigtermListeners);
+            expect(process.listenerCount('SIGINT')).to.equal(sigintListeners);
+        });
+
+        it('isolates shutdown readiness between app instances', async function () {
+            var options = {
+                db: { command: function () { return Promise.resolve(); } },
+                sessionMemory: true,
+                sessionSecret: 'runtime-lifecycle-test-secret'
+            };
+            var shuttingDownApp = appModule.createApp(Object.assign({}, options, {
+                shutdownManager: { isShuttingDown: true }
+            }));
+            var readyApp = appModule.createApp(Object.assign({}, options, {
+                shutdownManager: { isShuttingDown: false }
+            }));
+
+            var responses = await Promise.all([
+                request(shuttingDownApp).get('/api/health/ready'),
+                request(readyApp).get('/api/health/ready')
+            ]);
+            expect(responses[0].status).to.equal(503);
+            expect(responses[1].status).to.equal(200);
+        });
+
         it('shuts down workers, HTTP server, and database sequentially and idempotently', function (done) {
             var server = http.createServer(function (req, res) {
                 res.writeHead(200);
