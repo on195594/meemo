@@ -644,6 +644,8 @@ database / storage
 
 ## 3.5 RF-305：API 契约文档与渐进类型声明
 
+实施状态：已完成（OpenAPI 3.0 权威规范 docs/openapi.yaml、渐进类型声明 types/api.d.ts 及契约一致性测试 src/test/api-contract-test.js 已建立）。
+
 建议分支：`refactor/api-contract-and-types`
 
 - 新增一份权威 API 契约文档（OpenAPI 3.0 / JSON Schema）。
@@ -754,7 +756,7 @@ Readiness 中明确检查 MongoDB；业务指标只增加低基数指标，不�
 - [x] 核心流程已完成 `async/await` 改造。
 - [ ] 结构化日志上线且严格遵守敏感信息过滤规则。
 - [ ] 11 项核心安全回归套件全部加入自动化门禁并保持全绿。
-- [ ] API 契约文档与实际行为一致。
+- [x] API 契约文档与实际行为一致。
 
 ---
 

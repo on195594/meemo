@@ -37,7 +37,9 @@ Routes are registered in `app.js`:
 - `/api/public/*`, `/api/rss/*`, `/public/*`: public streams and feeds
 - `/api/health/live`, `/api/health/ready`, `/api/healthcheck`: container and orchestration health probes
 
-When changing an endpoint, update its route handler and the corresponding browser call under `frontend/js/`. Add or update a test under `src/test/` for non-trivial server behavior.
+The authoritative OpenAPI 3.0 specification is maintained in `docs/openapi.yaml`, and progressive TypeScript declarations for core domain models and API contracts reside in `types/api.d.ts`.
+
+When changing an endpoint, update its route handler, the OpenAPI specification, and the corresponding browser call under `frontend/js/`. Add or update a test under `src/test/` for non-trivial server behavior.
 
 ## Migration and tooling
 
