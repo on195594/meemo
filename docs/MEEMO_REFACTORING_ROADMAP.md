@@ -951,6 +951,8 @@ release vX.Y.Z -> :vX.Y.Z + :X.Y + :latest
 
 ## 6.2 RF-602：部署安全默认值
 
+实施状态：已完成（已配置 read-only rootfs、tmpfs /tmp 挂载带 noexec/nosuid、drop ALL Linux capabilities、security_opt no-new-privileges、生产环境强制 SESSION_SECRET fail-fast、MongoDB 仅限 backend 容器网络隔离，并通过 /api/health/ready readiness 探针检测数据库依赖故障）。
+
 - 容器继续 non-root。
 - 评估 read-only root filesystem。
 - writable 目录只保留 data/tmp。
