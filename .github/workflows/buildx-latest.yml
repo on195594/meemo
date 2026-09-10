@@ -10,11 +10,10 @@ on:
       - docker-compose.yml
       - package.json
       - package-lock.json
-      - gulpfile.js
       - app.js
       - start.sh
       - src/**
-      - frontend/**
+      - web/**
 
 jobs:
   build:

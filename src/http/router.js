@@ -28,7 +28,16 @@ function createRouter(options) {
     });
 
     router.get('*', function (req, res) {
-        res.status(404).sendFile(path.resolve(__dirname, '../../public/error.html'));
+        var indexPath = path.resolve(__dirname, '../../public/index.html');
+        var hasFileExtension = path.extname(req.path) !== '';
+        if (hasFileExtension) {
+            return res.status(404).send('Not Found');
+        }
+        res.sendFile(indexPath, function (err) {
+            if (err) {
+                res.status(404).send('Not Found');
+            }
+        });
     });
 
     return router;

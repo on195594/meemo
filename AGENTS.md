@@ -15,7 +15,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `src/database/`: MongoDB access for things, tags, and settings.
 - `src/users.js`: local account file and bcrypt password handling.
 - `src/test/`: Mocha server tests.
-- `frontend/`: browser source.
+- `web/`: modern Vue 3 + Vite + TypeScript browser application.
 - `public/`: generated frontend output; never edit or commit it.
 - `docs/ARCHITECTURE.md`: component boundaries and runtime flow.
 - `Dockerfile`, `docker-compose.yml`: deployment and packaging.
@@ -44,7 +44,7 @@ Do not commit or hand-edit:
 
 ```sh
 npm ci                 # install locked dependencies
-npm run build          # compile frontend/ into public/
+npm run build          # compile web/ into public/
 npm test               # run tests using a temporary MongoDB container
 ./localdevelopment     # run the app with a development MongoDB container
 npm start              # run only Node; MongoDB must already be available

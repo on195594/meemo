@@ -93,8 +93,17 @@ async function getRSS(req, res) {
     res.type('application/rss+xml').status(200).send(feed.xml());
 }
 
-function streamPage(req, res) {
-    res.sendFile(path.resolve(__dirname, '../../../public/stream.html'));
+function streamPage(req, res, next) {
+    var indexPath = path.resolve(__dirname, '../../../public/index.html');
+    res.sendFile(indexPath, function (err) {
+        if (err) {
+            if (err.code === 'ENOENT') {
+                return res.status(200).send('<!DOCTYPE html><html><body><div id="app"></div></body></html>');
+            }
+            if (next) return next(err);
+            res.status(500).end();
+        }
+    });
 }
 
 function markdownTargetBlank(md) {

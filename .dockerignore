@@ -11,3 +11,5 @@ database/
 users.json
 .users.json
 src/test/
+web/node_modules/
+web/dist/

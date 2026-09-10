@@ -81,7 +81,7 @@ npm test
 ./localdevelopment
 ```
 
-`npm run build` compiles `frontend/` into the ignored `public/` directory. `npm test` starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application.
+`npm run build` compiles modern Vue 3 web source in `web/` into the ignored `public/` directory. `npm test` starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application.
 
 To run only the Node.js process, provide MongoDB separately and use `npm start`.
 
@@ -98,7 +98,7 @@ To run only the Node.js process, provide MongoDB separately and use `npm start`.
 | `src/users.js` | Account repository abstraction and password handling |
 | `scripts/` | Idempotent zero-downtime migration scripts (`dry-run`, `apply`, `verify`) |
 | `src/test/` | Mocha tests |
-| `frontend/` | Browser source compiled into `public/` |
+| `web/` | Modern Vue 3 + Vite + TypeScript browser application compiled into `public/` |
 | `docs/` | Architecture, security, and refactoring documentation |
 | `Dockerfile`, `docker-compose.yml` | Container build and deployment |
 | `.github/` | Continuous integration and repository configuration |
