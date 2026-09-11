@@ -1,31 +1,33 @@
 import { ref, computed } from 'vue';
 import { api, type Thing, type Tag, type AttachmentDescriptor } from '../api/client';
 
+// Module-level singleton state so App.vue header and NotesView share the same notes & search state
+const things = ref<Thing[]>([]);
+const tags = ref<Tag[]>([]);
+const isLoading = ref(false);
+const isLoadingMore = ref(false);
+const hasMore = ref(true);
+const error = ref<string | null>(null);
+
+const searchQuery = ref('');
+const selectedTag = ref<string | null>(null);
+const isArchived = ref(false);
+
+const skip = ref(0);
+const limit = ref(15);
+
+const activeFilter = computed(() => {
+  if (selectedTag.value) {
+    return '#' + selectedTag.value;
+  }
+  return searchQuery.value.trim() || null;
+});
+
+const hasActiveFilter = computed(() => {
+  return !!activeFilter.value || isArchived.value;
+});
+
 export function useNotes() {
-  const things = ref<Thing[]>([]);
-  const tags = ref<Tag[]>([]);
-  const isLoading = ref(false);
-  const isLoadingMore = ref(false);
-  const hasMore = ref(true);
-  const error = ref<string | null>(null);
-
-  const searchQuery = ref('');
-  const selectedTag = ref<string | null>(null);
-  const isArchived = ref(false);
-
-  const skip = ref(0);
-  const limit = ref(15);
-
-  const activeFilter = computed(() => {
-    if (selectedTag.value) {
-      return '#' + selectedTag.value;
-    }
-    return searchQuery.value.trim() || null;
-  });
-
-  const hasActiveFilter = computed(() => {
-    return !!activeFilter.value || isArchived.value;
-  });
 
   async function fetchTags(): Promise<void> {
     try {

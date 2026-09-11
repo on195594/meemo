@@ -19,21 +19,69 @@
     <!-- Main Navigation Header -->
     <header class="app-nav">
       <div class="nav-container" :class="{ 'is-wide': settings.wideNavbar }">
-        <router-link to="/" class="brand-logo">
+        <router-link to="/" class="brand-logo" title="Meemo Home">
           <img src="/favicon.png" alt="Meemo" class="logo-img" width="28" height="28" />
-          <span>{{ settings.title || 'Meemo' }}</span>
+          <span class="logo-text">{{ settings.title || 'Meemo' }}</span>
         </router-link>
 
-        <nav class="nav-links">
-          <router-link to="/" class="nav-item">Notes</router-link>
-          <router-link v-if="user" :to="`/public/${user.username}`" class="nav-item">
-            My Public Stream
-          </router-link>
-        </nav>
+        <!-- Center: Header Global Sticky Search Bar -->
+        <div v-if="isAuthenticated" class="header-search-wrapper">
+          <div class="header-search-box" :class="{ focused: isSearchFocused }">
+            <span class="header-search-icon" aria-hidden="true">🔍</span>
+            <input
+              ref="headerSearchInputRef"
+              v-model="headerSearchQuery"
+              type="search"
+              class="header-search-input"
+              placeholder="Search notes or #tags... (Ctrl+K)"
+              aria-label="Search notes"
+              @focus="isSearchFocused = true"
+              @blur="isSearchFocused = false"
+              @input="handleHeaderSearchInput"
+              @keydown.enter.prevent="handleHeaderSearchSubmit"
+              @keydown.esc="handleHeaderSearchClear"
+            />
+            <button
+              v-if="headerSearchQuery"
+              type="button"
+              class="header-search-clear"
+              @click="handleHeaderSearchClear"
+              title="Clear search"
+              aria-label="Clear search"
+            >
+              &times;
+            </button>
+            <span v-else class="header-search-shortcut" title="Press Ctrl+K or / to search">
+              <kbd>/</kbd>
+            </span>
+          </div>
+        </div>
 
-        <div class="nav-auth">
-          <!-- Authenticated User Profile Dropdown -->
-          <div v-if="isAuthenticated && user" class="user-menu-wrapper">
+        <div class="nav-right">
+          <!-- View Toggle: Active Notes / Archive -->
+          <div v-if="isAuthenticated" class="header-view-toggle">
+            <button
+              type="button"
+              class="header-toggle-btn"
+              :class="{ active: isArchived }"
+              @click="handleToggleArchiveView"
+              :title="isArchived ? 'Back to active notes' : 'View archived notes'"
+            >
+              <span class="btn-icon">{{ isArchived ? '↩️' : '📦' }}</span>
+              <span class="btn-label">{{ isArchived ? 'Active' : 'Archive' }}</span>
+            </button>
+          </div>
+
+          <nav class="nav-links">
+            <router-link to="/" class="nav-item">Notes</router-link>
+            <router-link v-if="user" :to="`/public/${user.username}`" class="nav-item">
+              Public
+            </router-link>
+          </nav>
+
+          <div class="nav-auth">
+            <!-- Authenticated User Profile Dropdown -->
+            <div v-if="isAuthenticated && user" class="user-menu-wrapper">
             <button
               type="button"
               class="user-profile-btn"
@@ -137,7 +185,8 @@
           </div>
         </div>
       </div>
-    </header>
+    </div>
+  </header>
 
     <!-- Main View Content -->
     <router-view />
@@ -169,9 +218,86 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, provide, watch, defineAsyncComponent } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { useAuth } from './composables/useAuth';
 import { useSettings } from './composables/useSettings';
+import { useNotes } from './composables/useNotes';
 import LoginModal from './components/LoginModal.vue';
+
+const router = useRouter();
+const route = useRoute();
+
+const {
+  searchQuery,
+  isArchived,
+  setSearch,
+  toggleArchived,
+} = useNotes();
+
+const headerSearchQuery = ref('');
+const isSearchFocused = ref(false);
+const headerSearchInputRef = ref<HTMLInputElement | null>(null);
+let headerSearchTimer: number | null = null;
+
+// Sync header input with active searchQuery
+watch(searchQuery, (newVal) => {
+  if (headerSearchQuery.value !== newVal) {
+    headerSearchQuery.value = newVal;
+  }
+}, { immediate: true });
+
+function handleHeaderSearchInput() {
+  if (headerSearchTimer) clearTimeout(headerSearchTimer);
+  headerSearchTimer = window.setTimeout(() => {
+    executeHeaderSearch();
+  }, 300);
+}
+
+function handleHeaderSearchSubmit() {
+  if (headerSearchTimer) clearTimeout(headerSearchTimer);
+  executeHeaderSearch();
+}
+
+function executeHeaderSearch() {
+  const q = headerSearchQuery.value.trim();
+  if (route.path !== '/') {
+    router.push({ path: '/', query: { q: q || undefined } });
+  } else {
+    router.replace({ query: { ...route.query, q: q || undefined } });
+  }
+  setSearch(q);
+}
+
+function handleHeaderSearchClear() {
+  if (headerSearchTimer) clearTimeout(headerSearchTimer);
+  headerSearchQuery.value = '';
+  if (route.path === '/') {
+    const newQuery = { ...route.query };
+    delete newQuery.q;
+    router.replace({ query: newQuery });
+  }
+  setSearch('');
+  headerSearchInputRef.value?.focus();
+}
+
+function handleToggleArchiveView() {
+  if (route.path !== '/') {
+    router.push('/');
+  }
+  toggleArchived();
+}
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    headerSearchInputRef.value?.focus();
+    headerSearchInputRef.value?.select();
+  } else if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+    e.preventDefault();
+    headerSearchInputRef.value?.focus();
+    headerSearchInputRef.value?.select();
+  }
+}
 
 const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'));
 const ImportModal = defineAsyncComponent(() => import('./components/ImportModal.vue'));
@@ -273,10 +399,19 @@ onMounted(() => {
     loadSettings();
   }
   document.addEventListener('click', handleGlobalClick);
+  window.addEventListener('keydown', handleGlobalKeydown);
+
+  // Sync initial search from URL query if present
+  if (route.query.q && typeof route.query.q === 'string') {
+    headerSearchQuery.value = route.query.q;
+    setSearch(route.query.q);
+  }
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', handleGlobalClick);
+  window.removeEventListener('keydown', handleGlobalKeydown);
+  if (headerSearchTimer) clearTimeout(headerSearchTimer);
 });
 </script>
 
@@ -541,5 +676,166 @@ video {
 .dropdown-item.logout-btn:hover {
   background-color: #fff5f5;
   color: #c53030;
+}
+
+/* Header layout & search bar styles */
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.header-search-wrapper {
+  flex: 1;
+  max-width: 480px;
+  margin: 0 1rem;
+}
+
+.header-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 0.25rem 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.header-search-box:hover {
+  background-color: #eef2f6;
+  border-color: #cbd5e1;
+}
+
+.header-search-box.focused {
+  background-color: #ffffff;
+  border-color: #3182ce;
+  box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.15);
+}
+
+.header-search-icon {
+  font-size: 0.85rem;
+  margin-right: 0.45rem;
+  color: #64748b;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.header-search-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 0.875rem;
+  color: #1e293b;
+  outline: none;
+  padding: 0.2rem 0;
+}
+
+.header-search-input::placeholder {
+  color: #94a3b8;
+}
+
+.header-search-clear {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.1rem 0.35rem;
+  border-radius: 50%;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.header-search-clear:hover {
+  color: #475569;
+  background-color: #e2e8f0;
+}
+
+.header-search-shortcut {
+  flex-shrink: 0;
+  margin-left: 0.35rem;
+  pointer-events: none;
+}
+
+.header-search-shortcut kbd {
+  background-color: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.header-view-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.header-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 0.32rem 0.75rem;
+  font-size: 0.825rem;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.header-toggle-btn:hover {
+  background-color: #edf2f7;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+
+.header-toggle-btn.active {
+  background-color: #ebf8ff;
+  border-color: #90cdf4;
+  color: #2b6cb0;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .nav-container {
+    padding: 0.5rem 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .brand-logo .logo-text {
+    display: none;
+  }
+
+  .header-search-wrapper {
+    margin: 0 0.25rem;
+    max-width: none;
+  }
+
+  .header-search-shortcut {
+    display: none;
+  }
+
+  .header-toggle-btn .btn-label {
+    display: none;
+  }
+
+  .header-toggle-btn {
+    padding: 0.35rem 0.5rem;
+  }
+
+  .nav-links {
+    display: none;
+  }
 }
 </style>
