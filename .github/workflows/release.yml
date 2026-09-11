@@ -1,0 +1,114 @@
+name: RC release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Immutable RC tag (for example v2.0.0-rc1)
+        required: true
+        type: string
+
+concurrency:
+  group: rc-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validation:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  publish:
+    needs: validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate immutable RC target
+        id: release
+        env:
+          TAG: ${{ inputs.tag }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$ ]]; then
+            echo "tag must match vX.Y.Z-rcN" >&2
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin master
+          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/master)" ]]; then
+            echo "RC releases must run from the current master commit" >&2
+            exit 1
+          fi
+          tag_status=0
+          git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1 || tag_status=$?
+          case "$tag_status" in
+            0) echo "Git tag $TAG already exists; RC tags are immutable" >&2; exit 1 ;;
+            2) ;;
+            *) echo "Could not verify Git tag absence (exit $tag_status)" >&2; exit 1 ;;
+          esac
+          version=${TAG#v}
+          registry_token=$(curl --fail --silent --show-error \
+            --user "$GITHUB_ACTOR:$GHCR_TOKEN" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${GITHUB_REPOSITORY,,}:pull" \
+            | node -e 'let s=""; process.stdin.on("data", b => s += b).on("end", () => process.stdout.write(JSON.parse(s).token))')
+          status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: Bearer $registry_token" \
+            --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+            "https://ghcr.io/v2/${GITHUB_REPOSITORY,,}/manifests/$version")
+          case "$status" in
+            404) ;;
+            200) echo "Container tag $version already exists; RC tags are immutable" >&2; exit 1 ;;
+            *) echo "Could not verify GHCR tag absence (HTTP $status)" >&2; exit 1 ;;
+          esac
+          {
+            echo "image=$image"
+            echo "tag=$TAG"
+            echo "version=$version"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push multi-arch RC image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.release.outputs.image }}:${{ steps.release.outputs.version }}
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            CREATED=${{ steps.release.outputs.created }}
+            COMMIT=${{ github.sha }}
+            VERSION=${{ steps.release.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --generate-notes
