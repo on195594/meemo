@@ -72,7 +72,7 @@ docker compose up --build -d
 
 ## Development
 
-Requirements: Node.js 18 or newer, npm, and Docker.
+Requirements: Node.js 20 or newer, npm, and Docker.
 
 ```sh
 npm ci
@@ -94,12 +94,13 @@ To run only the Node.js process, provide MongoDB separately and use `npm start`.
 | `src/http/` | Domain route modules, authentication middleware, Zod validation, and uniform HTTP errors |
 | `src/services/` | Promise-first authentication, things, attachments, sharing, settings, health, and import/export behavior |
 | `src/storage/` | Local filesystem attachment adapter |
-| `src/database/` | MongoDB persistence (things, tags, settings, users) |
+| `src/database/` | MongoDB persistence (things, tags, settings, users, and sessions) |
 | `src/users.js` | Account repository abstraction and password handling |
-| `scripts/` | Idempotent zero-downtime migration scripts (`dry-run`, `apply`, `verify`) |
+| `types/` | TypeScript domain definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`) |
+| `scripts/` | Idempotent zero-downtime migration scripts (`dry-run`, `apply`, `verify`) and attachment GC |
 | `src/test/` | Mocha tests |
 | `web/` | Modern Vue 3 + Vite + TypeScript browser application compiled into `public/` |
-| `docs/` | Architecture, security, and refactoring documentation |
+| `docs/` | Architecture, security, backup/restore, release, and refactoring documentation |
 | `Dockerfile`, `docker-compose.yml` | Container build and deployment |
 | `.github/` | Continuous integration and repository configuration |
 

@@ -47,10 +47,11 @@ Meemo provides zero-downtime shadow migration scripts:
 
 - `scripts/migrate-users-to-mongo.js`: Migrates legacy file-based accounts to MongoDB `users` with `--dry-run`, `--apply`, and `--verify`.
 - `scripts/migrate-data-to-v2.js`: Migrates dynamic legacy `<user>_*` collections into unified `things`, `tags`, and `settings` collections partitioned by `ownerId` with `--dry-run`, `--apply`, and `--verify`.
+- `scripts/gc-attachments.js`: Identifies and removes unreferenced orphan attachments from filesystem storage.
 
 ## Build and deployment
 
 `npm run build` compiles the modern Vue 3 + Vite + TypeScript application in `web/` into `public/`.
 `npm run build:web` compiles directly into `web/dist/`. Do not commit generated output.
 
-The Dockerfile uses a multi-stage build (`web-builder` for `web/` and `builder` for native production dependencies), running the application as an unprivileged user while serving modern Vue 3 assets from `public/`. `docker-compose.yml` supplies MongoDB and persistent named volumes. Multi-platform container images (`linux/amd64` and `linux/arm64`) are automatically published to the GitHub Container Registry (`ghcr.io/on195594/meemo`) with OCI metadata, SBOM, and provenance attestations.
+The Dockerfile uses a multi-stage build (`web-builder` for `web/` and `builder` for native production dependencies), running the application as an unprivileged user while serving modern Vue 3 assets from `public/`. `docker-compose.yml` supplies MongoDB and persistent named volumes. Multi-platform container images (`linux/amd64` and `linux/arm64`) are automatically published to the GitHub Container Registry (`ghcr.io/on195594/meemo`) with OCI metadata, SBOM, and provenance attestations. Official backup, disaster recovery, and restore runbooks are documented in [`docs/BACKUP_RESTORE.md`](BACKUP_RESTORE.md), and release candidate quality gates are specified in [`docs/RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md).
