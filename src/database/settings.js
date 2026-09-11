@@ -80,9 +80,12 @@ function get(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
 
     var promise = getAlternateUserId(userId).then(async function (alternateUserId) {
-        var query = alternateUserId ? { $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { ownerId: userId };
-        var doc = await getUnifiedCollection().findOne(query);
+        var doc = await getUnifiedCollection().findOne({ ownerId: userId });
         if (doc && typeof doc.value === 'object') return doc.value;
+        if (alternateUserId) {
+            doc = await getUnifiedCollection().findOne({ ownerId: alternateUserId });
+            if (doc && typeof doc.value === 'object') return doc.value;
+        }
 
         doc = await getLegacyCollection(userId).findOne({ type: 'frontend' });
         if (doc && typeof doc.value === 'object') return doc.value;

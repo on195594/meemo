@@ -87,6 +87,7 @@ components:
 
     PublicUserProfile:
       type: object
+      additionalProperties: false
       required:
         - id
         - username
@@ -95,6 +96,20 @@ components:
         id:
           type: string
           example: 64f8a12b3c4d5e6f7a8b9c0d
+        username:
+          type: string
+          example: alice
+        displayName:
+          type: string
+          example: Alice Walker
+
+    PublicUserSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+        - displayName
+      properties:
         username:
           type: string
           example: alice
@@ -124,6 +139,19 @@ components:
         size:
           type: integer
           example: 1048576
+
+    ExternalContentItem:
+      type: object
+      required:
+        - url
+        - type
+      properties:
+        url:
+          type: string
+          format: uri
+        type:
+          type: string
+          enum: [image, unknown]
 
     Thing:
       type: object
@@ -169,7 +197,7 @@ components:
         externalContent:
           type: array
           items:
-            type: object
+            $ref: '#/components/schemas/ExternalContentItem'
           default: []
         attachments:
           type: array
@@ -328,7 +356,7 @@ components:
       properties:
         status:
           type: string
-          example: ok
+          enum: [ok]
 
     HealthReadyResponse:
       type: object
@@ -337,7 +365,7 @@ components:
       properties:
         status:
           type: string
-          example: ready
+          enum: [ready]
 
   parameters:
     ThingIdPath:
@@ -1021,7 +1049,7 @@ paths:
                   users:
                     type: array
                     items:
-                      $ref: '#/components/schemas/PublicUserProfile'
+                      $ref: '#/components/schemas/PublicUserSummary'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -1033,7 +1061,7 @@ paths:
         - $ref: '#/components/parameters/UserIdPath'
       responses:
         '200':
-          description: User profile and public note counts
+          description: User public profile
           content:
             application/json:
               schema:
@@ -1042,9 +1070,6 @@ paths:
                 properties:
                   user:
                     $ref: '#/components/schemas/PublicUserProfile'
-                  notesCount:
-                    type: integer
-                    example: 42
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':

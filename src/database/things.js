@@ -3,7 +3,7 @@
 'use strict';
 
 var assert = require('assert'),
-    ObjectId = require('mongodb').ObjectID,
+    ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
     nodeify = require('../promise.js'),
     users = require('../users.js');
@@ -88,12 +88,40 @@ function postProcess(userId, thing) {
     thing.sticky = !!thing.sticky;
 }
 
-function queryLegacy(userId, alternateUserId, query, skip, limit, sort) {
-    return getLegacyCollection(userId).find(query).skip(skip).limit(limit).sort(sort).toArray().then(function (result) {
-        if (result && result.length) return result;
-        if (alternateUserId) return getLegacyCollection(alternateUserId).find(query).skip(skip).limit(limit).sort(sort).toArray();
-        return [];
+function queryLegacy(userId, alternateUserId, query) {
+    var userIds = alternateUserId ? [userId, alternateUserId] : [userId];
+    return Promise.all(userIds.map(function (id) {
+        var collectionName = id + '_things';
+        return config.db.listCollections({ name: collectionName }, { nameOnly: true }).hasNext().then(function (exists) {
+            if (!exists) return [];
+            return getLegacyCollection(id).find(query).toArray();
+        });
+    })).then(function (results) {
+        return results.reduce(function (all, result) { return all.concat(result); }, []);
     });
+}
+
+function mergeThings(unified, legacy, unifiedIdentities) {
+    var byId = {};
+    var unifiedIds = {};
+    (unifiedIdentities || unified).forEach(function (thing) {
+        unifiedIds[String(thing._id)] = true;
+    });
+    legacy.filter(function (thing) {
+        return !unifiedIds[String(thing._id)];
+    }).concat(unified).forEach(function (thing) {
+        byId[String(thing._id)] = thing;
+    });
+    return Object.keys(byId).map(function (id) { return byId[id]; });
+}
+
+function sortAndPaginate(result, skip, limit, lean) {
+    result.sort(function (left, right) {
+        var modifiedOrder = (right.modifiedAt || 0) - (left.modifiedAt || 0);
+        var stickyOrder = Number(!!right.sticky) - Number(!!left.sticky);
+        return lean ? modifiedOrder || -stickyOrder : stickyOrder || modifiedOrder;
+    });
+    return result.slice(skip, limit > 0 ? skip + limit : undefined);
 }
 
 function getAll(userId, query, skip, limit, callback) {
@@ -104,11 +132,12 @@ function getAll(userId, query, skip, limit, callback) {
     var promise = getAlternateUserId(userId).then(function (alternateUserId) {
         var ownerCondition = alternateUserId ? { $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { ownerId: userId };
         var unifiedQuery = Object.keys(query).length ? { $and: [ownerCondition, query] } : ownerCondition;
-        var sort = { sticky: -1, modifiedAt: -1 };
-
-        return getUnifiedCollection().find(unifiedQuery).skip(skip).limit(limit).sort(sort).toArray().then(function (result) {
-            if (result && result.length) return result;
-            return queryLegacy(userId, alternateUserId, query, skip, limit, sort);
+        return Promise.all([
+            getUnifiedCollection().find(unifiedQuery).toArray(),
+            getUnifiedCollection().find(ownerCondition).project({ _id: 1 }).toArray(),
+            queryLegacy(userId, alternateUserId, query)
+        ]).then(function (results) {
+            return sortAndPaginate(mergeThings(results[0], results[2], results[1]), skip, limit, false);
         });
     }).then(function (result) {
         (result || []).forEach(postProcess.bind(null, userId));
@@ -123,10 +152,11 @@ function getAllLean(userId, callback) {
 
     var promise = getAlternateUserId(userId).then(function (alternateUserId) {
         var ownerCondition = alternateUserId ? { $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { ownerId: userId };
-        var sort = { modifiedAt: -1, sticky: 1 };
-        return getUnifiedCollection().find(ownerCondition).sort(sort).toArray().then(function (result) {
-            if (result && result.length) return result;
-            return queryLegacy(userId, alternateUserId, {}, 0, 0, sort);
+        return Promise.all([
+            getUnifiedCollection().find(ownerCondition).toArray(),
+            queryLegacy(userId, alternateUserId, {})
+        ]).then(function (results) {
+            return sortAndPaginate(mergeThings(results[0], results[1]), 0, 0, true);
         });
     }).then(function (result) {
         (result || []).forEach(postProcess.bind(null, userId));
@@ -160,6 +190,13 @@ function add(userId, content, tags, attachments, externalContent, callback) {
 }
 
 function addFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, callback) {
+    var promise = insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt).then(function (result) {
+        return get(userId, result._id);
+    });
+    return nodeify(promise, callback);
+}
+
+function insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof content, 'string');
     assert(Array.isArray(tags));
@@ -183,7 +220,9 @@ function addFull(userId, content, tags, attachments, externalContent, createdAt,
 
     var promise = getUnifiedCollection().insertOne(doc).then(function (result) {
         if (!result) throw new Error('no result returned');
-        return get(userId, result.insertedId.toString());
+        doc._id = result.insertedId.toString();
+        postProcess(userId, doc);
+        return doc;
     });
     return nodeify(promise, callback);
 }
@@ -245,6 +284,7 @@ module.exports = {
     get: get,
     add: add,
     addFull: addFull,
+    insertFull: insertFull,
     put: put,
     del: del,
     ensureIndexes: ensureIndexes,

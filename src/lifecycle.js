@@ -18,22 +18,45 @@ function WorkerManager(options) {
     this.workers = {};
     this.timers = {};
     this.running = false;
+    this.stopped = false;
+    this.stopPromise = null;
 }
 
 WorkerManager.prototype.register = function (name, workerFn, intervalMs) {
     if (typeof workerFn !== 'function') throw new TypeError('Worker task must be a function');
-    this.workers[name] = { fn: workerFn, intervalMs: intervalMs || 60000 };
+    this.workers[name] = { fn: workerFn, intervalMs: intervalMs || 60000, running: false, promise: null };
+};
+
+WorkerManager.prototype._run = function (name) {
+    var worker = this.workers[name];
+    if (!worker) return Promise.reject(new Error('Worker [' + name + '] not found'));
+    if (this.stopped) return Promise.reject(new Error('Worker manager is stopped'));
+    if (worker.running) return worker.promise;
+
+    worker.running = true;
+    worker.promise = runWorker(worker.fn).then(function (result) {
+        worker.running = false;
+        worker.promise = null;
+        return result;
+    }, function (error) {
+        worker.running = false;
+        worker.promise = null;
+        throw error;
+    });
+    return worker.promise;
 };
 
 WorkerManager.prototype.start = function () {
-    if (this.running) return;
+    if (this.running || this.stopPromise) return;
+    this.stopped = false;
     this.running = true;
 
     var self = this;
     Object.keys(this.workers).forEach(function (name) {
         var worker = self.workers[name];
         self.timers[name] = setInterval(function () {
-            runWorker(worker.fn).catch(function (error) {
+            if (worker.running) return;
+            self._run(name).catch(function (error) {
                 console.error('Worker error in [' + name + ']:', error);
             });
         }, worker.intervalMs);
@@ -41,13 +64,26 @@ WorkerManager.prototype.start = function () {
     });
 };
 
-WorkerManager.prototype.stop = function () {
+WorkerManager.prototype.stop = function (callback) {
+    if (this.stopPromise) return nodeify(this.stopPromise, callback);
+
     var self = this;
+    this.stopped = true;
     Object.keys(this.timers).forEach(function (name) {
         clearInterval(self.timers[name]);
         delete self.timers[name];
     });
     this.running = false;
+
+    var pending = Object.keys(this.workers).map(function (name) {
+        return self.workers[name].promise;
+    }).filter(Boolean).map(function (promise) {
+        return promise.catch(function () {});
+    });
+    this.stopPromise = Promise.all(pending).then(function () {
+        self.stopPromise = null;
+    });
+    return nodeify(this.stopPromise, callback);
 };
 
 WorkerManager.prototype.isRunning = function () {
@@ -55,9 +91,7 @@ WorkerManager.prototype.isRunning = function () {
 };
 
 WorkerManager.prototype.runOnce = function (name, callback) {
-    var worker = this.workers[name];
-    var promise = worker ? runWorker(worker.fn) : Promise.reject(new Error('Worker [' + name + '] not found'));
-    return nodeify(promise, callback);
+    return nodeify(this._run(name), callback);
 };
 
 function DatabaseManager() {
@@ -83,7 +117,6 @@ DatabaseManager.prototype.connect = function (options, callback) {
             self.isManaged = false;
         } else {
             self.client = await MongoClient.connect(options.databaseUrl || config.databaseUrl || 'mongodb://127.0.0.1:27017/meemo', {
-                useUnifiedTopology: true,
                 maxPoolSize: options.maxPoolSize || parseInt(process.env.MONGO_MAX_POOL_SIZE, 10) || 50,
                 minPoolSize: options.minPoolSize || parseInt(process.env.MONGO_MIN_POOL_SIZE, 10) || 1,
                 serverSelectionTimeoutMS: options.serverSelectionTimeoutMS || parseInt(process.env.MONGO_TIMEOUT_MS, 10) || 3000
@@ -119,7 +152,7 @@ function ShutdownManager(options) {
     this.server = options.server || null;
     this.databaseManager = options.databaseManager || null;
     this.workerManager = options.workerManager || null;
-    this.timeoutMs = options.timeoutMs || parseInt(process.env.SHUTDOWN_TIMEOUT_MS, 10) || 10000;
+    this.timeoutMs = options.timeoutMs !== undefined ? options.timeoutMs : (parseInt(process.env.SHUTDOWN_TIMEOUT_MS, 10) || 15000);
     this.isShuttingDown = false;
     this.shutdownPromise = null;
     this.trackedSockets = new Set();
@@ -169,44 +202,44 @@ ShutdownManager.prototype.shutdown = function (signal, callback) {
 
     var self = this;
     this.isShuttingDown = true;
-    var timeoutTimer;
-    this.shutdownPromise = Promise.race([
-        Promise.resolve().then(async function () {
-            if (self.workerManager) self.workerManager.stop();
-            self.trackedSockets.forEach(function (socket) {
-                try { socket.destroy(); } catch (error) {}
-            });
-
+    this.shutdownPromise = Promise.resolve().then(async function () {
+        try {
             if (self.server) {
                 await new Promise(function (resolve) {
-                    try {
-                        self.server.close(function (error) {
-                            if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') console.error('Error closing HTTP server:', error);
-                            resolve();
-                        });
-                    } catch (error) {
+                    var timeoutTimer;
+                    var settled = false;
+                    function finish(error) {
+                        if (settled) return;
+                        settled = true;
+                        clearTimeout(timeoutTimer);
+                        if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') console.error('Error closing HTTP server:', error);
                         resolve();
+                    }
+
+                    timeoutTimer = setTimeout(function () {
+                        console.warn('Graceful shutdown timed out after ' + self.timeoutMs + 'ms, forcing socket termination');
+                        self.trackedSockets.forEach(function (socket) {
+                            try { socket.destroy(); } catch (error) {}
+                        });
+                        finish();
+                    }, self.timeoutMs);
+                    if (timeoutTimer.unref) timeoutTimer.unref();
+
+                    try {
+                        self.server.close(finish);
+                    } catch (error) {
+                        finish(error);
                     }
                 });
             }
+
+            if (self.workerManager) await self.workerManager.stop();
             if (self.databaseManager) {
                 try { await self.databaseManager.disconnect(false); } catch (error) { console.error('Error disconnecting MongoDB:', error); }
             }
+        } finally {
             self.detachSignals();
-        }),
-        new Promise(function (resolve, reject) {
-            timeoutTimer = setTimeout(function () {
-                console.warn('Graceful shutdown timed out after ' + self.timeoutMs + 'ms, forcing socket termination');
-                self.trackedSockets.forEach(function (socket) {
-                    try { socket.destroy(); } catch (error) {}
-                });
-                self.detachSignals();
-                reject(new Error('Graceful shutdown timed out'));
-            }, self.timeoutMs);
-            if (timeoutTimer.unref) timeoutTimer.unref();
-        })
-    ]).finally(function () {
-        clearTimeout(timeoutTimer);
+        }
     });
 
     return nodeify(this.shutdownPromise, callback);

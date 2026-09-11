@@ -1,3 +1,5 @@
+import type { components, paths } from '../../../types/generated/api-types';
+
 export interface ApiErrorDetails {
   status: string;
   code: string;
@@ -16,46 +18,42 @@ export class ApiError extends Error {
   }
 }
 
-export interface UserProfile {
-  id: string;
-  username: string;
-  displayName: string;
-  email: string;
-}
+export type UserProfile = components['schemas']['UserProfile'];
+export type PublicUserProfile = components['schemas']['PublicUserProfile'];
+export type PublicUserSummary = components['schemas']['PublicUserSummary'];
+export type AttachmentDescriptor = components['schemas']['AttachmentDescriptor'];
+export type Thing = components['schemas']['Thing'];
+export type Tag = components['schemas']['Tag'];
 
-export interface PublicUserProfile {
-  id: string;
-  username: string;
-  displayName: string;
-}
+type JsonResponse<
+  Operation extends { responses: object },
+  Status extends keyof Operation['responses'],
+> = Operation['responses'][Status] extends {
+  content: { 'application/json': infer Body };
+} ? Body : never;
 
-export interface AttachmentDescriptor {
-  identifier: string;
-  fileName?: string;
-  type?: 'image' | 'unknown' | string;
-  mime?: string;
-  size?: number;
-}
-
-export interface Thing {
-  _id: string;
-  ownerId: string;
-  content: string;
-  richContent: string;
-  createdAt: number;
-  modifiedAt: number;
-  tags: string[];
-  attachments: AttachmentDescriptor[];
-  public: boolean;
-  shared: boolean;
-  archived: boolean;
-  sticky: boolean;
-}
-
-export interface Tag {
-  name: string;
-  usage: number;
-}
+type RegisterRequest = components['schemas']['RegisterRequest'];
+type LoginRequest = components['schemas']['LoginRequest'];
+type CreateThingRequest = components['schemas']['CreateThingRequest'];
+type UpdateThingRequest = components['schemas']['UpdateThingRequest'];
+type SaveSettingsRequest = components['schemas']['SaveSettingsRequest'];
+type UploadFileResponse = JsonResponse<paths['/api/files']['post'], 201>;
+type ImportResponse = JsonResponse<paths['/api/import']['post'], 200>;
+type ListThingsQuery = paths['/api/things']['get']['parameters']['query'];
+type ListPublicThingsQuery = paths['/api/public/{userId}/things']['get']['parameters']['query'];
+type ProfileResponse = JsonResponse<paths['/api/profile']['get'], 200>;
+type ListThingsResponse = JsonResponse<paths['/api/things']['get'], 200>;
+type GetThingResponse = JsonResponse<paths['/api/things/{id}']['get'], 200>;
+type CreateThingResponse = JsonResponse<paths['/api/things']['post'], 201>;
+type UpdateThingResponse = JsonResponse<paths['/api/things/{id}']['put'], 201>;
+type ListTagsResponse = JsonResponse<paths['/api/tags']['get'], 200>;
+type GetSettingsResponse = JsonResponse<paths['/api/settings']['get'], 200>;
+type ListPublicThingsResponse = JsonResponse<paths['/api/public/{userId}/things']['get'], 200>;
+type GetPublicThingResponse = JsonResponse<paths['/api/public/{userId}/things/{thingId}']['get'], 200>;
+type ListPublicUsersResponse = JsonResponse<paths['/api/users']['get'], 200>;
+type GetPublicUserResponse = JsonResponse<paths['/api/users/{userId}']['get'], 200>;
+type HealthLiveResponse = JsonResponse<paths['/api/health/live']['get'], 200>;
+type HealthReadyResponse = JsonResponse<paths['/api/health/ready']['get'], 200>;
 
 export type UnauthorizedHandler = (path: string, error: ApiError) => void;
 const unauthorizedHandlers = new Set<UnauthorizedHandler>();
@@ -115,7 +113,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   auth: {
-    login: (username: string, password: string) =>
+    login: (username: LoginRequest['username'], password: LoginRequest['password']) =>
       request<{}>('/api/login', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
@@ -124,16 +122,16 @@ export const api = {
       request<{}>('/api/logout', {
         method: 'POST',
       }),
-    register: (data: { username: string; password: string; email: string; displayName: string }) =>
+    register: (data: RegisterRequest) =>
       request<{}>('/api/register', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    profile: () => request<{ user: UserProfile }>('/api/profile'),
+    profile: () => request<ProfileResponse>('/api/profile'),
   },
 
   things: {
-    list: (params?: { filter?: string; sticky?: boolean; archived?: boolean; skip?: number; limit?: number }) => {
+    list: (params?: ListThingsQuery) => {
       const query = new URLSearchParams();
       if (params?.filter) query.set('filter', params.filter);
       if (params?.sticky !== undefined) query.set('sticky', String(params.sticky));
@@ -141,16 +139,16 @@ export const api = {
       if (params?.skip !== undefined) query.set('skip', String(params.skip));
       if (params?.limit !== undefined) query.set('limit', String(params.limit));
       const qs = query.toString();
-      return request<{ things: Thing[] }>(`/api/things${qs ? '?' + qs : ''}`);
+      return request<ListThingsResponse>(`/api/things${qs ? '?' + qs : ''}`);
     },
-    get: (id: string) => request<{ thing: Thing }>(`/api/things/${id}`),
-    create: (data: { content: string; attachments?: AttachmentDescriptor[] }) =>
-      request<{ thing: Thing }>('/api/things', {
+    get: (id: string) => request<GetThingResponse>(`/api/things/${id}`),
+    create: (data: CreateThingRequest) =>
+      request<CreateThingResponse>('/api/things', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    update: (id: string, data: Partial<Thing>) =>
-      request<{ thing: Thing }>(`/api/things/${id}`, {
+    update: (id: string, data: UpdateThingRequest) =>
+      request<UpdateThingResponse>(`/api/things/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data),
       }),
@@ -158,11 +156,11 @@ export const api = {
       request<{}>(`/api/things/${id}`, {
         method: 'DELETE',
       }),
-    tags: () => request<{ tags: Tag[] }>('/api/tags'),
+    tags: () => request<ListTagsResponse>('/api/tags'),
   },
 
   files: {
-    upload: (file: File, onProgress?: (percent: number) => void): Promise<AttachmentDescriptor> => {
+    upload: (file: File, onProgress?: (percent: number) => void): Promise<UploadFileResponse> => {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/files');
@@ -211,7 +209,7 @@ export const api = {
   },
 
   transfer: {
-    importArchive: (file: File, onProgress?: (percent: number) => void): Promise<{ total: number; imported: number; failed: number }> => {
+    importArchive: (file: File, onProgress?: (percent: number) => void): Promise<ImportResponse> => {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/import');
@@ -261,8 +259,8 @@ export const api = {
   },
 
   settings: {
-    get: () => request<{ settings: Record<string, unknown> }>('/api/settings'),
-    save: (settings: Record<string, unknown>) =>
+    get: () => request<GetSettingsResponse>('/api/settings'),
+    save: (settings: SaveSettingsRequest['settings']) =>
       request<{}>('/api/settings', {
         method: 'POST',
         body: JSON.stringify({ settings }),
@@ -270,23 +268,23 @@ export const api = {
   },
 
   public: {
-    listThings: (userId: string, params?: { filter?: string; skip?: number; limit?: number }) => {
+    listThings: (userId: string, params?: ListPublicThingsQuery) => {
       const query = new URLSearchParams();
       if (params?.filter) query.set('filter', params.filter);
       if (params?.skip !== undefined) query.set('skip', String(params.skip));
       if (params?.limit !== undefined) query.set('limit', String(params.limit));
       const qs = query.toString();
-      return request<{ things: Thing[] }>(`/api/public/${userId}/things${qs ? '?' + qs : ''}`);
+      return request<ListPublicThingsResponse>(`/api/public/${userId}/things${qs ? '?' + qs : ''}`);
     },
     getThing: (userId: string, thingId: string) =>
-      request<{ thing: Thing }>(`/api/public/${userId}/things/${thingId}`),
-    users: () => request<{ users: PublicUserProfile[] }>('/api/users'),
+      request<GetPublicThingResponse>(`/api/public/${userId}/things/${thingId}`),
+    users: () => request<ListPublicUsersResponse>('/api/users'),
     userProfile: (userId: string) =>
-      request<{ user: PublicUserProfile; notesCount?: number }>(`/api/users/${userId}`),
+      request<GetPublicUserResponse>(`/api/users/${userId}`),
   },
 
   health: {
-    live: () => request<{ status: string }>('/api/health/live'),
-    ready: () => request<{ status: string }>('/api/health/ready'),
+    live: () => request<HealthLiveResponse>('/api/health/live'),
+    ready: () => request<HealthReadyResponse>('/api/health/ready'),
   },
 };

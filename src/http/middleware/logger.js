@@ -114,7 +114,7 @@ function createLogger(options) {
                 level: level,
                 requestId: requestId,
                 method: req.method,
-                path: req.baseUrl ? (req.baseUrl + req.path) : (req.originalUrl || req.url),
+                path: req.baseUrl ? (req.baseUrl + req.path) : req.path,
                 status: status,
                 durationMs: Math.round(durationMs * 100) / 100
             };

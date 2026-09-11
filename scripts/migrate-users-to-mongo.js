@@ -117,38 +117,21 @@ function apply(options, callback) {
         var sourceUsers = result.users;
         var keys = Object.keys(sourceUsers);
 
-        MongoClient.connect(mongoUrl, { useUnifiedTopology: true }, function (err, client) {
-            if (err) return callback(err);
-
-            var db = client.db();
-            var collection = db.collection('users');
-
-            collection.createIndex({ usernameNorm: 1 }, { unique: true }, function (err) {
-                if (err && err.codeName !== 'IndexOptionsConflict') {
-                    client.close();
-                    return callback(err);
+        (async function () {
+            var client = await MongoClient.connect(mongoUrl);
+            try {
+                var collection = client.db().collection('users');
+                try {
+                    await collection.createIndex({ usernameNorm: 1 }, { unique: true });
+                } catch (indexError) {
+                    if (indexError.codeName !== 'IndexOptionsConflict') throw indexError;
                 }
 
-                var migratedCount = 0;
-                var skippedCount = 0;
-
-                var processNext = function (index) {
-                    if (index >= keys.length) {
-                        client.close(function () {
-                            callback(null, {
-                                total: keys.length,
-                                migrated: migratedCount,
-                                skipped: skippedCount
-                            });
-                        });
-                        return;
-                    }
-
+                for (var index = 0; index < keys.length; index++) {
                     var key = keys[index];
                     var u = sourceUsers[key];
                     var username = u.username || key;
                     var usernameNorm = username.toLowerCase();
-
                     var updateDoc = {
                         $set: {
                             username: username,
@@ -163,19 +146,14 @@ function apply(options, callback) {
                         }
                     };
 
-                    collection.updateOne({ usernameNorm: usernameNorm }, updateDoc, { upsert: true }, function (err) {
-                        if (err) {
-                            client.close();
-                            return callback(err);
-                        }
-                        migratedCount++;
-                        processNext(index + 1);
-                    });
-                };
+                    await collection.updateOne({ usernameNorm: usernameNorm }, updateDoc, { upsert: true });
+                }
 
-                processNext(0);
-            });
-        });
+                return { total: keys.length, migrated: keys.length, skipped: 0 };
+            } finally {
+                await client.close();
+            }
+        }()).then(function (stats) { callback(null, stats); }, callback);
     });
 }
 
@@ -189,45 +167,17 @@ function verify(options, callback) {
     var sourceUsers = result.users;
     var sourceKeys = Object.keys(sourceUsers);
 
-    MongoClient.connect(mongoUrl, { useUnifiedTopology: true }, function (err, client) {
-        if (err) return callback(err);
+    (async function () {
+        var client = await MongoClient.connect(mongoUrl);
+        try {
+            var collection = client.db().collection('users');
+            var mismatches = [];
 
-        var db = client.db();
-        var collection = db.collection('users');
-
-        var mismatches = [];
-        var verifiedCount = 0;
-
-        var checkNext = function (index) {
-            if (index >= sourceKeys.length) {
-                client.close(function () {
-                    if (mismatches.length > 0) {
-                        return callback(new Error('Verification failed: ' + mismatches.join('; ')), {
-                            total: sourceKeys.length,
-                            verified: verifiedCount,
-                            mismatches: mismatches
-                        });
-                    }
-
-                    callback(null, {
-                        total: sourceKeys.length,
-                        verified: verifiedCount,
-                        mismatches: []
-                    });
-                });
-                return;
-            }
-
-            var key = sourceKeys[index];
-            var src = sourceUsers[key];
-            var username = src.username || key;
-            var usernameNorm = username.toLowerCase();
-
-            collection.findOne({ usernameNorm: usernameNorm }, function (err, doc) {
-                if (err) {
-                    client.close();
-                    return callback(err);
-                }
+            for (var index = 0; index < sourceKeys.length; index++) {
+                var key = sourceKeys[index];
+                var src = sourceUsers[key];
+                var username = src.username || key;
+                var doc = await collection.findOne({ usernameNorm: username.toLowerCase() });
 
                 if (!doc) {
                     mismatches.push('User ' + username + ' missing from MongoDB');
@@ -245,13 +195,20 @@ function verify(options, callback) {
                         mismatches.push('DisplayName mismatch for ' + username + ': expected ' + src.displayName + ', got ' + doc.displayName);
                     }
                 }
+            }
 
-                verifiedCount++;
-                checkNext(index + 1);
-            });
-        };
-
-        checkNext(0);
+            var stats = { total: sourceKeys.length, verified: sourceKeys.length, mismatches: mismatches };
+            if (mismatches.length > 0) {
+                var error = new Error('Verification failed: ' + mismatches.join('; '));
+                error.stats = stats;
+                throw error;
+            }
+            return stats;
+        } finally {
+            await client.close();
+        }
+    }()).then(function (stats) { callback(null, stats); }, function (error) {
+        callback(error, error.stats);
     });
 }
 

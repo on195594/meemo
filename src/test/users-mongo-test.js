@@ -28,20 +28,17 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
     var prevUsersFile = process.env.USERS_FILE;
     var prevAuthSource = process.env.AUTH_USER_SOURCE;
 
-    before(function (done) {
+    before(async function () {
         process.env.USERS_FILE = testUsersFile;
         fs.rmSync(testUsersFile, { force: true });
 
-        MongoClient.connect(config.databaseUrl, { useUnifiedTopology: true }, function (err, client) {
-            if (err) return done(err);
-            dbClient = client;
-            config.db = client.db();
-            mongoRepo = new MongoUserRepository(config.db);
-            mongoRepo.ensureIndexes(done);
-        });
+        dbClient = await MongoClient.connect(config.databaseUrl);
+        config.db = dbClient.db();
+        mongoRepo = new MongoUserRepository(config.db);
+        await mongoRepo.ensureIndexes();
     });
 
-    after(function (done) {
+    after(async function () {
         if (prevUsersFile === undefined) delete process.env.USERS_FILE;
         else process.env.USERS_FILE = prevUsersFile;
 
@@ -52,20 +49,14 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
         fs.rmSync(testUsersFile, { force: true });
 
         if (dbClient) {
-            config.db.collection('users').drop(function () {
-                dbClient.close(done);
-            });
-        } else {
-            done();
+            await config.db.collection('users').drop();
+            await dbClient.close();
         }
     });
 
-    beforeEach(function (done) {
-        config.db.collection('users').deleteMany({}, function (err) {
-            if (err) return done(err);
-            fs.rmSync(testUsersFile, { force: true });
-            done();
-        });
+    beforeEach(async function () {
+        await config.db.collection('users').deleteMany({});
+        fs.rmSync(testUsersFile, { force: true });
     });
 
     describe('MongoUserRepository CRUD & constraints', function () {

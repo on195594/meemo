@@ -47,6 +47,59 @@ describe('Structured Logging & Request Context (RF-401)', function () {
             });
     });
 
+    it('omits query strings and sensitive values from request logs', function (done) {
+        var logs = [];
+        var consoleLogs = [];
+        var previousDebug = process.env.DEBUG;
+        var previousConsoleLog = console.log;
+        process.env.DEBUG = '1';
+        console.log = function (message) { consoleLogs.push(String(message)); };
+
+        function finish(err) {
+            if (previousDebug === undefined) delete process.env.DEBUG;
+            else process.env.DEBUG = previousDebug;
+            console.log = previousConsoleLog;
+            done(err);
+        }
+
+        var customLogger = logger.createLogger({
+            forceEnable: true,
+            stream: function (record) { logs.push(record); }
+        });
+
+        var app = createApp({
+            sessionMemory: true,
+            sessionSecret: 'rf-401-secret',
+            logger: customLogger
+        });
+
+        request(app)
+            .get('/api/health/live?token=secret&password=secret&filter=private-note&email=user@example.com')
+            .set('X-Request-Id', 'rf-714-request')
+            .expect(200)
+            .end(function (err) {
+                if (err) return finish(err);
+
+                setTimeout(function () {
+                    try {
+                        expect(logs.length).to.be.greaterThan(0);
+                        var entry = logs[logs.length - 1];
+                        var serializedLogs = JSON.stringify(logs.concat(consoleLogs));
+                        var sensitiveValues = ['secret', 'private-note', 'user@example.com'];
+
+                        expect(entry.path).to.equal('/api/health/live');
+                        expect(entry.requestId).to.equal('rf-714-request');
+                        sensitiveValues.forEach(function (value) {
+                            expect(serializedLogs.indexOf(value)).to.equal(-1);
+                        });
+                        finish();
+                    } catch (assertionError) {
+                        finish(assertionError);
+                    }
+                }, 10);
+            });
+    });
+
     it('preserves existing client-provided X-Request-Id header', function (done) {
         var logs = [];
         var customLogger = logger.createLogger({

@@ -22,7 +22,6 @@ var express = require('express'),
     tags = require('./src/database/tags.js'),
     settings = require('./src/database/settings.js'),
     nodeify = require('./src/promise.js'),
-    morgan = require('morgan'),
     os = require('os'),
     serveStatic = require('serve-static'),
     logger = require('./src/http/middleware/logger.js');
@@ -33,7 +32,6 @@ function createApp(options) {
     if (options.db) {
         config.db = options.db;
     }
-
     var isProduction = options.isProduction !== undefined ? options.isProduction : (process.env.NODE_ENV === 'production');
     var sessionSecret = options.sessionSecret || process.env.SESSION_SECRET;
 
@@ -55,7 +53,7 @@ function createApp(options) {
             uploadInstance(req, res, function (err) {
                 if (err) {
                     if (err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_FILE_COUNT') {
-                        return next(new responses.HttpError(413, 'File size or count limit exceeded'));
+                        return next(new responses.HttpError(413, err.message || 'File limit exceeded'));
                     }
                     return next(new responses.HttpError(400, err.message || 'Upload failed'));
                 }
@@ -64,28 +62,30 @@ function createApp(options) {
         };
     }
 
+    function uploadLimits(fileSize) {
+        return {
+            fileSize: fileSize,
+            files: 1,
+            fields: 10,
+            parts: 12,
+            fieldNameSize: 100,
+            fieldSize: 1024 * 1024,
+            fieldNestingDepth: 0
+        };
+    }
+
     var memoryUpload = createUploadMiddleware(multer({
         storage: multer.memoryStorage(),
-        limits: {
-            fileSize: maxAttachmentSize,
-            files: 1
-        }
+        limits: uploadLimits(maxAttachmentSize)
     }).any());
 
     var diskUpload = createUploadMiddleware(multer({
         dest: os.tmpdir(),
-        limits: {
-            fileSize: maxImportSize,
-            files: 1
-        }
+        limits: uploadLimits(maxImportSize)
     }).any());
 
     var structuredLogger = options.logger || logger.defaultLogger;
     app.use(structuredLogger.middleware);
-
-    if (process.env.DEBUG) {
-        app.use(morgan('dev', { immediate: false, stream: { write: function (str) { console.log(str.slice(0, -1)); } } }));
-    }
 
     app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
 
@@ -97,6 +97,13 @@ function createApp(options) {
     }
 
     app.use(json({ strict: true, limit: '5mb' }));
+
+    app.use('/api/health/ready', function (req, res, next) {
+        if (options.shutdownManager && options.shutdownManager.isShuttingDown) {
+            return next(new responses.HttpError(503, 'Service is shutting down'));
+        }
+        next();
+    });
 
     var sessionStore;
     if (options.sessionStore) {
@@ -162,7 +169,7 @@ function startServer(options, callback) {
             settings.ensureIndexes()
         ]);
 
-        var app = createApp(options);
+        var app = createApp(Object.assign({}, options, { shutdownManager: shutdownManager }));
         var port = options.port !== undefined ? options.port : PORT;
         var bindAddress = options.bindAddress || BIND_ADDRESS;
         var server = await new Promise(function (resolve, reject) {

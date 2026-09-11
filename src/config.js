@@ -7,7 +7,7 @@ var MongoClient = require('mongodb').MongoClient,
 
 function clearDatabase(callback) {
     var client;
-    var promise = MongoClient.connect(module.exports.databaseUrl, { useUnifiedTopology: true }).then(function (connected) {
+    var promise = MongoClient.connect(module.exports.databaseUrl).then(function (connected) {
         client = connected;
         return client.db().dropDatabase();
     }).finally(function () {

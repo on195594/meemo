@@ -51,13 +51,13 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `USERS_FILE` | `./.users.json` | `/app/data/.users.json` | Account data file |
 | `AUTH_USER_SOURCE` | `file` | `file` | Primary account source: `file` or `mongo` |
 | `SESSION_SECRET` | Random on startup | Value of host `SESSION_SECRET` | Session signing secret |
-| `REGISTRATION_MODE` | `open` | `open` | Registration policy: `open`, `first-user`, or `disabled` |
+| `REGISTRATION_MODE` | `open` | `first-user` | Registration policy: `open`, `first-user`, or `disabled` |
 | `URL_ENRICHMENT_ENABLED` | `false` | `false` | Outbound URL metadata fetch (disabled by default for SSRF safety) |
 | `MAX_ATTACHMENT_SIZE` | `10485760` (10MB) | `10485760` | Maximum attachment upload size in bytes |
 | `MAX_IMPORT_SIZE` | `52428800` (50MB) | `52428800` | Maximum import archive size in bytes |
 | `ENABLE_WORKERS` | `true` | `true` | Enable background cleanup workers |
 | `TAG_CLEANUP_INTERVAL_MS` | `60000` | `60000` | Tag cleanup worker interval in milliseconds |
-| `SHUTDOWN_TIMEOUT_MS` | `10000` | `10000` | Graceful shutdown timeout in milliseconds |
+| `SHUTDOWN_TIMEOUT_MS` | `15000` | `15000` | Graceful shutdown timeout in milliseconds |
 | `MONGO_MAX_POOL_SIZE` | `50` | `50` | Maximum MongoDB connection pool size |
 | `MONGO_MIN_POOL_SIZE` | `1` | `1` | Minimum MongoDB connection pool size |
 | `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |
@@ -109,6 +109,8 @@ Do not commit generated `public/`, `node_modules/`, account files, attachments, 
 
 - [Contribution guide](CONTRIBUTING.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Backup and restore](docs/BACKUP_RESTORE.md)
+- [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Security policy](SECURITY.md)
 
 ## License

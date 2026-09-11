@@ -19,6 +19,7 @@ services:
       USERS_FILE: /app/data/.users.json
       ATTACHMENT_DIR: /app/data/storage
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET environment variable must be set in production}
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-first-user}
     ports:
       - "${MEEMO_PORT:-3000}:3000"
     healthcheck:
@@ -39,6 +40,7 @@ services:
     networks:
       - backend
     restart: unless-stopped
+    stop_grace_period: 20s
 
   mongodb:
     image: mongo:8

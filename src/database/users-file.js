@@ -24,7 +24,9 @@ LegacyFileUserRepository.prototype._readUsers = function () {
 };
 
 LegacyFileUserRepository.prototype._writeUsers = function (users) {
-    return safe.fs.writeFileSync(this.getFilePath(), JSON.stringify(users, null, 4));
+    if (!safe.fs.writeFileSync(this.getFilePath(), JSON.stringify(users, null, 4))) {
+        throw safe.error || new Error('Could not write users file');
+    }
 };
 
 LegacyFileUserRepository.prototype.get = function (id, callback) {

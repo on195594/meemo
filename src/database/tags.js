@@ -3,7 +3,7 @@
 'use strict';
 
 var assert = require('assert'),
-    ObjectId = require('mongodb').ObjectID,
+    ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
     nodeify = require('../promise.js'),
     users = require('../users.js');
@@ -11,6 +11,7 @@ var assert = require('assert'),
 var unifiedCollection = null;
 var legacyCollections = {};
 var indexesCreated = false;
+var lastModifiedAt = 0;
 
 function resetCache() {
     unifiedCollection = null;
@@ -66,27 +67,75 @@ function get(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
 
     var promise = getAlternateUserId(userId).then(async function (alternateUserId) {
-        var query = alternateUserId ? { $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { ownerId: userId };
-        var result = await getUnifiedCollection().find(query).sort({ usage: -1, createdAt: -1 }).toArray();
-        if (result && result.length) return result;
-        result = await getLegacyCollection(userId).find({}).sort({ createdAt: -1 }).toArray();
-        if ((!result || !result.length) && alternateUserId) {
-            result = await getLegacyCollection(alternateUserId).find({}).sort({ createdAt: -1 }).toArray();
-        }
-        return result || [];
+        var userIds = alternateUserId ? [alternateUserId, userId] : [userId];
+        var results = await Promise.all(userIds.map(function (id) {
+            return getLegacyCollection(id).find({}).toArray();
+        }).concat(userIds.map(function (id) {
+            return getUnifiedCollection().find({ ownerId: id }).toArray();
+        })));
+        var byName = new Map();
+        results.reduce(function (all, result) { return all.concat(result); }, []).forEach(function (tag) {
+            byName.set(tag.name, tag);
+        });
+        return Array.from(byName.values()).sort(function (left, right) {
+            return (right.usage || 0) - (left.usage || 0) || (right.createdAt || 0) - (left.createdAt || 0);
+        });
     });
     return nodeify(promise, callback);
 }
 
 function update(userId, name, callback) {
+    var promise = updateWithState(userId, name).then(function () { return undefined; });
+    return nodeify(promise, callback);
+}
+
+function updateWithState(userId, name, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof name, 'string');
 
-    var promise = getUnifiedCollection().updateOne({ ownerId: userId, name: name }, {
+    var modifiedAt = Math.max(Date.now(), lastModifiedAt + 1);
+    lastModifiedAt = modifiedAt;
+    var promise = getUnifiedCollection().findOneAndUpdate({ ownerId: userId, name: name }, {
         $inc: { usage: 1 },
-        $set: { ownerId: userId, name: name, modifiedAt: Date.now() },
-        $setOnInsert: { createdAt: Date.now() }
-    }, { upsert: true }).then(function () { return undefined; });
+        $set: { ownerId: userId, name: name, modifiedAt: modifiedAt },
+        $setOnInsert: { createdAt: modifiedAt }
+    }, { upsert: true, returnDocument: 'before', includeResultMetadata: true }).then(function (result) {
+        var previous = result.value;
+        return {
+            name: name,
+            previous: previous,
+            documentId: previous ? previous._id : result.lastErrorObject.upserted,
+            modifiedAt: modifiedAt,
+            expectedUsage: (previous && previous.usage || 0) + 1
+        };
+    });
+    return nodeify(promise, callback);
+}
+
+function restoreUpdate(userId, state, callback) {
+    assert.strictEqual(typeof userId, 'string');
+    assert(state && typeof state.name === 'string');
+
+    var collection = getUnifiedCollection();
+    var exactQuery = {
+        _id: state.documentId,
+        ownerId: userId,
+        name: state.name,
+        modifiedAt: state.modifiedAt,
+        usage: state.expectedUsage
+    };
+    var promise;
+    if (state.previous) {
+        promise = collection.replaceOne(exactQuery, state.previous).then(function (result) {
+            if (result.matchedCount) return;
+            return collection.updateOne({ _id: state.documentId, ownerId: userId, usage: { $gt: 0 } }, { $inc: { usage: -1 } });
+        });
+    } else {
+        promise = collection.deleteOne(exactQuery).then(function (result) {
+            if (result.deletedCount) return;
+            return collection.updateOne({ _id: state.documentId, ownerId: userId, usage: { $gt: 0 } }, { $inc: { usage: -1 } });
+        });
+    }
     return nodeify(promise, callback);
 }
 
@@ -109,6 +158,8 @@ module.exports = {
     get: get,
     del: del,
     update: update,
+    updateWithState: updateWithState,
+    restoreUpdate: restoreUpdate,
     ensureIndexes: ensureIndexes,
     getUnifiedCollection: getUnifiedCollection,
     resetCache: resetCache

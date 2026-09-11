@@ -58,29 +58,67 @@ async function exportDirectory(userId, username) {
 
 async function copyAttachment(userId, sourcePath, storageKey) {
     var target = path.join(await ensureUserDirectory(userId), storageKey);
-    var created = false;
-    try {
-        await fs.access(target);
-    } catch (error) {
-        created = true;
-    }
-    await fs.copyFile(sourcePath, target);
-    return { path: target, created: created };
+    await fs.copyFile(sourcePath, target, require('fs').constants.COPYFILE_EXCL);
+    return { path: target, created: true };
 }
 
 async function removeFiles(files) {
-    await Promise.all(files.map(async function (file) {
-        try { await fs.rm(file, { force: true }); } catch (error) {}
-    }));
+    var failures = [];
+    for (var file of files) {
+        try {
+            await fs.rm(file, { force: true });
+        } catch (error) {
+            failures.push({ file: file, error: error });
+        }
+    }
+    return failures;
 }
 
 async function removeFile(file) {
-    try { await fs.rm(file, { force: true }); } catch (error) {}
+    await fs.rm(file, { force: true });
 }
 
 async function checkAccess() {
     await fs.mkdir(config.attachmentDir, { recursive: true });
     await fs.access(config.attachmentDir, require('fs').constants.R_OK | require('fs').constants.W_OK);
+}
+
+function isSafePathSegment(segment) {
+    return typeof segment === 'string' && segment && path.basename(segment) === segment && segment !== '.' && segment !== '..' && segment.indexOf('\0') === -1;
+}
+
+async function listAttachments() {
+    var root = path.resolve(config.attachmentDir);
+    var rootStat;
+    try {
+        rootStat = await fs.lstat(root);
+    } catch (error) {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+    }
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('Unsafe attachment root: ' + root);
+
+    var result = [];
+    var userEntries = await fs.readdir(root, { withFileTypes: true });
+    userEntries.sort(function (left, right) { return left.name.localeCompare(right.name); });
+    for (var userEntry of userEntries) {
+        if (!isSafePathSegment(userEntry.name) || !userEntry.isDirectory() || userEntry.isSymbolicLink()) {
+            throw new Error('Unsafe attachment path: ' + userEntry.name);
+        }
+        var userRoot = path.join(root, userEntry.name);
+        var fileEntries = await fs.readdir(userRoot, { withFileTypes: true });
+        fileEntries.sort(function (left, right) { return left.name.localeCompare(right.name); });
+        for (var fileEntry of fileEntries) {
+            if (!isSafePathSegment(fileEntry.name) || !fileEntry.isFile() || fileEntry.isSymbolicLink()) {
+                throw new Error('Unsafe attachment path: ' + userEntry.name + '/' + fileEntry.name);
+            }
+            var filePath = path.join(userRoot, fileEntry.name);
+            var stat = await fs.lstat(filePath);
+            if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Unsafe attachment path: ' + userEntry.name + '/' + fileEntry.name);
+            result.push({ root: userEntry.name, identifier: fileEntry.name, path: filePath, mtimeMs: stat.mtimeMs });
+        }
+    }
+    return result;
 }
 
 module.exports = {
@@ -92,5 +130,6 @@ module.exports = {
     copyAttachment: copyAttachment,
     removeFiles: removeFiles,
     removeFile: removeFile,
-    checkAccess: checkAccess
+    checkAccess: checkAccess,
+    listAttachments: listAttachments
 };

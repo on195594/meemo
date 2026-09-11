@@ -9,7 +9,8 @@
     "build": "node scripts/build-frontend.js",
     "build:web": "npm --prefix web run build",
     "start": "node app.js",
-    "test": "./runTests"
+    "test": "./runTests",
+    "api:generate": "openapi-typescript docs/openapi.yaml --default-non-nullable false -o types/generated/api-types.ts"
   },
   "repository": {
     "type": "git",
@@ -28,7 +29,7 @@
     "checksum": "^1.0.0",
     "commander": "^9.4.1",
     "connect-lastmile": "^2.2.0",
-    "connect-mongo": "^4.6.0",
+    "connect-mongo": "^5.1.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "debug": "^4.3.4",
@@ -39,9 +40,9 @@
     "markdown-it-emoji": "^2.0.2",
     "markdown-it-hashtag": "^0.4.0",
     "mkdirp": "^1.0.4",
-    "mongodb": "^4.10.0",
+    "mongodb": "^6.21.0",
     "morgan": "^1.10.0",
-    "multer": "^1.4.4",
+    "multer": "^2.3.0",
     "rss": "^1.2.2",
     "safetydance": "^2.4.0",
     "serve-static": "^1.15.0",
@@ -53,7 +54,10 @@
   },
   "devDependencies": {
     "expect.js": "^0.3.1",
+    "js-yaml": "^4.3.2",
     "mocha": "^10.3.0",
-    "supertest": "^7.2.2"
+    "openapi-typescript": "^7.13.0",
+    "supertest": "^7.2.2",
+    "tar-stream": "^2.2.0"
   }
 }

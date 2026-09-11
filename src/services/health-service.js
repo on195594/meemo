@@ -21,4 +21,6 @@ function ready(callback) {
     return nodeify(promise, callback);
 }
 
-module.exports = { ready: ready };
+module.exports = {
+    ready: ready
+};
