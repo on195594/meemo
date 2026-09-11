@@ -1,7 +1,7 @@
 # Meemo 重构执行路线图
 
 > 建议仓库路径：`docs/MEEMO_REFACTORING_ROADMAP.md`
-> 状态：Phase 5 实施完成，Gate G0~G4 全部通过，准备进入 Phase 6（Docker 与运维）
+> 状态：COMPLETE，Gate G0~G5 全部通过；`v2.0.0-rc1` 已发布并完成镜像、部署与恢复验收
 > 基线：`master` @ `3a8fa1585280b6ccff699a10120c3cafccfb90c2`（2026-09-09）
 > 目标：在不进行“大爆炸式重写”的前提下，把 Meemo 演进成安全、可测试、可迁移、可持续维护的现代自托管应用。
 
@@ -963,6 +963,8 @@ release vX.Y.Z -> :vX.Y.Z + :X.Y + :latest
 
 ## 6.3 RF-603：Backup / Restore Runbook
 
+实施状态：已完成（`docs/BACKUP_RESTORE.md` 已落地；`v2.0.0-rc1` 发布后以匹配的 MongoDB 与 `/app/data` 备份在 clean isolated stack 完成恢复演练）。
+
 新增 `docs/BACKUP_RESTORE.md`，至少覆盖：
 
 ```text
@@ -977,11 +979,13 @@ verify after restore
 
 ## 6.4 Gate G5 验收
 
-- [ ] Release 能生成并 push multi-arch 镜像。
-- [ ] 已发布镜像可通过 immutable tag 回滚。
-- [ ] backup/restore 文档经过实际演练。
-- [ ] production config 缺失关键 secret 会 fail fast。
-- [ ] readiness 能检测依赖不可用。
+- [x] Release 能生成并 push multi-arch 镜像。
+- [x] 已发布镜像可通过 immutable tag 回滚。
+- [x] backup/restore 文档经过实际演练。
+- [x] production config 缺失关键 secret 会 fail fast。
+- [x] readiness 能检测依赖不可用。
+
+验收证据：[`v2.0.0-rc1`](https://github.com/on195594/meemo/releases/tag/v2.0.0-rc1)、[master gate](https://github.com/on195594/meemo/actions/runs/34557577686)、[release gate](https://github.com/on195594/meemo/actions/runs/34557747813)、OCI index `sha256:a753d86cc0baf569bfe184412249068b765ecf6772adfd461264680a0deeee13`。
 
 ---
 
@@ -1120,7 +1124,7 @@ ADR 只记录“为什么选这个方案”和“放弃了什么”，不重复�
 
 必须同时满足：
 
-- [ ] G0–G5 全部通过。
+- [x] G0–G5 全部通过。
 - [x] `.users.json` 不再是生产账户数据源。
 - [x] username 不再作为文件路径或 collection identity。
 - [x] Things、Tags、Settings 彻底收敛为统一集合，不再按用户动态建表。
@@ -1130,8 +1134,8 @@ ADR 只记录“为什么选这个方案”和“放弃了什么”，不重复�
 - [x] 后端业务边界不再集中于单个 `routes.js` / `logic.js`。
 - [x] 关键后端代码具备清晰输入校验与 API 契约文档。
 - [x] Vue 1、Gulp、jQuery、legacy vendored sanitizer 及旧多页模板已从 production build 移除。
-- [ ] Docker image 可从 release 重新构建并通过版本标签回滚。
-- [ ] Backup/Restore 实际演练成功。
+- [x] Docker image 可从 release 重新构建并通过版本标签回滚。
+- [x] Backup/Restore 实际演练成功。
 - [x] README、ARCHITECTURE、AGENTS 与代码现实一致。
 
 达到这些条件后，才把后续 PWA、Quick Capture、Browser Clipper、Semantic Search、AI enrichment 当作产品迭代，而不是继续把它们混在“重构”名义下。
