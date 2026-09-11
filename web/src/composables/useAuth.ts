@@ -20,9 +20,21 @@ const authError = ref<string | null>(null);
 const sessionExpired = ref(false);
 const isFirstUser = ref(false);
 const initialized = ref(false);
+const SESSION_STORAGE_KEY = 'meemo_has_session';
+
+function setSessionMarker(active: boolean) {
+  if (typeof localStorage !== 'undefined') {
+    if (active) {
+      localStorage.setItem(SESSION_STORAGE_KEY, '1');
+    } else {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  }
+}
 
 // Register 401 unauthorized listener to handle expired or invalid sessions
 onUnauthorized((path: string) => {
+  setSessionMarker(false);
   if (user.value) {
     user.value = null;
     sessionExpired.value = true;
@@ -55,8 +67,10 @@ export function useAuth() {
       user.value = res.user;
       sessionExpired.value = false;
       isFirstUser.value = false;
+      setSessionMarker(true);
     } catch (err: any) {
       user.value = null;
+      setSessionMarker(false);
       if (err instanceof ApiError && err.status === 401) {
         await checkFirstUser();
       } else {
@@ -77,6 +91,7 @@ export function useAuth() {
       user.value = res.user;
       sessionExpired.value = false;
       isFirstUser.value = false;
+      setSessionMarker(true);
       return { success: true };
     } catch (err: any) {
       const msg = err.message || 'Invalid username or password';
@@ -116,6 +131,7 @@ export function useAuth() {
 
   async function logout(): Promise<void> {
     isLoading.value = true;
+    setSessionMarker(false);
     try {
       await api.auth.logout();
     } catch (err) {

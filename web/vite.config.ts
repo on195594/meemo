@@ -24,6 +24,14 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-core': ['vue', 'vue-router'],
+          'vendor-markdown': ['markdown-it', 'dompurify'],
+        },
+      },
+    },
   },
 });

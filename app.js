@@ -98,7 +98,17 @@ function createApp(options) {
         app.set('trust proxy', ['loopback', 'uniquelocal']);
     }
 
-    app.use(serveStatic(__dirname + '/public', { etag: false }));
+    app.use(serveStatic(__dirname + '/public', {
+        etag: true,
+        lastModified: true,
+        setHeaders: function (res, filePath) {
+            if (filePath.endsWith('.html')) {
+                res.setHeader('Cache-Control', 'no-cache');
+            } else if (filePath.indexOf('/assets/') !== -1) {
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            }
+        }
+    }));
 
     if (process.env.CORS_ORIGIN) {
         var allowedOrigins = process.env.CORS_ORIGIN.split(',').map(function (o) { return o.trim(); });

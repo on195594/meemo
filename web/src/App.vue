@@ -165,13 +165,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, provide, watch, defineAsyncComponent } from 'vue';
 import { useAuth } from './composables/useAuth';
 import { useSettings } from './composables/useSettings';
 import LoginModal from './components/LoginModal.vue';
-import SettingsModal from './components/SettingsModal.vue';
-import ImportModal from './components/ImportModal.vue';
-import CheatsheetModal from './components/CheatsheetModal.vue';
+
+const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'));
+const ImportModal = defineAsyncComponent(() => import('./components/ImportModal.vue'));
+const CheatsheetModal = defineAsyncComponent(() => import('./components/CheatsheetModal.vue'));
 
 const {
   user,
@@ -265,7 +266,7 @@ watch(isAuthenticated, (authed) => {
 
 onMounted(() => {
   init();
-  if (isAuthenticated.value) {
+  if (isAuthenticated.value || (typeof localStorage !== 'undefined' && localStorage.getItem('meemo_has_session') === '1')) {
     loadSettings();
   }
   document.addEventListener('click', handleGlobalClick);

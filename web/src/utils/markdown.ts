@@ -29,10 +29,24 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
   return defaultRender(tokens, idx, options, env, self);
 };
 
+// Add lazy loading and async decoding to images
+const defaultImageRender =
+  md.renderer.rules.image ||
+  function (tokens, idx, options, _env, self) {
+    return self.renderToken(tokens, idx, options);
+  };
+
+md.renderer.rules.image = function (tokens, idx, options, env, self) {
+  const token = tokens[idx];
+  token.attrSet('loading', 'lazy');
+  token.attrSet('decoding', 'async');
+  return defaultImageRender(tokens, idx, options, env, self);
+};
+
 export function renderMarkdown(content: string): string {
   if (!content) return '';
   const rawHtml = md.render(content);
   return DOMPurify.sanitize(rawHtml, {
-    ADD_ATTR: ['target', 'rel'],
+    ADD_ATTR: ['target', 'rel', 'loading', 'decoding'],
   });
 }

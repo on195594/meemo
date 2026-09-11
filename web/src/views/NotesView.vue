@@ -340,11 +340,17 @@ function setupIntersectionObserver() {
   }
 }
 
+let initialLoadTriggered = false;
+
 watch(isAuthenticated, (authenticated) => {
   if (authenticated) {
-    fetchNotes(true);
-    fetchTags();
+    if (!initialLoadTriggered) {
+      initialLoadTriggered = true;
+      fetchNotes(true);
+      fetchTags();
+    }
   } else {
+    initialLoadTriggered = false;
     clearNotes();
   }
 });
@@ -362,7 +368,9 @@ function handleImportEvent() {
 }
 
 onMounted(() => {
-  if (isAuthenticated.value) {
+  const hasSession = typeof localStorage !== 'undefined' && localStorage.getItem('meemo_has_session') === '1';
+  if (isAuthenticated.value || hasSession) {
+    initialLoadTriggered = true;
     fetchNotes(true);
     fetchTags();
   }
