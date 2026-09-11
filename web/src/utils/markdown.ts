@@ -51,16 +51,22 @@ export function renderMarkdown(content: string): string {
   });
 }
 
-// Highlight keyword in already-sanitized HTML, touching only text nodes.
-// Splits on HTML tags (<...>) so attributes (href, src, …) are never modified.
+// Highlight search terms in already-sanitized HTML, touching only text nodes.
+// Splits on HTML tags (<...>) so attributes (href, src, …) are never touched.
+// Multi-word queries highlight each word independently.
 export function highlightKeyword(html: string, keyword: string): string {
   if (!keyword) return html;
-  // Strip leading # for tag-style queries so "#work" highlights "work"
-  const term = keyword.startsWith('#') ? keyword.slice(1) : keyword;
-  if (!term) return html;
-  // ponytail: simple split on tags, not a full HTML parser — sufficient for
-  //   our sanitized markdown output; swap to a TreeWalker if ever needed.
-  const re = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  // Collect individual terms: "#tag word" → ["tag", "word"]
+  const terms = keyword.trim().split(/\s+/).map((w) =>
+    w.startsWith('#') ? w.slice(1) : w
+  ).filter(Boolean);
+  if (!terms.length) return html;
+  // ponytail: simple tag-boundary split, not a full HTML parser — sufficient
+  //   for our DOMPurify-sanitized markdown output; swap to TreeWalker if needed.
+  const re = new RegExp(
+    terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+    'gi'
+  );
   return html.split(/(<[^>]*>)/).map((chunk) =>
     chunk.startsWith('<') ? chunk : chunk.replace(re, '<mark>$&</mark>')
   ).join('');
