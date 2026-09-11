@@ -72,13 +72,6 @@
             </button>
           </div>
 
-          <nav class="nav-links">
-            <router-link to="/" class="nav-item">Notes</router-link>
-            <router-link v-if="user" :to="`/public/${user.username}`" class="nav-item">
-              Public
-            </router-link>
-          </nav>
-
           <div class="nav-auth">
             <!-- Authenticated User Profile Dropdown -->
             <div v-if="isAuthenticated && user" class="user-menu-wrapper">

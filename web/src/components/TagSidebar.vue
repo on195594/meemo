@@ -1,5 +1,31 @@
 <template>
-  <aside class="tag-sidebar" aria-label="Tags filter">
+  <aside class="tag-sidebar" aria-label="Navigation and tags filter">
+    <!-- Views Navigation (Notes & Public Stream) -->
+    <nav class="sidebar-nav" aria-label="Views">
+      <router-link
+        to="/"
+        class="sidebar-nav-item"
+        :class="{ active: $route.path === '/' && !selectedTag }"
+        title="All Notes"
+      >
+        <span class="nav-icon">📝</span>
+        <span class="nav-text">Notes</span>
+      </router-link>
+
+      <router-link
+        v-if="user"
+        :to="`/public/${user.username}`"
+        class="sidebar-nav-item"
+        :class="{ active: $route.path === `/public/${user.username}` }"
+        title="My Public Stream"
+      >
+        <span class="nav-icon">🌐</span>
+        <span class="nav-text">Public Stream</span>
+      </router-link>
+    </nav>
+
+    <div class="sidebar-divider"></div>
+
     <div class="sidebar-header">
       <h3 class="sidebar-title">Tags</h3>
       <button
@@ -35,7 +61,10 @@
 </template>
 
 <script setup lang="ts">
+import { useAuth } from '../composables/useAuth';
 import type { Tag } from '../api/client';
+
+const { user } = useAuth();
 
 defineProps<{
   tags: Tag[];
@@ -55,6 +84,47 @@ defineEmits<{
   border-radius: 8px;
   padding: 1rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #4a5568;
+  transition: all 0.15s ease;
+}
+
+.sidebar-nav-item:hover {
+  background-color: #f7fafc;
+  color: #2b6cb0;
+}
+
+.sidebar-nav-item.active {
+  background-color: #ebf8ff;
+  color: #2b6cb0;
+  font-weight: 600;
+}
+
+.sidebar-nav-item .nav-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.sidebar-divider {
+  height: 1px;
+  background-color: #edf2f7;
+  margin: 0.75rem 0;
 }
 
 .sidebar-header {
