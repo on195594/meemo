@@ -83,4 +83,4 @@ Update documentation with behavior changes:
 - `CONTRIBUTING.md`: contributor workflow and standards.
 - `SECURITY.md`: reporting or support policy.
 
-Use short imperative commit subjects. Conventional Commit prefixes such as `fix:`, `feat:`, `docs:`, `test:`, and `chore:` are preferred. Do not commit or push unless explicitly requested.
+Use short imperative commit subjects. Conventional Commit prefixes such as `fix:`, `feat:`, `docs:`, `test:`, and `chore:` are preferred.
