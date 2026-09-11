@@ -267,17 +267,22 @@ defineExpose({
 <style scoped>
 .note-composer-card {
   background: #ffffff;
-  border: 1px solid #cbd5e0;
-  border-radius: 8px;
-  padding: 0.85rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
   margin-bottom: 1.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.note-composer-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
 .note-composer-card.focused {
   border-color: #3182ce;
-  box-shadow: 0 0 0 2px rgba(49, 130, 206, 0.15);
+  box-shadow: 0 4px 14px -2px rgba(49, 130, 206, 0.15), 0 0 0 2px rgba(49, 130, 206, 0.15);
 }
 
 .note-composer-card.dragging {
@@ -427,33 +432,34 @@ defineExpose({
 }
 
 .btn-composer {
-  padding: 0.4rem 0.9rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  padding: 0.45rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  border: none;
+  transition: all 0.2s ease;
 }
 
 .btn-composer.primary {
-  background-color: #2b6cb0;
+  background-color: #3182ce;
   color: #ffffff;
-  border: 1px solid transparent;
 }
 
 .btn-composer.primary:hover:not(:disabled) {
-  background-color: #2c5282;
+  background-color: #2b6cb0;
+  box-shadow: 0 2px 6px rgba(49, 130, 206, 0.25);
 }
 
 .btn-composer.secondary {
-  background-color: transparent;
-  color: #718096;
-  border: 1px solid transparent;
+  background-color: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
 }
 
 .btn-composer.secondary:hover:not(:disabled) {
-  background-color: #edf2f7;
-  color: #2d3748;
+  background-color: #e2e8f0;
+  color: #1e293b;
 }
 
 .btn-composer:disabled {

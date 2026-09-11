@@ -561,49 +561,55 @@ onUnmounted(() => {
 .active-filter-bar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  background-color: #edf2f7;
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
-  margin-bottom: 1rem;
+  gap: 0.6rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 0.5rem 0.85rem;
+  border-radius: 10px;
+  margin-bottom: 1.25rem;
   flex-wrap: wrap;
   font-size: 0.85rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .filter-label {
   font-weight: 600;
-  color: #4a5568;
+  color: #64748b;
 }
 
 .filter-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.35rem;
   background: #ffffff;
-  border: 1px solid #cbd5e0;
-  border-radius: 12px;
-  padding: 0.15rem 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 0.18rem 0.6rem;
   font-size: 0.8rem;
-  color: #2d3748;
+  color: #334155;
+  font-weight: 500;
 }
 
 .filter-chip.archive-chip {
-  background-color: #fefcbf;
-  border-color: #faf089;
-  color: #744210;
+  background-color: #fefce8;
+  border-color: #fef08a;
+  color: #854d0e;
 }
 
 .chip-remove {
   background: none;
   border: none;
-  color: #718096;
+  color: #94a3b8;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   line-height: 1;
+  padding: 0 0.15rem;
+  border-radius: 50%;
+  transition: color 0.15s;
 }
 
 .chip-remove:hover {
-  color: #e53e3e;
+  color: #ef4444;
 }
 
 .clear-all-link {
@@ -614,6 +620,12 @@ onUnmounted(() => {
   font-size: 0.8rem;
   text-decoration: underline;
   margin-left: auto;
+  font-weight: 500;
+  transition: color 0.15s;
+}
+
+.clear-all-link:hover {
+  color: #2b6cb0;
 }
 
 .toast-banner {
@@ -680,13 +692,13 @@ onUnmounted(() => {
 .load-more-btn {
   background-color: #ffffff;
   border: 1px solid #cbd5e0;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 0.6rem 1.5rem;
   font-size: 0.9rem;
   font-weight: 500;
   color: #3182ce;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .load-more-btn:hover:not(:disabled) {
@@ -707,35 +719,40 @@ onUnmounted(() => {
 .empty-state {
   text-align: center;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 3rem 1.5rem;
-  color: #718096;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 3.5rem 1.5rem;
+  color: #64748b;
 }
 
 .empty-icon {
-  font-size: 2.5rem;
-  margin-bottom: 0.5rem;
+  font-size: 2.75rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.85;
 }
 
 .empty-state h3 {
-  font-size: 1.2rem;
-  color: #2d3748;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #1e293b;
   margin-bottom: 0.5rem;
 }
 
 .clear-filters-btn {
-  margin-top: 1rem;
-  background-color: #2b6cb0;
+  margin-top: 1.25rem;
+  background-color: #3182ce;
   color: #ffffff;
   border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
+  border-radius: 8px;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .clear-filters-btn:hover {
-  background-color: #2c5282;
+  background-color: #2b6cb0;
+  box-shadow: 0 2px 6px rgba(49, 130, 206, 0.25);
 }
 </style>

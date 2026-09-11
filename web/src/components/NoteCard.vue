@@ -359,17 +359,17 @@ async function confirmDelete() {
 .note-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 1.25rem;
+  border-radius: 12px;
+  padding: 1.25rem 1.4rem;
   margin-bottom: 1rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.2s, border-color 0.2s;
+  transition: box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
   position: relative;
 }
 
 .note-card:hover {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
-  border-color: #cbd5e0;
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  border-color: #cbd5e1;
 }
 
 .note-card.is-sticky {
@@ -404,73 +404,88 @@ async function confirmDelete() {
 }
 
 .note-time {
-  font-size: 0.85rem;
-  color: #718096;
+  font-size: 0.825rem;
+  color: #64748b;
 }
 
 .badge {
-  font-size: 0.75rem;
+  font-size: 0.725rem;
   font-weight: 500;
-  padding: 0.15rem 0.4rem;
-  border-radius: 4px;
+  padding: 0.12rem 0.45rem;
+  border-radius: 10px;
+  line-height: 1.3;
 }
 
 .badge-sticky {
   background-color: #ebf8ff;
   color: #2b6cb0;
+  border: 1px solid #bee3f8;
 }
 
 .badge-public {
   background-color: #f0fff4;
   color: #276749;
+  border: 1px solid #c6f6d5;
 }
 
 .badge-shared {
   background-color: #faf5ff;
   color: #6b46c1;
+  border: 1px solid #e9d8fd;
 }
 
 .badge-archived {
-  background-color: #edf2f7;
-  color: #4a5568;
+  background-color: #f7fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
 }
 
 .card-actions {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  opacity: 0.85;
-  transition: opacity 0.2s;
+  gap: 0.3rem;
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
-.note-card:hover .card-actions {
+.note-card:hover .card-actions,
+.note-card:focus-within .card-actions {
   opacity: 1;
+}
+
+@media (hover: none) {
+  .card-actions {
+    opacity: 0.85;
+  }
 }
 
 .action-btn {
   background: none;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 0.95rem;
   cursor: pointer;
   padding: 0.2rem 0.35rem;
   line-height: 1;
-  transition: background-color 0.2s, border-color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
 }
 
 .action-btn:hover {
-  background-color: #edf2f7;
-  border-color: #cbd5e0;
+  background-color: #f1f5f9;
+  border-color: #e2e8f0;
 }
 
 .action-btn.active {
   background-color: #ebf8ff;
-  border-color: #90cdf4;
+  border-color: #bee3f8;
 }
 
 .action-btn.delete-btn:hover {
   background-color: #fff5f5;
-  border-color: #feb2b2;
+  border-color: #fed7d7;
 }
 
 .card-body {
