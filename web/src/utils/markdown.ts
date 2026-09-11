@@ -61,6 +61,8 @@ export function highlightKeyword(html: string, keyword: string): string {
     w.startsWith('#') ? w.slice(1) : w
   ).filter(Boolean);
   if (!terms.length) return html;
+  // Sort longer terms first so alternation prioritizes longer matches
+  terms.sort((a, b) => b.length - a.length);
   // ponytail: simple tag-boundary split, not a full HTML parser — sufficient
   //   for our DOMPurify-sanitized markdown output; swap to TreeWalker if needed.
   const re = new RegExp(

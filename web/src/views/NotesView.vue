@@ -135,7 +135,7 @@
               :key="thing._id"
               :thing="thing"
               :can-edit="true"
-              :highlight-query="searchQuery || ''"
+              :highlight-query="activeFilter || ''"
               :on-save-edit="updateNote"
               :on-delete-confirm="handleDeleteNote"
               @toggle-sticky="handleToggleSticky"
@@ -219,6 +219,7 @@ const {
   error,
   searchQuery,
   selectedTag,
+  activeFilter,
   isArchived,
   hasActiveFilter,
   fetchNotes,
