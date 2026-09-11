@@ -495,5 +495,16 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
         var idsTag2 = searchTag2.body.things.map(function (t) { return t._id; });
         expect(idsTag2).to.contain(note2Id);
         expect(idsTag2).not.to.contain(note1Id);
+
+        // Cross-user isolation: agentB must not see agentA's notes in search results
+        var isolation1 = await agentB
+            .get('/api/things?filter=' + encodeURIComponent('深度学习'))
+            .expect(200);
+        expect(isolation1.body.things.map(function (t) { return t._id; })).not.to.contain(note1Id);
+
+        var isolation2 = await agentB
+            .get('/api/things?filter=' + encodeURIComponent('#工作'))
+            .expect(200);
+        expect(isolation2.body.things.map(function (t) { return t._id; })).not.to.contain(note1Id);
     });
 });

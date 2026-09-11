@@ -297,22 +297,13 @@ let searchDebounceTimer: number | null = null;
 function handleSearchInput() {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   searchDebounceTimer = window.setTimeout(() => {
-    const q = searchInput.value.trim();
-    if (!q.startsWith('#')) {
-      setSearch(q);
-    }
+    setSearch(searchInput.value.trim());
   }, 350);
 }
 
 function handleSearchSubmit() {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-  const q = searchInput.value.trim();
-  if (q.startsWith('#')) {
-    selectTag(q.slice(1));
-    searchInput.value = '';
-  } else {
-    setSearch(q);
-  }
+  setSearch(searchInput.value.trim());
 }
 
 function handleSearchClear() {

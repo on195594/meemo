@@ -47,8 +47,7 @@ function ensureIndexes(callback) {
         return createIndex(collection, { ownerId: 1, modifiedAt: -1 })
             .then(function () { return createIndex(collection, { ownerId: 1, sticky: -1, modifiedAt: -1 }); })
             .then(function () { return createIndex(collection, { ownerId: 1, archived: 1, modifiedAt: -1 }); })
-            .then(function () { return createIndex(collection, { ownerId: 1, tags: 1 }); })
-            .then(function () { return createIndex(collection, { content: 'text' }, { default_language: 'none' }); });
+            .then(function () { return createIndex(collection, { ownerId: 1, tags: 1 }); });
     }).then(function () {
         indexesCreated = true;
     });
