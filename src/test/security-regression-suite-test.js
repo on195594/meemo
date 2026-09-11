@@ -390,4 +390,60 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
         expect(importedNote.tags).to.contain('important');
         expect(importedNote.attachments.length).to.equal(1);
     });
+
+    // 12. sticky notes filtering
+    it('scenario 12: GET /api/things?sticky=true filters exclusively sticky notes', async function () {
+        var stickyRes = await agentA
+            .post('/api/things')
+            .send({ content: 'Sticky Note Alpha' })
+            .expect(201);
+        var stickyId = stickyRes.body.thing._id;
+        await agentA
+            .put('/api/things/' + stickyId)
+            .send({ content: 'Sticky Note Alpha', sticky: true })
+            .expect(201);
+
+        var normalRes = await agentA
+            .post('/api/things')
+            .send({ content: 'Normal Note Beta' })
+            .expect(201);
+        var normalId = normalRes.body.thing._id;
+
+        // Query with sticky=true
+        var listSticky = await agentA
+            .get('/api/things?sticky=true')
+            .expect(200);
+
+        var ids = listSticky.body.things.map(function (t) { return t._id; });
+        expect(ids).to.contain(stickyId);
+        expect(ids).not.to.contain(normalId);
+    });
+
+    // 13. shared note lookup via /api/public/shared/things/:thingId
+    it('scenario 13: GET /api/public/shared/things/:thingId resolves note directly without user ID', async function () {
+        var noteRes = await agentA
+            .post('/api/things')
+            .send({ content: 'Directly shared note content' })
+            .expect(201);
+        var noteId = noteRes.body.thing._id;
+
+        // Before making it shared/public, anonymous request is forbidden
+        var forbiddenRes = await request(app)
+            .get('/api/public/shared/things/' + noteId);
+        expect(forbiddenRes.status).to.equal(403);
+
+        // Mark as shared
+        await agentA
+            .put('/api/things/' + noteId)
+            .send({ content: 'Directly shared note content', shared: true })
+            .expect(201);
+
+        // Anonymous request via /shared alias succeeds
+        var sharedRes = await request(app)
+            .get('/api/public/shared/things/' + noteId)
+            .expect(200);
+
+        expect(sharedRes.body.thing._id).to.equal(noteId);
+        expect(sharedRes.body.thing.content).to.equal('Directly shared note content');
+    });
 });

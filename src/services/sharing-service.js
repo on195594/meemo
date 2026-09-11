@@ -23,7 +23,11 @@ async function resolve(rawUserId) {
 }
 
 function getThing(rawUserId, thingId, callback) {
-    var promise = resolve(rawUserId).then(async function (target) {
+    var promise = Promise.resolve().then(async function () {
+        if (rawUserId === 'shared') {
+            return await things.getPublicShared(thingId);
+        }
+        var target = await resolve(rawUserId);
         try {
             return await things.getPublic(target.id, thingId);
         } catch (error) {

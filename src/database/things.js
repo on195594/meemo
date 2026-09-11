@@ -60,13 +60,34 @@ function getLegacyCollection(userId) {
     return legacyCollections[userId];
 }
 
-function getAllActiveUserIds() {
-    var seen = {};
-    return Object.keys(activeUserIds).concat(Object.keys(legacyCollections)).filter(function (id) {
-        if (seen[id]) return false;
-        seen[id] = true;
-        return true;
+function getAllActiveUserIds(callback) {
+    var promise = Promise.resolve().then(async function () {
+        var seen = {};
+        Object.keys(activeUserIds).concat(Object.keys(legacyCollections)).forEach(function (id) {
+            seen[id] = true;
+        });
+
+        if (config.db) {
+            try {
+                var dbUserIds = await getUnifiedCollection().distinct('ownerId');
+                (dbUserIds || []).forEach(function (id) {
+                    if (id) seen[id] = true;
+                });
+                var cols = await config.db.listCollections().toArray();
+                (cols || []).forEach(function (col) {
+                    if (col.name && col.name.endsWith('_things')) {
+                        var legacyId = col.name.slice(0, -7);
+                        if (legacyId) seen[legacyId] = true;
+                    }
+                });
+            } catch (err) {
+                // DB not connected or indexing error
+            }
+        }
+
+        return Object.keys(seen);
     });
+    return nodeify(promise, callback);
 }
 
 async function getAlternateUserId(userId) {
@@ -185,6 +206,30 @@ function get(userId, thingId, callback) {
     return nodeify(promise, callback);
 }
 
+function getById(thingId, callback) {
+    assert.strictEqual(typeof thingId, 'string');
+
+    var promise = Promise.resolve().then(async function () {
+        if (!ObjectId.isValid(thingId)) throw new Error('not found');
+        var id = new ObjectId(thingId);
+        var result = await getUnifiedCollection().findOne({ _id: id });
+        if (!result) {
+            var activeIds = await getAllActiveUserIds();
+            for (var i = 0; i < activeIds.length; i++) {
+                result = await getLegacyCollection(activeIds[i]).findOne({ _id: id });
+                if (result) {
+                    result.ownerId = result.ownerId || activeIds[i];
+                    break;
+                }
+            }
+        }
+        if (!result) throw new Error('not found');
+        postProcess(result.ownerId, result);
+        return result;
+    });
+    return nodeify(promise, callback);
+}
+
 function add(userId, content, tags, attachments, externalContent, callback) {
     return addFull(userId, content, tags, attachments, externalContent, Date.now(), Date.now(), callback);
 }
@@ -282,6 +327,7 @@ module.exports = {
     getAll: getAll,
     getAllLean: getAllLean,
     get: get,
+    getById: getById,
     add: add,
     addFull: addFull,
     insertFull: insertFull,

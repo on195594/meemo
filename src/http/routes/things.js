@@ -42,21 +42,24 @@ var listQuery = z.object({
 var idParams = z.object({ id: validation.objectId });
 
 async function getAll(req, res, next) {
-    var query = { $or: [] };
-
-    if (req.query.filter) {
-        query.$or.push({ $text: { $search: req.query.filter } });
-    } else {
-        query.$or.push({ content: { $exists: true } });
-    }
-
-    if (req.query.sticky) query.$or.push({ sticky: true });
+    var andList = [];
 
     var archiveQuery = req.query.archived ? { archived: true } : {
         $or: [{ archived: false }, { archived: { $exists: false } }]
     };
+    andList.push(archiveQuery);
 
-    var result = await things.getAll(req.user.id, { $and: [archiveQuery, query] }, req.query.skip, req.query.limit);
+    if (req.query.filter) {
+        andList.push({ $text: { $search: req.query.filter } });
+    }
+
+    if (req.query.sticky) {
+        andList.push({ sticky: true });
+    }
+
+    var query = andList.length === 1 ? andList[0] : { $and: andList };
+
+    var result = await things.getAll(req.user.id, query, req.query.skip, req.query.limit);
     next(new HttpSuccess(200, { things: result }));
 }
 

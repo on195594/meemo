@@ -8,7 +8,6 @@
 var expect = require('expect.js');
 var fs = require('fs');
 var path = require('path');
-var mkdirp = require('mkdirp');
 var request = require('supertest');
 var config = require('../config.js');
 var logic = require('../services/thing-service.js');
@@ -58,8 +57,8 @@ describe('Attachment Authorization (RF-104)', function () {
                         // Create storage folders and files
                         var aliceDir = path.join(testAttachmentDir, 'alice');
                         var bobDir = path.join(testAttachmentDir, 'bob');
-                        mkdirp.sync(aliceDir);
-                        mkdirp.sync(bobDir);
+                        fs.mkdirSync(aliceDir, { recursive: true });
+                        fs.mkdirSync(bobDir, { recursive: true });
 
                         fs.writeFileSync(path.join(aliceDir, alicePrivateFile), 'Alice Private Secret');
                         fs.writeFileSync(path.join(aliceDir, alicePublicFile), 'Alice Public Content');

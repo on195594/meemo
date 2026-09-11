@@ -91,10 +91,12 @@ function facelift(userId, thing, callback) {
             data = data.replace(new RegExp(escapeRegExp(item.url), 'gmi'), '[' + pretty + '](' + item.url + ')');
         });
         attachments.forEach(function (attachment) {
+            if (!attachment || !attachment.fileName) return;
+            var escapedName = escapeRegExp(attachment.fileName);
             if (attachment.type === TYPE_IMAGE) {
-                data = data.replace(new RegExp('\\[' + attachment.fileName + '\\]', 'gmi'), '![/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
+                data = data.replace(new RegExp('\\[' + escapedName + '\\]', 'gmi'), '![/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
             } else {
-                data = data.replace(new RegExp('\\[' + attachment.fileName + '\\]', 'gmi'), '[' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
+                data = data.replace(new RegExp('\\[' + escapedName + '\\]', 'gmi'), '[' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
             }
         });
         return data;
@@ -153,6 +155,13 @@ function getPublic(userId, thingId, callback) {
     return nodeify(promise, callback);
 }
 
+function getPublicShared(thingId, callback) {
+    var promise = things.getById(thingId).then(function (doc) {
+        return getPublic(doc.ownerId, thingId);
+    });
+    return nodeify(promise, callback);
+}
+
 function add(userId, content, attachments, callback) {
     var promise = Promise.resolve().then(async function () {
         var externalContent = await extractExternalContent(content);
@@ -195,7 +204,7 @@ function getTags(userId, callback) {
 
 function cleanupTags(callback) {
     var promise = Promise.resolve().then(async function () {
-        for (var userId of things.getAllActiveUserIds()) {
+        for (var userId of await things.getAllActiveUserIds()) {
             try {
                 var result = await things.getAllLean(userId);
                 var activeTags = [];
@@ -224,6 +233,7 @@ module.exports = {
     getAllLean: getAllLean,
     get: get,
     getPublic: getPublic,
+    getPublicShared: getPublicShared,
     add: add,
     put: put,
     del: del,

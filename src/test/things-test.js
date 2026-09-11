@@ -258,5 +258,26 @@ describe('Things', function () {
                 done();
             });
         });
+
+        it('succeeds for attachments with special regex characters in fileName', function (done) {
+            var fileName = 'file [1] (test) + foo*.png';
+            var thing = {
+                _id: '507f1f77bcf86cd799439011',
+                tags: [],
+                externalContent: [],
+                attachments: [{
+                    fileName: fileName,
+                    identifier: 'ident-123.png',
+                    type: logic.TYPE_IMAGE
+                }],
+                content: 'Here is an image: [' + fileName + ']'
+            };
+
+            logic.facelift(USER_ID, thing, function (error, result) {
+                expect(error).to.equal(null);
+                expect(result).to.contain('![/api/files/' + USER_ID + '/' + thing._id + '/ident-123.png](/api/files/' + USER_ID + '/' + thing._id + '/ident-123.png)');
+                done();
+            });
+        });
     });
 });

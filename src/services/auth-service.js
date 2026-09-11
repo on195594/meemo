@@ -12,11 +12,23 @@ function serviceError(code, message) {
     return error;
 }
 
+function pruneExpiredAttempts(now) {
+    var keys = Object.keys(loginAttempts);
+    if (keys.length > 50) {
+        for (var i = 0; i < keys.length; i++) {
+            if (now > loginAttempts[keys[i]].resetAt) {
+                delete loginAttempts[keys[i]];
+            }
+        }
+    }
+}
+
 function authenticate(username, password, ip, callback) {
     var promise = Promise.resolve().then(async function () {
         var now = Date.now();
         var windowMs = parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS, 10) || 60000;
         var maxAttempts = parseInt(process.env.LOGIN_RATE_LIMIT_MAX, 10) || 10;
+        pruneExpiredAttempts(now);
         var record = loginAttempts[ip];
         if (!record || now > record.resetAt) record = loginAttempts[ip] = { count: 0, resetAt: now + windowMs };
 
