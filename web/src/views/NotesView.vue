@@ -135,6 +135,7 @@
               :key="thing._id"
               :thing="thing"
               :can-edit="true"
+              :highlight-query="searchQuery || ''"
               :on-save-edit="updateNote"
               :on-delete-confirm="handleDeleteNote"
               @toggle-sticky="handleToggleSticky"

@@ -206,17 +206,19 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue';
 import type { Thing, AttachmentDescriptor } from '../api/client';
-import { renderMarkdown } from '../utils/markdown';
+import { renderMarkdown, highlightKeyword } from '../utils/markdown';
 
 const props = withDefaults(
   defineProps<{
     thing: Thing;
     canEdit?: boolean;
+    highlightQuery?: string;
     onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; error?: string }>;
     onDeleteConfirm?: (id: string) => Promise<{ success: boolean; error?: string }>;
   }>(),
   {
     canEdit: true,
+    highlightQuery: '',
   }
 );
 
@@ -269,7 +271,8 @@ const relativeDate = computed(() => {
 
 const renderedBody = computed(() => {
   const raw = props.thing.richContent || props.thing.content || '';
-  return renderMarkdown(raw);
+  const html = renderMarkdown(raw);
+  return props.highlightQuery ? highlightKeyword(html, props.highlightQuery) : html;
 });
 
 function isImageAttachment(att: AttachmentDescriptor): boolean {
@@ -475,6 +478,13 @@ async function confirmDelete() {
   line-height: 1.6;
   color: #2d3748;
   word-break: break-word;
+}
+
+.card-body :deep(mark) {
+  background: #fef08a;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 .card-attachments {
