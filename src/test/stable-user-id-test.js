@@ -16,6 +16,9 @@ var users = require('../users.js');
 var logic = require('../services/thing-service.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
+var things = require('../database/things.js');
+var tags = require('../database/tags.js');
+var settings = require('../database/settings.js');
 
 describe('Stable User ID and Decoupling (RF-203)', function () {
     var dbClient;
@@ -31,7 +34,7 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
     var aliceAgent;
     var bobAgent;
 
-    before(function (done) {
+    before(async function () {
         process.env.USERS_FILE = testUsersFile;
         process.env.AUTH_USER_SOURCE = 'mongo';
         config.attachmentDir = testAttachmentDir;
@@ -40,60 +43,33 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
         fs.mkdirSync(testAttachmentDir, { recursive: true });
 
-        MongoClient.connect(config.databaseUrl, { useUnifiedTopology: true }, function (err, client) {
-            if (err) return done(err);
-            dbClient = client;
-            config.db = client.db();
+        dbClient = await MongoClient.connect(config.databaseUrl);
+        config.db = dbClient.db();
+        things.resetCache();
+        tags.resetCache();
+        settings.resetCache();
 
-            // Clean users collection
-            config.db.collection('users').deleteMany({}, function (err) {
-                if (err) return done(err);
+        // Clean users collection
+        await config.db.collection('users').deleteMany({});
 
-                users.initRepository('mongo');
-                app = createApp({ sessionMemory: true });
+        users.initRepository('mongo');
+        app = createApp({ sessionMemory: true });
 
-                // Register Alice and Bob in MongoDB
-                users.create('alice203', 'alice203@example.com', 'Alice TwoZeroThree', 'Password123!', function (err) {
-                    if (err) return done(err);
+        // Register Alice and Bob in MongoDB
+        await users.create('alice203', 'alice203@example.com', 'Alice TwoZeroThree', 'Password123!');
+        await users.create('bob203', 'bob203@example.com', 'Bob TwoZeroThree', 'Password123!');
+        aliceUser = await users.resolveUser('alice203');
+        bobUser = await users.resolveUser('bob203');
 
-                    users.create('bob203', 'bob203@example.com', 'Bob TwoZeroThree', 'Password123!', function (err) {
-                        if (err) return done(err);
+        aliceAgent = request.agent(app);
+        bobAgent = request.agent(app);
 
-                        users.resolveUser('alice203', function (err, u1) {
-                            if (err) return done(err);
-                            aliceUser = u1;
-
-                            users.resolveUser('bob203', function (err, u2) {
-                                if (err) return done(err);
-                                bobUser = u2;
-
-                                aliceAgent = request.agent(app);
-                                bobAgent = request.agent(app);
-
-                                // Login Alice
-                                aliceAgent
-                                    .post('/api/login')
-                                    .send({ username: 'alice203', password: 'Password123!' })
-                                    .expect(200)
-                                    .end(function (err) {
-                                        if (err) return done(err);
-
-                                        // Login Bob
-                                        bobAgent
-                                            .post('/api/login')
-                                            .send({ username: 'bob203', password: 'Password123!' })
-                                            .expect(200)
-                                            .end(done);
-                                    });
-                            });
-                        });
-                    });
-                });
-            });
-        });
+        // Login Alice and Bob
+        await aliceAgent.post('/api/login').send({ username: 'alice203', password: 'Password123!' }).expect(200);
+        await bobAgent.post('/api/login').send({ username: 'bob203', password: 'Password123!' }).expect(200);
     });
 
-    after(function (done) {
+    after(async function () {
         if (prevUsersFile === undefined) delete process.env.USERS_FILE;
         else process.env.USERS_FILE = prevUsersFile;
 
@@ -107,11 +83,8 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
 
         if (dbClient) {
-            config._clearDatabase(function () {
-                dbClient.close(done);
-            });
-        } else {
-            done();
+            await config._clearDatabase();
+            await dbClient.close();
         }
     });
 

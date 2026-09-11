@@ -8,9 +8,9 @@ var expect = require('expect.js'),
     migrator = require('../../scripts/migrate-data-to-v2.js'),
     users = require('../users.js');
 
-function invoke(callback, failure, value) {
+function invoke(failure, value) {
     if (failure && failure.sync) throw failure.error;
-    callback(failure || null, value);
+    return failure ? Promise.reject(failure) : Promise.resolve(value);
 }
 
 function createDb(failures) {
@@ -36,9 +36,9 @@ function createDb(failures) {
             record('listCollections');
             if (fail('listCollections') && fail('listCollections').sync) throw fail('listCollections').error;
             return {
-                toArray: function (callback) {
+                toArray: function () {
                     record('listCollections.toArray');
-                    invoke(callback, fail('listCollections.toArray'), [
+                    return invoke(fail('listCollections.toArray'), [
                         { name: 'alice_things' },
                         { name: 'alice_tags' },
                         { name: 'alice_settings' }
@@ -49,44 +49,42 @@ function createDb(failures) {
         collection: function (name) {
             return {
                 createIndex: function () {
-                    var args = Array.prototype.slice.call(arguments);
-                    var callback = args[args.length - 1];
                     var key = name + '.createIndex';
                     record(key);
-                    invoke(callback, fail(key), 'index');
+                    return invoke(fail(key), 'index');
                 },
-                countDocuments: function (callback) {
+                countDocuments: function () {
                     var key = name + '.countDocuments';
                     record(key);
-                    invoke(callback, fail(key), (legacyDocs[name] || []).length);
+                    return invoke(fail(key), (legacyDocs[name] || []).length);
                 },
                 find: function () {
                     var key = name + '.find';
                     record(key);
                     if (fail(key) && fail(key).sync) throw fail(key).error;
                     return {
-                        toArray: function (callback) {
+                        toArray: function () {
                             var arrayKey = name + '.toArray';
                             record(arrayKey);
-                            invoke(callback, fail(arrayKey), legacyDocs[name] || []);
+                            return invoke(fail(arrayKey), legacyDocs[name] || []);
                         }
                     };
                 },
-                findOne: function (query, callback) {
+                findOne: function () {
                     var key = name + '.findOne';
                     record(key);
                     var docs = legacyDocs[name] || [];
-                    invoke(callback, fail(key), docs[0] || null);
+                    return invoke(fail(key), docs[0] || null);
                 },
-                replaceOne: function (filter, document, options, callback) {
+                replaceOne: function () {
                     var key = name + '.replaceOne';
                     record(key);
-                    invoke(callback, fail(key), { acknowledged: true });
+                    return invoke(fail(key), { acknowledged: true });
                 },
-                updateOne: function (filter, update, options, callback) {
+                updateOne: function () {
                     var key = name + '.updateOne';
                     record(key);
-                    invoke(callback, fail(key), { acknowledged: true });
+                    return invoke(fail(key), { acknowledged: true });
                 }
             };
         }

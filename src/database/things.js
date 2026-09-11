@@ -3,7 +3,7 @@
 'use strict';
 
 var assert = require('assert'),
-    ObjectId = require('mongodb').ObjectID,
+    ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
     nodeify = require('../promise.js'),
     users = require('../users.js');

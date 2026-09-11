@@ -20,27 +20,17 @@ describe('Runtime Dependency Injection and Graceful Shutdown (RF-301)', function
     var dbClient;
     var db;
 
-    before(function (done) {
-        config._clearDatabase(function (err) {
-            if (err) return done(err);
-
-            MongoClient.connect(config.databaseUrl, { useUnifiedTopology: true }, function (err, client) {
-                if (err) return done(err);
-                dbClient = client;
-                db = client.db();
-                config.db = db;
-                done();
-            });
-        });
+    before(async function () {
+        await config._clearDatabase();
+        dbClient = await MongoClient.connect(config.databaseUrl);
+        db = dbClient.db();
+        config.db = db;
     });
 
-    after(function (done) {
+    after(async function () {
         if (dbClient) {
-            config._clearDatabase(function () {
-                dbClient.close(done);
-            });
-        } else {
-            done();
+            await config._clearDatabase();
+            await dbClient.close();
         }
     });
 
@@ -180,30 +170,23 @@ describe('Runtime Dependency Injection and Graceful Shutdown (RF-301)', function
             });
         });
 
-        it('respects injected client/db without closing external connections', function (done) {
+        it('respects injected client/db without closing external connections', async function () {
             var dbManager = new lifecycle.DatabaseManager();
 
-            dbManager.connect({
+            var result = await dbManager.connect({
                 client: dbClient,
                 db: db
-            }, function (err, connectedDb, connectedClient) {
-                if (err) return done(err);
-                expect(connectedDb).to.equal(db);
-                expect(connectedClient).to.equal(dbClient);
-                expect(dbManager.isManaged).to.be(false);
-
-                // Disconnect should NOT close the external client
-                dbManager.disconnect(false, function (err) {
-                    if (err) return done(err);
-
-                    // dbClient should still be open and operational
-                    db.collection('things').countDocuments({}, function (err, count) {
-                        if (err) return done(err);
-                        expect(typeof count).to.equal('number');
-                        done();
-                    });
-                });
             });
+            expect(result.db).to.equal(db);
+            expect(result.client).to.equal(dbClient);
+            expect(dbManager.isManaged).to.be(false);
+
+            // Disconnect should NOT close the external client
+            await dbManager.disconnect(false);
+
+            // dbClient should still be open and operational
+            var count = await db.collection('things').countDocuments({});
+            expect(typeof count).to.equal('number');
         });
     });
 
@@ -531,11 +514,10 @@ describe('Runtime Dependency Injection and Graceful Shutdown (RF-301)', function
                     // Closing server must not close our test dbClient
                     instance.close(function (err) {
                         if (err) return done(err);
-                        db.collection('things').countDocuments({}, function (err, count) {
-                            if (err) return done(err);
+                        db.collection('things').countDocuments({}).then(function (count) {
                             expect(typeof count).to.equal('number');
                             done();
-                        });
+                        }).catch(done);
                     });
                 });
                 req.on('error', done);

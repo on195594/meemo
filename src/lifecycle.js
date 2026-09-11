@@ -117,7 +117,6 @@ DatabaseManager.prototype.connect = function (options, callback) {
             self.isManaged = false;
         } else {
             self.client = await MongoClient.connect(options.databaseUrl || config.databaseUrl || 'mongodb://127.0.0.1:27017/meemo', {
-                useUnifiedTopology: true,
                 maxPoolSize: options.maxPoolSize || parseInt(process.env.MONGO_MAX_POOL_SIZE, 10) || 50,
                 minPoolSize: options.minPoolSize || parseInt(process.env.MONGO_MIN_POOL_SIZE, 10) || 1,
                 serverSelectionTimeoutMS: options.serverSelectionTimeoutMS || parseInt(process.env.MONGO_TIMEOUT_MS, 10) || 3000

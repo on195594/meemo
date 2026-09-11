@@ -40,9 +40,7 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
         config._clearDatabase(function (err) {
             if (err) return done(err);
 
-            var MongoClient = require('mongodb').MongoClient;
-            MongoClient.connect(config.databaseUrl, { useUnifiedTopology: true }, function (err, client) {
-                if (err) return done(err);
+            require('mongodb').MongoClient.connect(config.databaseUrl).then(function (client) {
                 config.db = client.db();
                 app = createApp({ sessionMemory: true });
 
@@ -55,7 +53,7 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
                         .send({ username: 'uploader', password: 'Password123!' })
                         .expect(200, done);
                 });
-            });
+            }, done);
         });
     });
 

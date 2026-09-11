@@ -72,7 +72,7 @@ describe('Canonical migration verification (RF-706)', function () {
 
         return callbackPromise(function (done) { config._clearDatabase(done); })
             .then(function () {
-                return MongoClient.connect(config.databaseUrl, { useUnifiedTopology: true });
+                return MongoClient.connect(config.databaseUrl);
             }).then(function (connected) {
                 client = connected;
                 db = client.db();

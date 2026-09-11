@@ -23,93 +23,67 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
     var db;
     var app;
 
-    before(function (done) {
+    before(async function () {
         this.timeout(20000);
 
         // Clear database first before establishing test client
-        config._clearDatabase(function (err) {
-            if (err) return done(err);
+        await config._clearDatabase();
+        dbClient = await MongoClient.connect(config.databaseUrl);
+        db = dbClient.db();
+        config.db = db;
 
-            MongoClient.connect(config.databaseUrl, { useUnifiedTopology: true }, function (err, client) {
-                if (err) return done(err);
-                dbClient = client;
-                db = client.db();
-                config.db = db;
+        things.resetCache();
+        tags.resetCache();
+        settings.resetCache();
 
-                things.resetCache();
-                tags.resetCache();
-                settings.resetCache();
-
-                // Ensure indexes on unified collections
-                things.ensureIndexes(function (err) {
-                    if (err) return done(err);
-                    tags.ensureIndexes(function (err) {
-                        if (err) return done(err);
-                        settings.ensureIndexes(function (err) {
-                            if (err) return done(err);
-                            app = createApp({ sessionMemory: true });
-                            done();
-                        });
-                    });
-                });
-            });
-        });
+        // Ensure indexes on unified collections
+        await things.ensureIndexes();
+        await tags.ensureIndexes();
+        await settings.ensureIndexes();
+        app = createApp({ sessionMemory: true });
     });
 
-    after(function (done) {
+    after(async function () {
         if (dbClient) {
-            config._clearDatabase(function () {
-                dbClient.close(done);
-            });
-        } else {
-            done();
+            await config._clearDatabase();
+            await dbClient.close();
         }
     });
 
     describe('Index creation on unified collections', function () {
-        it('creates required indexes on unified things collection', function (done) {
-            db.collection('things').indexes(function (err, idxs) {
-                if (err) return done(err);
-                expect(idxs).to.be.an(Array);
+        it('creates required indexes on unified things collection', async function () {
+            var idxs = await db.collection('things').indexes();
+            expect(idxs).to.be.an(Array);
 
-                var keyPatterns = idxs.map(function (idx) { return JSON.stringify(idx.key); });
+            var keyPatterns = idxs.map(function (idx) { return JSON.stringify(idx.key); });
 
-                // ownerId + modifiedAt
-                expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, modifiedAt: -1 }));
-                // ownerId + sticky + modifiedAt
-                expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, sticky: -1, modifiedAt: -1 }));
-                // ownerId + archived + modifiedAt
-                expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, archived: 1, modifiedAt: -1 }));
-                // text(content)
-                var hasText = idxs.some(function (idx) { return idx.weights && idx.weights.content; });
-                expect(hasText).to.be(true);
-
-                done();
-            });
+            // ownerId + modifiedAt
+            expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, modifiedAt: -1 }));
+            // ownerId + sticky + modifiedAt
+            expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, sticky: -1, modifiedAt: -1 }));
+            // ownerId + archived + modifiedAt
+            expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, archived: 1, modifiedAt: -1 }));
+            // text(content)
+            var hasText = idxs.some(function (idx) { return idx.weights && idx.weights.content; });
+            expect(hasText).to.be(true);
         });
 
-        it('creates unique compound index on unified tags collection', function (done) {
-            db.collection('tags').indexes(function (err, idxs) {
-                if (err) return done(err);
-                var tagCompound = idxs.find(function (idx) {
-                    return idx.key && idx.key.ownerId === 1 && idx.key.name === 1;
-                });
-                expect(tagCompound).to.be.ok();
-                expect(tagCompound.unique).to.be(true);
-                done();
+        it('creates unique compound index on unified tags collection', async function () {
+            var idxs = await db.collection('tags').indexes();
+            var tagCompound = idxs.find(function (idx) {
+                return idx.key && idx.key.ownerId === 1 && idx.key.name === 1;
             });
+            expect(tagCompound).to.be.ok();
+            expect(tagCompound.unique).to.be(true);
         });
 
-        it('creates unique ownerId index on unified settings collection', function (done) {
-            db.collection('settings').indexes(function (err, idxs) {
-                if (err) return done(err);
-                var settingUnique = idxs.find(function (idx) {
-                    return idx.key && idx.key.ownerId === 1;
-                });
-                expect(settingUnique).to.be.ok();
-                expect(settingUnique.unique).to.be(true);
-                done();
+        it('creates unique ownerId index on unified settings collection', async function () {
+            var idxs = await db.collection('settings').indexes();
+            var settingUnique = idxs.find(function (idx) {
+                return idx.key && idx.key.ownerId === 1;
             });
+            expect(settingUnique).to.be.ok();
+            expect(settingUnique.unique).to.be(true);
         });
     });
 
@@ -117,22 +91,17 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         var testUserId = 'test-owner-id-123';
         var createdThingId;
 
-        it('inserts new thing into unified things collection with ownerId', function (done) {
-            things.addFull(testUserId, 'Unified note test content #unified', ['unified'], [], [], Date.now(), Date.now(), function (err, doc) {
-                if (err) return done(err);
-                expect(doc).to.be.ok();
-                expect(doc.ownerId).to.equal(testUserId);
-                createdThingId = doc._id;
+        it('inserts new thing into unified things collection with ownerId', async function () {
+            var doc = await things.addFull(testUserId, 'Unified note test content #unified', ['unified'], [], [], Date.now(), Date.now());
+            expect(doc).to.be.ok();
+            expect(doc.ownerId).to.equal(testUserId);
+            createdThingId = doc._id;
 
-                // Directly verify in MongoDB 'things' collection
-                db.collection('things').findOne({ _id: new ObjectId(createdThingId) }, function (err, mongoDoc) {
-                    if (err) return done(err);
-                    expect(mongoDoc).to.be.ok();
-                    expect(mongoDoc.ownerId).to.equal(testUserId);
-                    expect(mongoDoc.content).to.equal('Unified note test content #unified');
-                    done();
-                });
-            });
+            // Directly verify in MongoDB 'things' collection
+            var mongoDoc = await db.collection('things').findOne({ _id: new ObjectId(createdThingId) });
+            expect(mongoDoc).to.be.ok();
+            expect(mongoDoc.ownerId).to.equal(testUserId);
+            expect(mongoDoc.content).to.equal('Unified note test content #unified');
         });
 
         it('queries things filtered by ownerId and supports full-text search', function (done) {
@@ -187,23 +156,15 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             });
         });
 
-        it('persists settings in unified settings collection', function (done) {
-            settings.put(testUserId, { title: 'My Unified Meemo' }, function (err) {
-                if (err) return done(err);
+        it('persists settings in unified settings collection', async function () {
+            await settings.put(testUserId, { title: 'My Unified Meemo' });
+            var res = await settings.get(testUserId);
+            expect(res.title).to.equal('My Unified Meemo');
 
-                settings.get(testUserId, function (err, res) {
-                    if (err) return done(err);
-                    expect(res.title).to.equal('My Unified Meemo');
-
-                    // Check direct Mongo document
-                    db.collection('settings').findOne({ ownerId: testUserId }, function (err, doc) {
-                        if (err) return done(err);
-                        expect(doc).to.be.ok();
-                        expect(doc.value.title).to.equal('My Unified Meemo');
-                        done();
-                    });
-                });
-            });
+            // Check direct Mongo document
+            var doc = await db.collection('settings').findOne({ ownerId: testUserId });
+            expect(doc).to.be.ok();
+            expect(doc.value.title).to.equal('My Unified Meemo');
         });
     });
 
@@ -328,7 +289,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         var legacyOwner2 = 'legacyuser_beta';
         var protectedThingId;
 
-        before(function (done) {
+        before(function () {
             // Seed legacy per-user collections
             var things1 = [
                 { _id: new ObjectId(), content: 'Alpha note 1 #alpha', tags: ['alpha'], createdAt: 1000, modifiedAt: 1000, attachments: [] },
@@ -350,19 +311,13 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 { _id: new ObjectId(), name: 'beta', usage: 3 }
             ];
 
-            db.collection(legacyOwner1 + '_things').insertMany(things1, function (err) {
-                if (err) return done(err);
-                db.collection(legacyOwner1 + '_tags').insertMany(tags1, function (err) {
-                    if (err) return done(err);
-                    db.collection(legacyOwner1 + '_settings').insertMany(settings1, function (err) {
-                        if (err) return done(err);
-                        db.collection(legacyOwner2 + '_things').insertMany(things2, function (err) {
-                            if (err) return done(err);
-                            db.collection(legacyOwner2 + '_tags').insertMany(tags2, done);
-                        });
-                    });
-                });
-            });
+            return Promise.all([
+                db.collection(legacyOwner1 + '_things').insertMany(things1),
+                db.collection(legacyOwner1 + '_tags').insertMany(tags1),
+                db.collection(legacyOwner1 + '_settings').insertMany(settings1),
+                db.collection(legacyOwner2 + '_things').insertMany(things2),
+                db.collection(legacyOwner2 + '_tags').insertMany(tags2)
+            ]);
         });
 
         it('--dry-run discovers legacy collections without writing to unified collections', function (done) {
@@ -374,11 +329,10 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 expect(report.totalSettingsToMigrate).to.equal(1);
 
                 // Confirm unified collections have not received these notes yet
-                db.collection('things').countDocuments({ ownerId: legacyOwner1 }, function (err, count) {
-                    if (err) return done(err);
+                db.collection('things').countDocuments({ ownerId: legacyOwner1 }).then(function (count) {
                     expect(count).to.equal(0);
                     done();
-                });
+                }).catch(done);
             });
         });
 
@@ -389,21 +343,19 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 expect(stats.migratedTags).to.equal(3);
                 expect(stats.migratedSettings).to.equal(1);
 
-                db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, state) {
-                    if (err) return done(err);
+                db.collection('system_migrations').findOne({ _id: 'schema-v2' }).then(function (state) {
                     expect(state.sourceVersion).to.equal(1);
                     expect(state.targetVersion).to.equal(2);
                     expect(state.phase).to.equal('copied');
                     expect(state.startedAt).to.be.a('number');
                     expect(state.copiedAt).to.be.a('number');
 
-                    db.collection('things').find({ ownerId: legacyOwner1 }).toArray(function (err, docs) {
-                        if (err) return done(err);
-                        expect(docs.length).to.equal(2);
-                        expect(docs[0].ownerId).to.equal(legacyOwner1);
-                        done();
-                    });
-                });
+                    return db.collection('things').find({ ownerId: legacyOwner1 }).toArray();
+                }).then(function (docs) {
+                    expect(docs.length).to.equal(2);
+                    expect(docs[0].ownerId).to.equal(legacyOwner1);
+                    done();
+                }).catch(done);
             });
         });
 
@@ -412,112 +364,95 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
 
             function verifyPhase(index) {
                 if (index === phases.length) {
-                    return db.collection('system_migrations').updateOne(
+                    db.collection('system_migrations').updateOne(
                         { _id: 'schema-v2' },
-                        { $set: { phase: 'copied' } },
-                        done
-                    );
+                        { $set: { phase: 'copied' } }
+                    ).then(function () { done(); }).catch(done);
+                    return;
                 }
 
                 var phase = phases[index];
                 db.collection('system_migrations').updateOne(
                     { _id: 'schema-v2' },
-                    { $set: { phase: phase } },
-                    function (err) {
-                        if (err) return done(err);
+                    { $set: { phase: phase } }
+                ).then(function () {
+                    migrator.verify({ db: db }, function (err, result) {
+                        expect(err).to.be.ok();
+                        expect(err.message).to.contain('phase=verify:state');
+                        expect(err.message).to.contain('Cannot verify migration from phase ' + phase);
+                        expect(result).to.be(undefined);
 
-                        migrator.verify({ db: db }, function (err, result) {
-                            expect(err).to.be.ok();
-                            expect(err.message).to.contain('phase=verify:state');
-                            expect(err.message).to.contain('Cannot verify migration from phase ' + phase);
-                            expect(result).to.be(undefined);
-
-                            db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, state) {
-                                if (err) return done(err);
-                                expect(state.phase).to.equal(phase);
-                                verifyPhase(index + 1);
-                            });
-                        });
-                    }
-                );
+                        db.collection('system_migrations').findOne({ _id: 'schema-v2' }).then(function (state) {
+                            expect(state.phase).to.equal(phase);
+                            verifyPhase(index + 1);
+                        }).catch(done);
+                    });
+                }).catch(done);
             }
 
             verifyPhase(0);
         });
 
         it('--verify marks copied migration failed on fidelity errors', function (done) {
-            db.collection('things').deleteOne({ ownerId: legacyOwner2 }, function (err) {
-                if (err) return done(err);
-
+            db.collection('things').deleteOne({ ownerId: legacyOwner2 }).then(function () {
                 migrator.verify({ db: db }, function (err, result) {
                     expect(err).to.be.ok();
                     expect(err.message).to.contain('Verification failed');
                     expect(result).to.be(undefined);
-                    db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (stateError, state) {
-                        if (stateError) return done(stateError);
+                    db.collection('system_migrations').findOne({ _id: 'schema-v2' }).then(function (state) {
                         expect(state.phase).to.equal('failed');
                         done();
-                    });
+                    }).catch(done);
                 });
-            });
+            }).catch(done);
         });
 
         it('preserves newer Unified things, tags, and settings across rerun and verification', function (done) {
-            db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, state) {
-                if (err) return done(err);
+            db.collection('system_migrations').findOne({ _id: 'schema-v2' }).then(function (state) {
                 var editedAt = state.startedAt + 1;
 
-                db.collection('things').updateOne({ _id: protectedThingId }, {
-                    $set: { content: 'edited after migration start', modifiedAt: editedAt }
-                }, function (err) {
-                    if (err) return done(err);
-
+                Promise.all([
+                    db.collection('things').updateOne({ _id: protectedThingId }, {
+                        $set: { content: 'edited after migration start', modifiedAt: editedAt }
+                    }),
                     db.collection('tags').updateOne({ ownerId: legacyOwner1, name: 'alpha' }, {
                         $set: { usage: 42, modifiedAt: editedAt }
-                    }, function (err) {
+                    }),
+                    db.collection('settings').updateOne({ ownerId: legacyOwner1 }, {
+                        $set: { value: { title: 'Edited after migration start' }, modifiedAt: editedAt }
+                    })
+                ]).then(function () {
+                    migrator.apply({ db: db }, function (err) {
                         if (err) return done(err);
 
-                        db.collection('settings').updateOne({ ownerId: legacyOwner1 }, {
-                            $set: { value: { title: 'Edited after migration start' }, modifiedAt: editedAt }
-                        }, function (err) {
+                        migrator.verify({ db: db }, function (err, result) {
                             if (err) return done(err);
+                            expect(result.success).to.be(true);
 
-                            migrator.apply({ db: db }, function (err) {
-                                if (err) return done(err);
-
-                                migrator.verify({ db: db }, function (err, result) {
-                                    if (err) return done(err);
-                                    expect(result.success).to.be(true);
-
-                                    db.collection('things').findOne({ _id: protectedThingId }, function (err, note) {
-                                        if (err) return done(err);
-                                        expect(note.content).to.equal('edited after migration start');
-                                        expect(note.modifiedAt).to.equal(editedAt);
-
-                                        db.collection('tags').findOne({ ownerId: legacyOwner1, name: 'alpha' }, function (err, tag) {
-                                            if (err) return done(err);
-                                            expect(tag.usage).to.equal(42);
-                                            expect(tag.modifiedAt).to.equal(editedAt);
-
-                                            db.collection('settings').findOne({ ownerId: legacyOwner1 }, function (err, setting) {
-                                                if (err) return done(err);
-                                                expect(setting.value).to.eql({ title: 'Edited after migration start' });
-                                                expect(setting.modifiedAt).to.equal(editedAt);
-                                                done();
-                                            });
-                                        });
-                                    });
-                                });
-                            });
+                            Promise.all([
+                                db.collection('things').findOne({ _id: protectedThingId }),
+                                db.collection('tags').findOne({ ownerId: legacyOwner1, name: 'alpha' }),
+                                db.collection('settings').findOne({ ownerId: legacyOwner1 })
+                            ]).then(function (docs) {
+                                var note = docs[0];
+                                var tag = docs[1];
+                                var setting = docs[2];
+                                expect(note.content).to.equal('edited after migration start');
+                                expect(note.modifiedAt).to.equal(editedAt);
+                                expect(tag.usage).to.equal(42);
+                                expect(tag.modifiedAt).to.equal(editedAt);
+                                expect(setting.value).to.eql({ title: 'Edited after migration start' });
+                                expect(setting.modifiedAt).to.equal(editedAt);
+                                done();
+                            }).catch(done);
                         });
                     });
-                });
-            });
+                }).catch(done);
+            }).catch(done);
         });
 
         it('--verify is idempotent in verified phase without changing state', function (done) {
-            db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, before) {
-                if (err) return done(err);
+            db.collection('system_migrations').findOne({ _id: 'schema-v2' }).then(function (before) {
                 expect(before.phase).to.equal('verified');
                 expect(before.verifiedAt).to.be.a('number');
 
@@ -525,49 +460,42 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                     if (err) return done(err);
                     expect(result.success).to.be(true);
 
-                    db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, after) {
-                        if (err) return done(err);
+                    db.collection('system_migrations').findOne({ _id: 'schema-v2' }).then(function (after) {
                         expect(after.phase).to.equal('verified');
                         expect(after.verifiedAt).to.equal(before.verifiedAt);
                         done();
-                    });
+                    }).catch(done);
                 });
-            });
+            }).catch(done);
         });
 
         it('--verify is read-only in cutover and complete phases', function (done) {
             var phases = ['cutover', 'complete'];
 
-            db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, initialState) {
-                if (err) return done(err);
-
+            db.collection('system_migrations').findOne({ _id: 'schema-v2' }).then(function (initialState) {
                 function verifyPhase(index) {
                     if (index === phases.length) return done();
 
                     var phase = phases[index];
                     db.collection('system_migrations').updateOne(
                         { _id: 'schema-v2' },
-                        { $set: { phase: phase } },
-                        function (err) {
+                        { $set: { phase: phase } }
+                    ).then(function () {
+                        migrator.verify({ db: db }, function (err, result) {
                             if (err) return done(err);
+                            expect(result.success).to.be(true);
 
-                            migrator.verify({ db: db }, function (err, result) {
-                                if (err) return done(err);
-                                expect(result.success).to.be(true);
-
-                                db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (err, state) {
-                                    if (err) return done(err);
-                                    expect(state.phase).to.equal(phase);
-                                    expect(state.verifiedAt).to.equal(initialState.verifiedAt);
-                                    verifyPhase(index + 1);
-                                });
-                            });
-                        }
-                    );
+                            db.collection('system_migrations').findOne({ _id: 'schema-v2' }).then(function (state) {
+                                expect(state.phase).to.equal(phase);
+                                expect(state.verifiedAt).to.equal(initialState.verifiedAt);
+                                verifyPhase(index + 1);
+                            }).catch(done);
+                        });
+                    }).catch(done);
                 }
 
                 verifyPhase(0);
-            });
+            }).catch(done);
         });
 
         it('refuses --apply after migration state is complete', function (done) {
@@ -581,20 +509,17 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         });
 
         it('--verify detects tampering without changing complete phase', function (done) {
-            db.collection('things').deleteOne({ ownerId: legacyOwner2 }, function (err) {
-                if (err) return done(err);
-
+            db.collection('things').deleteOne({ ownerId: legacyOwner2 }).then(function () {
                 migrator.verify({ db: db }, function (err, result) {
                     expect(err).to.be.ok();
                     expect(err.message).to.contain('Verification failed');
                     expect(result).to.be(undefined);
-                    db.collection('system_migrations').findOne({ _id: 'schema-v2' }, function (stateError, state) {
-                        if (stateError) return done(stateError);
+                    db.collection('system_migrations').findOne({ _id: 'schema-v2' }).then(function (state) {
                         expect(state.phase).to.equal('complete');
                         done();
-                    });
+                    }).catch(done);
                 });
-            });
+            }).catch(done);
         });
 
         it('supports standalone mongoUrl execution without shared db', function (done) {
@@ -603,11 +528,10 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 if (err) return done(err);
                 expect(report.totalLegacyUsers).to.be.greaterThan(0);
                 // Verify our test suite's db connection remains open and functional
-                db.collection('things').countDocuments({}, function (err, count) {
-                    if (err) return done(err);
+                db.collection('things').countDocuments({}).then(function (count) {
                     expect(count).to.be.greaterThan(0);
                     done();
-                });
+                }).catch(done);
             });
         });
     });

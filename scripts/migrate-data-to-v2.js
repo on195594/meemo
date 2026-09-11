@@ -46,32 +46,25 @@ function migrationError(phase, user, collection, operation, error) {
 }
 
 function closeConnection(close, phase, primaryError, callback) {
-    mongoOperation(phase, '<all>', '<database>', 'close', function (done) {
-        close(done);
+    mongoOperation(phase, '<all>', '<database>', 'close', function () {
+        return close();
     }, function (closeError) {
         callback(primaryError || closeError || null);
     });
 }
 
 function mongoOperation(phase, user, collection, operation, invoke, callback) {
-    var callbackCalled = false;
-
-    try {
-        invoke(function (error, result) {
-            callbackCalled = true;
-            if (error) return callback(migrationError(phase, user, collection, operation, error));
-            callback(null, result);
-        });
-    } catch (error) {
-        if (callbackCalled) throw error;
+    Promise.resolve().then(invoke).then(function (result) {
+        callback(null, result);
+    }, function (error) {
         callback(migrationError(phase, user, collection, operation, error));
-    }
+    });
 }
 
 function collectionOperation(db, phase, user, collectionName, operation, args, callback) {
-    mongoOperation(phase, user, collectionName, operation, function (done) {
+    mongoOperation(phase, user, collectionName, operation, function () {
         var collection = db.collection(collectionName);
-        collection[operation].apply(collection, args.concat(done));
+        return collection[operation].apply(collection, args);
     }, callback);
 }
 
@@ -84,8 +77,8 @@ function findDocuments(db, phase, user, collectionName, query, callback) {
         return callback(migrationError(phase, user, collectionName, 'find', error));
     }
 
-    mongoOperation(phase, user, collectionName, 'toArray', function (done) {
-        cursor.toArray(done);
+    mongoOperation(phase, user, collectionName, 'toArray', function () {
+        return cursor.toArray();
     }, callback);
 }
 
@@ -422,17 +415,23 @@ function parseArgs() {
 
 function getDbConnection(options, phase, callback) {
     if (options && options.db) {
-        return callback(null, options.db, options.close || function close(cb) { if (cb) cb(); });
+        return callback(null, options.db, function close() {
+            if (!options.close) return Promise.resolve();
+            if (options.close.length === 0) return Promise.resolve().then(options.close);
+            return new Promise(function (resolve, reject) {
+                options.close(function (error) { if (error) reject(error); else resolve(); });
+            });
+        });
     }
 
     var mongoUrl = (options && options.mongoUrl) || process.env.MONGODB_URL || config.databaseUrl || 'mongodb://127.0.0.1:27017/meemo';
-    mongoOperation(phase, '<all>', '<database>', 'connect', function (done) {
-        MongoClient.connect(mongoUrl, { useUnifiedTopology: true }, done);
+    mongoOperation(phase, '<all>', '<database>', 'connect', function () {
+        return MongoClient.connect(mongoUrl);
     }, function (err, client) {
         if (err) return callback(err);
         var db = client.db();
-        callback(null, db, function close(cb) {
-            client.close(cb);
+        callback(null, db, function close() {
+            return client.close();
         });
     });
 }
@@ -486,8 +485,8 @@ function discoverLegacyCollections(db, callback, phase) {
         return callback(migrationError(phase, '<all>', '<database>', 'listCollections', error));
     }
 
-    mongoOperation(phase, '<all>', '<database>', 'toArray', function (done) {
-        cursor.toArray(done);
+    mongoOperation(phase, '<all>', '<database>', 'toArray', function () {
+        return cursor.toArray();
     }, function (err, collList) {
         if (err) return callback(err);
 
