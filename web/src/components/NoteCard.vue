@@ -478,6 +478,7 @@ async function confirmDelete() {
   line-height: 1.6;
   color: #2d3748;
   word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .card-body :deep(mark) {
@@ -485,6 +486,40 @@ async function confirmDelete() {
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
+}
+
+.card-body :deep(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  display: block;
+  margin: 0.75rem 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.card-body :deep(picture),
+.card-body :deep(video) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  display: block;
+  margin: 0.75rem 0;
+}
+
+.card-body :deep(pre) {
+  max-width: 100%;
+  overflow-x: auto;
+  background: #f7fafc;
+  border: 1px solid #edf2f7;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.card-body :deep(table) {
+  max-width: 100%;
+  overflow-x: auto;
+  display: block;
 }
 
 .card-attachments {
