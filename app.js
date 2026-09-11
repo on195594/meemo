@@ -87,7 +87,16 @@ function createApp(options) {
     var structuredLogger = options.logger || logger.defaultLogger;
     app.use(structuredLogger.middleware);
 
-    app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
+    var trustProxyEnv = process.env.TRUST_PROXY;
+    if (trustProxyEnv === 'true' || trustProxyEnv === '1') {
+        app.set('trust proxy', true);
+    } else if (trustProxyEnv === 'false' || trustProxyEnv === '0') {
+        app.set('trust proxy', false);
+    } else if (trustProxyEnv) {
+        app.set('trust proxy', trustProxyEnv);
+    } else {
+        app.set('trust proxy', ['loopback', 'uniquelocal']);
+    }
 
     app.use(serveStatic(__dirname + '/public', { etag: false }));
 
