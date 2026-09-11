@@ -61,22 +61,22 @@
 
         <div class="view-toggles">
           <button
+            v-if="!isArchived"
             type="button"
             class="view-toggle-btn"
-            :class="{ active: !isArchived }"
-            @click="handleViewSwitch(false)"
-            title="View active notes"
-          >
-            📝 Active
-          </button>
-          <button
-            type="button"
-            class="view-toggle-btn"
-            :class="{ active: isArchived }"
             @click="handleViewSwitch(true)"
             title="View archived notes"
           >
             📦 Archive
+          </button>
+          <button
+            v-else
+            type="button"
+            class="view-toggle-btn active"
+            @click="handleViewSwitch(false)"
+            title="Back to active notes"
+          >
+            ↩️ Back to Notes
           </button>
         </div>
       </section>
