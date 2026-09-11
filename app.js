@@ -23,6 +23,7 @@ var express = require('express'),
     settings = require('./src/database/settings.js'),
     nodeify = require('./src/promise.js'),
     os = require('os'),
+    path = require('path'),
     serveStatic = require('serve-static'),
     logger = require('./src/http/middleware/logger.js');
 
@@ -102,9 +103,10 @@ function createApp(options) {
         etag: true,
         lastModified: true,
         setHeaders: function (res, filePath) {
+            var rel = path.relative(path.join(__dirname, 'public'), filePath);
             if (filePath.endsWith('.html')) {
                 res.setHeader('Cache-Control', 'no-cache');
-            } else if (filePath.indexOf('/assets/') !== -1) {
+            } else if (rel.startsWith('assets' + path.sep) || (res.req && res.req.path && res.req.path.startsWith('/assets/'))) {
                 res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
             }
         }

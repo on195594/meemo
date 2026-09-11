@@ -204,7 +204,7 @@ import NoteComposer from '../components/NoteComposer.vue';
 import NoteCard from '../components/NoteCard.vue';
 import TagSidebar from '../components/TagSidebar.vue';
 
-const { isAuthenticated, isLoading: authLoading, isFirstUser } = useAuth();
+const { isAuthenticated, isLoading: authLoading, isFirstUser, sessionExpired } = useAuth();
 const { settings } = useSettings();
 const openAuthModal = inject<((tab?: 'login' | 'register') => void) | undefined>('openAuthModal', undefined);
 
@@ -342,13 +342,19 @@ function setupIntersectionObserver() {
 
 let initialLoadTriggered = false;
 
+watch(sessionExpired, (expired) => {
+  if (expired) {
+    initialLoadTriggered = false;
+  }
+});
+
 watch(isAuthenticated, (authenticated) => {
   if (authenticated) {
     if (!initialLoadTriggered) {
-      initialLoadTriggered = true;
       fetchNotes(true);
       fetchTags();
     }
+    initialLoadTriggered = false;
   } else {
     initialLoadTriggered = false;
     clearNotes();

@@ -133,5 +133,28 @@ describe('Vue 3 Cutover and Legacy Retirement (RF-506)', function () {
                     done();
                 });
         });
+
+        it('applies no-cache and etag to index.html', function (done) {
+            request(app)
+                .get('/')
+                .expect(200)
+                .expect('Cache-Control', 'no-cache')
+                .end(function (err, res) {
+                    expect(err).to.be(null);
+                    expect(res.headers.etag).to.be.ok();
+                    done();
+                });
+        });
+
+        it('does not apply immutable cache-control to root static assets like favicon.png', function (done) {
+            request(app)
+                .get('/favicon.png')
+                .expect(200)
+                .end(function (err, res) {
+                    expect(err).to.be(null);
+                    expect(res.headers['cache-control'] || '').not.to.contain('immutable');
+                    done();
+                });
+        });
     });
 });

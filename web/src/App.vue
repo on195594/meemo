@@ -150,15 +150,18 @@
     />
 
     <SettingsModal
+      v-if="showSettingsModal"
       v-model="showSettingsModal"
     />
 
     <ImportModal
+      v-if="showImportModal"
       v-model="showImportModal"
       @imported="handleImportFinished"
     />
 
     <CheatsheetModal
+      v-if="showCheatsheetModal"
       v-model="showCheatsheetModal"
     />
   </div>
