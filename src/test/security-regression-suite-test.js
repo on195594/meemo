@@ -446,4 +446,54 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
         expect(sharedRes.body.thing._id).to.equal(noteId);
         expect(sharedRes.body.thing.content).to.equal('Directly shared note content');
     });
+
+    // 14. Chinese search and hashtag query support
+    it('scenario 14: GET /api/things?filter=... accurately searches Chinese content, hashtags, and multi-word queries', async function () {
+        var note1Res = await agentA
+            .post('/api/things')
+            .send({ content: '今天天气真好，在公园散步学习深度学习 #工作 #深度学习' })
+            .expect(201);
+        var note1Id = note1Res.body.thing._id;
+        expect(note1Res.body.thing.tags).to.contain('工作');
+        expect(note1Res.body.thing.tags).to.contain('深度学习');
+
+        var note2Res = await agentA
+            .post('/api/things')
+            .send({ content: '整理代码架构设计与自动化测试覆盖率 #架构' })
+            .expect(201);
+        var note2Id = note2Res.body.thing._id;
+        expect(note2Res.body.thing.tags).to.contain('架构');
+
+        // Chinese substring search
+        var search1 = await agentA
+            .get('/api/things?filter=' + encodeURIComponent('深度学习'))
+            .expect(200);
+        var ids1 = search1.body.things.map(function (t) { return t._id; });
+        expect(ids1).to.contain(note1Id);
+        expect(ids1).not.to.contain(note2Id);
+
+        // Multi-word search (AND condition)
+        var search2 = await agentA
+            .get('/api/things?filter=' + encodeURIComponent('公园 散步'))
+            .expect(200);
+        var ids2 = search2.body.things.map(function (t) { return t._id; });
+        expect(ids2).to.contain(note1Id);
+        expect(ids2).not.to.contain(note2Id);
+
+        // Tag search (#工作)
+        var searchTag = await agentA
+            .get('/api/things?filter=' + encodeURIComponent('#工作'))
+            .expect(200);
+        var idsTag = searchTag.body.things.map(function (t) { return t._id; });
+        expect(idsTag).to.contain(note1Id);
+        expect(idsTag).not.to.contain(note2Id);
+
+        // Tag search (#架构)
+        var searchTag2 = await agentA
+            .get('/api/things?filter=' + encodeURIComponent('#架构'))
+            .expect(200);
+        var idsTag2 = searchTag2.body.things.map(function (t) { return t._id; });
+        expect(idsTag2).to.contain(note2Id);
+        expect(idsTag2).not.to.contain(note1Id);
+    });
 });

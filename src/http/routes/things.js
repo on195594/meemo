@@ -49,8 +49,9 @@ async function getAll(req, res, next) {
     };
     andList.push(archiveQuery);
 
-    if (req.query.filter) {
-        andList.push({ $text: { $search: req.query.filter } });
+    var searchCondition = things.buildSearchFilter(req.query.filter);
+    if (searchCondition) {
+        andList.push(searchCondition);
     }
 
     if (req.query.sticky) {

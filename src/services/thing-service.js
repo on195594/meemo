@@ -34,7 +34,7 @@ function extractTags(content) {
     });
 
     var tagMarkdown = require('markdown-it')().use(require('markdown-it-hashtag'), {
-        hashtagRegExp: '[\u00C0-\u017Fa-zA-Z0-9]+',
+        hashtagRegExp: '[\\u00C0-\\u017Fa-zA-Z0-9\\u4e00-\\u9fa5\\u3040-\\u309f\\u30a0-\\u30ff\\uac00-\\ud7af_]+',
         preceding: ''
     });
     tagMarkdown.renderer.rules.hashtag_open = function (tokens, idx) {
@@ -43,6 +43,31 @@ function extractTags(content) {
     };
     tagMarkdown.render(content);
     return tagObjects;
+}
+
+function buildSearchFilter(filterStr) {
+    if (!filterStr || typeof filterStr !== 'string') return null;
+    var trimmed = filterStr.trim();
+    if (!trimmed) return null;
+
+    var words = trimmed.split(/\s+/).filter(Boolean);
+    if (!words.length) return null;
+
+    var wordConditions = words.map(function (w) {
+        if (w.startsWith('#') && w.length > 1) {
+            var tag = w.slice(1).toLowerCase();
+            return { tags: tag };
+        }
+        var escaped = escapeRegExp(w);
+        return {
+            $or: [
+                { content: { $regex: escaped, $options: 'i' } },
+                { tags: w.toLowerCase() }
+            ]
+        };
+    });
+
+    return wordConditions.length === 1 ? wordConditions[0] : { $and: wordConditions };
 }
 
 function extractExternalContent(content, callback) {
@@ -243,6 +268,8 @@ module.exports = {
     extractExternalContent: extractExternalContent,
     facelift: facelift,
     cleanupTags: cleanupTags,
+    buildSearchFilter: buildSearchFilter,
+    escapeRegExp: escapeRegExp,
     TYPE_IMAGE: TYPE_IMAGE,
     TYPE_UNKNOWN: TYPE_UNKNOWN
 };

@@ -39,6 +39,7 @@
             v-model="searchInput"
             class="search-input"
             placeholder="Search notes or #tags..."
+            @input="handleSearchInput"
             @keydown.enter="handleSearchSubmit"
           />
           <button
@@ -291,7 +292,20 @@ async function handleDeleteNote(id: string) {
   return result;
 }
 
+let searchDebounceTimer: number | null = null;
+
+function handleSearchInput() {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = window.setTimeout(() => {
+    const q = searchInput.value.trim();
+    if (!q.startsWith('#')) {
+      setSearch(q);
+    }
+  }, 350);
+}
+
 function handleSearchSubmit() {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   const q = searchInput.value.trim();
   if (q.startsWith('#')) {
     selectTag(q.slice(1));
@@ -302,11 +316,13 @@ function handleSearchSubmit() {
 }
 
 function handleSearchClear() {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   searchInput.value = '';
   setSearch('');
 }
 
 function handleQueryRemove() {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   searchInput.value = '';
   setSearch('');
 }
@@ -390,6 +406,9 @@ onUnmounted(() => {
   }
   if (toastTimer) {
     clearTimeout(toastTimer);
+  }
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
   }
   window.removeEventListener('meemo:imported', handleImportEvent);
 });

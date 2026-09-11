@@ -112,6 +112,16 @@ describe('Things', function () {
             expect(tags[0]).to.equal('küche');
         });
 
+        it('succeeds with Chinese tags', function () {
+            var test = '这是工作笔记 #工作 #学习_重点 #深度学习 结束';
+
+            var tags = logic.extractTags(test);
+            expect(tags.length).to.equal(3);
+            expect(tags[0]).to.equal('工作');
+            expect(tags[1]).to.equal('学习_重点');
+            expect(tags[2]).to.equal('深度学习');
+        });
+
         it('succeeds with a tag starting with numbers', function () {
             var test = 'Hello #1337tag there!';
 
@@ -278,6 +288,66 @@ describe('Things', function () {
                 expect(result).to.contain('![/api/files/' + USER_ID + '/' + thing._id + '/ident-123.png](/api/files/' + USER_ID + '/' + thing._id + '/ident-123.png)');
                 done();
             });
+        });
+    });
+
+    describe('buildSearchFilter', function () {
+        it('returns null for empty or invalid input', function () {
+            expect(logic.buildSearchFilter('')).to.equal(null);
+            expect(logic.buildSearchFilter('   ')).to.equal(null);
+            expect(logic.buildSearchFilter(null)).to.equal(null);
+            expect(logic.buildSearchFilter(undefined)).to.equal(null);
+        });
+
+        it('builds tag query for single hashtag', function () {
+            var filter = logic.buildSearchFilter('#工作');
+            expect(filter).to.eql({ tags: '工作' });
+        });
+
+        it('builds tag and-query for multiple hashtags', function () {
+            var filter = logic.buildSearchFilter('#work #urgent');
+            expect(filter).to.eql({
+                $and: [
+                    { tags: 'work' },
+                    { tags: 'urgent' }
+                ]
+            });
+        });
+
+        it('builds case-insensitive regex query for Chinese keyword', function () {
+            var filter = logic.buildSearchFilter('机器学习');
+            expect(filter).to.eql({
+                $or: [
+                    { content: { $regex: '机器学习', $options: 'i' } },
+                    { tags: '机器学习' }
+                ]
+            });
+        });
+
+        it('builds multi-word AND query combining regex and tags', function () {
+            var filter = logic.buildSearchFilter('学习 算法');
+            expect(filter.$and).to.be.an('array');
+            expect(filter.$and.length).to.equal(2);
+            expect(filter.$and[0]).to.eql({
+                $or: [
+                    { content: { $regex: '学习', $options: 'i' } },
+                    { tags: '学习' }
+                ]
+            });
+            expect(filter.$and[1]).to.eql({
+                $or: [
+                    { content: { $regex: '算法', $options: 'i' } },
+                    { tags: '算法' }
+                ]
+            });
+        });
+
+        it('safely escapes special regex characters', function () {
+            var filter = logic.buildSearchFilter('c++ (v2.0) [test]?');
+            expect(filter.$and.length).to.equal(3);
+            expect(filter.$and[0].$or[0].content.$regex).to.equal('c\\+\\+');
+            expect(filter.$and[1].$or[0].content.$regex).to.equal('\\(v2\\.0\\)');
+            expect(filter.$and[2].$or[0].content.$regex).to.equal('\\[test\\]\\?');
         });
     });
 });

@@ -4,6 +4,7 @@ var assert = require('assert'),
     path = require('path'),
     rss = require('rss'),
     sharing = require('../../services/sharing-service.js'),
+    things = require('../../services/thing-service.js'),
     UserError = sharing.UserError,
     asyncHandler = require('../middleware/async-handler.js'),
     responses = require('../responses.js'),
@@ -34,7 +35,7 @@ async function getThing(req, res, next) {
 }
 
 async function getAll(req, res, next) {
-    var query = req.query.filter ? { $text: { $search: req.query.filter } } : {};
+    var query = things.buildSearchFilter(req.query.filter) || {};
     var result = await sharing.getAll(req.params.userId, query, req.query.skip, req.query.limit);
     next(new HttpSuccess(200, { things: result }));
 }
