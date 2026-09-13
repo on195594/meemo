@@ -27,6 +27,8 @@ docker inspect --format '{{.Config.Image}}' "$container" >"$BACKUP_DIR/image-ref
 docker image inspect "$image_id" >"$BACKUP_DIR/image-inspect.json"
 docker image inspect --format '{{json .RepoDigests}}' "$image_id" \
   >"$BACKUP_DIR/image-repo-digests.json"
+docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$image_id" \
+  >"$BACKUP_DIR/image-repository-digest.txt"
 docker image save --output "$BACKUP_DIR/meemo-image.tar" "$image_id"
 install -m 600 docker-compose.yml "$BACKUP_DIR/docker-compose.yml"
 
@@ -39,7 +41,8 @@ docker run --rm --volumes-from "$container" --entrypoint sh "$image_id" \
 (
   cd "$BACKUP_DIR"
   sha256sum mongodb.archive meemo-data.tgz meemo-image.tar image-id.txt \
-    image-inspect.json image-repo-digests.json docker-compose.yml >SHA256SUMS
+    image-inspect.json image-repo-digests.json image-repository-digest.txt \
+    docker-compose.yml >SHA256SUMS
 )
 chmod 600 "$BACKUP_DIR"/*
 ```
