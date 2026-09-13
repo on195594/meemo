@@ -1,6 +1,7 @@
 'use strict';
 
 var things = require('../../services/thing-service.js'),
+    search = require('../../services/search-service.js'),
     asyncHandler = require('../middleware/async-handler.js'),
     responses = require('../responses.js'),
     HttpError = responses.HttpError,
@@ -42,24 +43,7 @@ var listQuery = z.object({
 var idParams = z.object({ id: validation.objectId });
 
 async function getAll(req, res, next) {
-    var andList = [];
-
-    var archiveQuery = req.query.archived ? { archived: true } : {
-        $or: [{ archived: false }, { archived: { $exists: false } }]
-    };
-    andList.push(archiveQuery);
-
-    var searchCondition = things.buildSearchFilter(req.query.filter);
-    if (searchCondition) {
-        andList.push(searchCondition);
-    }
-
-    if (req.query.sticky) {
-        andList.push({ sticky: true });
-    }
-
-    var query = andList.length === 1 ? andList[0] : { $and: andList };
-
+    var query = search.buildQuery(req.query);
     var result = await things.getAll(req.user.id, query, req.query.skip, req.query.limit);
     next(new HttpSuccess(200, { things: result }));
 }
