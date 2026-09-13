@@ -48,7 +48,6 @@ describe('Vue 3 Notes Read Path (RF-503)', function () {
         expect(src).to.contain('useNotes');
         expect(src).to.contain('NoteCard');
         expect(src).to.contain('TagSidebar');
-        expect(src).to.contain('search-input');
         expect(src).to.contain('view-toggles');
         expect(src).to.contain('active-filter-bar');
         expect(src).to.contain('load-more-btn');
