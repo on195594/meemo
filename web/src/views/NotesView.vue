@@ -273,12 +273,6 @@ function handleSearchSubmit() {
   setSearch(searchInput.value.trim());
 }
 
-function handleSearchClear() {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-  searchInput.value = '';
-  setSearch('');
-}
-
 function handleQueryRemove() {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   searchInput.value = '';
