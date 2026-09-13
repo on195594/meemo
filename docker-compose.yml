@@ -15,6 +15,7 @@ services:
     environment:
       NODE_ENV: production
       MONGODB_URL: mongodb://mongodb:27017/meemo
+      AUTH_USER_SOURCE: ${AUTH_USER_SOURCE:-mongo}
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
       USERS_FILE: /app/data/.users.json
       ATTACHMENT_DIR: /app/data/storage

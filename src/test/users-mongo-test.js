@@ -56,8 +56,26 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
 
     beforeEach(async function () {
         await config.db.collection('users').deleteMany({});
+        await config.db.collection('system_migrations').deleteOne({ _id: 'users-file-to-mongo' });
         fs.rmSync(testUsersFile, { force: true });
     });
+
+    function migrationOptions(usersFile) {
+        var failure;
+        var report;
+        var identity = { usersFile: usersFile, mongoUrl: config.databaseUrl };
+        migrator.dryRun(identity, function (error, result) {
+            failure = error;
+            report = result;
+        });
+        if (failure) throw failure;
+        return {
+            usersFile: usersFile,
+            mongoUrl: config.databaseUrl,
+            expectedSourceCount: report.manifest.count,
+            expectedSourceDigest: report.manifest.digest
+        };
+    }
 
     describe('MongoUserRepository CRUD & constraints', function () {
         it('creates user, enforces usernameNorm unique index, and retrieves user', function (done) {
@@ -208,8 +226,9 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
             fs.writeFileSync(testUsersFile, JSON.stringify(sourceUsers, null, 4));
         });
 
+
         it('--dry-run inspects source file without writing to MongoDB', function (done) {
-            migrator.dryRun({ usersFile: testUsersFile }, function (err, report) {
+            migrator.dryRun({ usersFile: testUsersFile, mongoUrl: config.databaseUrl }, function (err, report) {
                 if (err) return done(err);
 
                 expect(report.success).to.be(true);
@@ -234,7 +253,7 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
             var collideFile = '/tmp/meemo-collide-test-' + process.pid + '.json';
             fs.writeFileSync(collideFile, JSON.stringify(collidedSource, null, 4));
 
-            migrator.dryRun({ usersFile: collideFile }, function (err) {
+            migrator.dryRun({ usersFile: collideFile, mongoUrl: config.databaseUrl }, function (err) {
                 expect(err).to.be.ok();
                 expect(err.message).to.contain('Normalization collisions detected');
                 fs.rmSync(collideFile, { force: true });
@@ -243,10 +262,7 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
         });
 
         it('--apply migrates users idempotently and preserves password hashes verbatim', function (done) {
-            var options = {
-                usersFile: testUsersFile,
-                mongoUrl: config.databaseUrl
-            };
+            var options = migrationOptions(testUsersFile);
 
             migrator.apply(options, function (err, stats) {
                 if (err) return done(err);
@@ -277,10 +293,7 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
         });
 
         it('--verify confirms 100% data fidelity between source and target', function (done) {
-            var options = {
-                usersFile: testUsersFile,
-                mongoUrl: config.databaseUrl
-            };
+            var options = migrationOptions(testUsersFile);
 
             // First apply
             migrator.apply(options, function (err) {
@@ -317,7 +330,7 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
                 fs.writeFileSync(testUsersFile, JSON.stringify(source, null, 4));
 
                 // Apply migration to Mongo
-                migrator.apply({ usersFile: testUsersFile, mongoUrl: config.databaseUrl }, function (err) {
+                migrator.apply(migrationOptions(testUsersFile), function (err) {
                     if (err) return done(err);
 
                     // Switch AUTH_USER_SOURCE to mongo

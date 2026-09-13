@@ -441,9 +441,9 @@ LegacyFileUserRepository
 增加迁移命令，示例：
 
 ```text
-node scripts/migrate-users-to-mongo.js --dry-run
-node scripts/migrate-users-to-mongo.js --apply
-node scripts/migrate-users-to-mongo.js --verify
+node scripts/migrate-users-to-mongo.js --dry-run --users-file /path/to/.users.json --mongo-url mongodb://host/database
+node scripts/migrate-users-to-mongo.js --apply --users-file /path/to/.users.json --mongo-url mongodb://host/database --expected-source-count <count> --expected-source-digest <sha256-from-dry-run>
+node scripts/migrate-users-to-mongo.js --verify --users-file /path/to/.users.json --mongo-url mongodb://host/database --expected-source-count <count> --expected-source-digest <sha256-from-dry-run>
 ```
 
 迁移要求：

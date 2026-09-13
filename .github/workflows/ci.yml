@@ -46,6 +46,7 @@ jobs:
     env:
       SESSION_SECRET: ci-only-session-secret-at-least-32-characters
       REGISTRATION_MODE: open
+      AUTH_USER_SOURCE: mongo
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,6 +71,8 @@ jobs:
             sleep 2
           done
 
+          docker compose exec -T meemo sh -c 'test "$AUTH_USER_SOURCE" = mongo'
+
           curl --fail --silent --show-error \
             -H 'Content-Type: application/json' \
             -d '{"username":"ci-user","password":"ci-password","email":"ci@example.invalid","displayName":"CI User"}' \
@@ -78,6 +81,8 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"username":"ci-user","password":"ci-password"}' \
             "$base/api/login" >/dev/null
+          docker compose exec -T mongodb mongosh --quiet meemo --eval \
+            'quit(db.users.countDocuments({usernameNorm:"ci-user"}) === 1 ? 0 : 2)'
 
           profile=$(curl --fail --silent --show-error -b "$work/cookies" "$base/api/profile")
           user_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["user"]["id"])' <<<"$profile")
