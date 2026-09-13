@@ -9,7 +9,14 @@ var crypto = require('crypto'),
     path = require('path'),
     mongodb = require('mongodb'),
     MongoClient = mongodb.MongoClient,
+    ObjectId = mongodb.ObjectId,
     EJSON = mongodb.BSON.EJSON;
+
+var USER_MIGRATION_ID = 'users-file-to-mongo';
+var USER_FIELDS = [
+    'username', 'usernameNorm', 'displayName', 'email',
+    'passwordHash', 'status', 'createdAt'
+];
 
 function parseArgs(argv, env) {
     var args = argv || process.argv.slice(2);
@@ -72,35 +79,77 @@ function recordsDigest(records) {
     return crypto.createHash('sha256').update(canonicalJson(sorted)).digest('hex');
 }
 
-function sourceIdentityRecord(key, user) {
+function stableValue(value) {
+    if (Array.isArray(value)) return value.map(stableValue);
+    if (!value || typeof value !== 'object') return value;
+    var result = {};
+    Object.keys(value).sort().forEach(function (key) {
+        result[key] = stableValue(value[key]);
+    });
+    return result;
+}
+
+function stableJson(value) {
+    return JSON.stringify(stableValue(value));
+}
+
+function stableDigest(value) {
+    return crypto.createHash('sha256').update(stableJson(value)).digest('hex');
+}
+
+function byteDigest(value) {
+    return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function exactKeys(value, expected) {
+    return !!value && typeof value === 'object' && !Array.isArray(value) &&
+        stableJson(Object.keys(value).sort()) === stableJson(expected.slice().sort());
+}
+
+function sanitizedTargetIdentity(mongoUrl) {
+    if (typeof mongoUrl !== 'string' || !mongoUrl) return null;
+    try {
+        var client = new MongoClient(mongoUrl);
+        var hosts = (client.options.hosts || []).map(function (host) { return String(host); });
+        if (client.options.srvHost) hosts.push(client.options.srvHost);
+        hosts.sort();
+        return { database: client.options.dbName, hosts: hosts };
+    } catch (ignore) {
+        return null;
+    }
+}
+
+function sourceIdentityRecord(key, user, createdAt, usernameToId) {
     if (!user || typeof user !== 'object') return null;
     var username = user.username || key;
     if (typeof username !== 'string' || !username || typeof user.passwordHash !== 'string') return null;
     return {
+        _id: usernameToId && ObjectId.isValid(usernameToId[username.toLowerCase()]) ?
+            new ObjectId(usernameToId[username.toLowerCase()]) : null,
         username: username,
         usernameNorm: username.toLowerCase(),
         displayName: user.displayName || username,
         email: user.email || '',
         passwordHash: user.passwordHash,
-        status: 'active'
+        status: 'active',
+        createdAt: typeof user.createdAt === 'number' ? user.createdAt : createdAt
     };
 }
 
 function mongoIdentityRecord(user) {
-    return {
-        username: user.username,
-        usernameNorm: user.usernameNorm,
-        displayName: user.displayName,
-        email: user.email,
-        passwordHash: user.passwordHash,
-        status: user.status
-    };
+    var record = { _id: user._id };
+    USER_FIELDS.forEach(function (field) { record[field] = user[field]; });
+    return record;
 }
 
-function inspectIdentityManifest(fileUsers, mongoUsers) {
+function inspectIdentityManifest(fileUsers, mongoUsers, migrationEvidence) {
     var sourceKeys = Object.keys(fileUsers);
     var sourceRecords = sourceKeys.map(function (key) {
-        return sourceIdentityRecord(key, fileUsers[key]);
+        var manifest = migrationEvidence && migrationEvidence.manifest;
+        return sourceIdentityRecord(
+            key, fileUsers[key], manifest && manifest.transformationTimestamp,
+            manifest && manifest.usernameToId
+        );
     }).filter(Boolean);
     var mongoRecords = mongoUsers.map(mongoIdentityRecord);
     return {
@@ -163,6 +212,82 @@ function readUsersFile(filePath, bound) {
         result.error = error.message;
         return { report: result, users: {} };
     }
+}
+
+function inspectUsersMigration(evidence, fileUsers, mongoUsers, usersFile, mongoUrl) {
+    var manifest = evidence && evidence.manifest;
+    var sourceRaw;
+    try {
+        sourceRaw = fs.readFileSync(usersFile, 'utf8');
+    } catch (ignore) {
+        sourceRaw = null;
+    }
+    var usernameToId = manifest && manifest.usernameToId;
+    var sourceRecords = Object.keys(fileUsers).sort().map(function (key) {
+        return sourceIdentityRecord(
+            key, fileUsers[key], manifest && manifest.transformationTimestamp, usernameToId
+        );
+    }).filter(Boolean);
+    var transformedRecords = sourceRecords.map(function (record) {
+        var result = { _id: String(record._id) };
+        USER_FIELDS.forEach(function (field) { result[field] = record[field]; });
+        return result;
+    });
+    var expectedManifest = manifest && {
+        version: 1,
+        migration: USER_MIGRATION_ID,
+        runId: manifest.runId,
+        source: {
+            identity: usersFile && path.resolve(usersFile),
+            byteCount: sourceRaw === null ? null : sourceRaw.length,
+            byteDigest: sourceRaw === null ? null : byteDigest(sourceRaw),
+            canonicalDigest: stableDigest(fileUsers),
+            count: Object.keys(fileUsers).length,
+        },
+        transformationTimestamp: manifest.transformationTimestamp,
+        target: sanitizedTargetIdentity(mongoUrl),
+        transformed: {
+            count: transformedRecords.length,
+            digest: stableDigest(transformedRecords)
+        },
+        usernameToId: usernameToId
+    };
+    var manifestValid = exactKeys(manifest, [
+        'version', 'migration', 'runId', 'source', 'transformationTimestamp',
+        'target', 'transformed', 'usernameToId', 'manifestDigest'
+    ]) && exactKeys(manifest.source, [
+        'identity', 'byteCount', 'byteDigest', 'canonicalDigest', 'count'
+    ]) &&
+        exactKeys(manifest.transformed, ['count', 'digest']) &&
+        exactKeys(manifest.target, ['database', 'hosts']) &&
+        exactKeys(manifest.usernameToId, Object.keys(fileUsers).map(function (key) {
+            var user = fileUsers[key];
+            return user && user.username || key;
+        })) && stableJson(manifest) === stableJson(Object.assign({}, expectedManifest, {
+            manifestDigest: stableDigest(expectedManifest)
+        }));
+    var targetRecords = mongoUsers.slice().sort(function (left, right) {
+        return left.usernameNorm < right.usernameNorm ? -1 :
+            (left.usernameNorm > right.usernameNorm ? 1 : 0);
+    }).map(function (record) {
+        var result = { _id: String(record._id) };
+        USER_FIELDS.forEach(function (field) { result[field] = record[field]; });
+        return result;
+    });
+    var targetValid = !!manifest && targetRecords.length === manifest.transformed.count &&
+        stableDigest(targetRecords) === manifest.transformed.digest;
+    var safe = !!evidence && evidence._id === USER_MIGRATION_ID &&
+        evidence.stateVersion === 1 && evidence.phase === 'applied' && manifestValid && targetValid &&
+        evidence.runId === manifest.runId && evidence.manifestDigest === manifest.manifestDigest &&
+        evidence.nextIndex === manifest.transformed.count &&
+        Number.isSafeInteger(evidence.startedAt) && Number.isSafeInteger(evidence.plannedAppliedAt) &&
+        evidence.appliedAt === evidence.plannedAppliedAt;
+    return {
+        phase: evidence && evidence.phase || null,
+        sourceCount: manifest && manifest.source && manifest.source.count,
+        transformedCount: manifest && manifest.transformed && manifest.transformed.count,
+        safe: safe
+    };
 }
 
 function inspectFileIdentities(fileUsers, mongoIndex) {
@@ -308,6 +433,13 @@ function addDataMismatch(mismatches, entry, field) {
     });
 }
 
+function modifiedAfterMigration(type, document, startedAt) {
+    if (typeof startedAt !== 'number') return false;
+    var timestamp = type === 'settings' ? document.modifiedAt :
+        document.modifiedAt === undefined ? document.createdAt : document.modifiedAt;
+    return typeof timestamp === 'number' && timestamp > startedAt;
+}
+
 async function inspectData(db, collectionPrefix, legacyCollections, owners, migration) {
     var ownerByPrefix = Object.create(null);
     var groups = new Map();
@@ -338,13 +470,13 @@ async function inspectData(db, collectionPrefix, legacyCollections, owners, migr
             var sourceFields = canonicalDataFields(
                 collection.type, document, true, migration && migration.startedAt
             );
-            sourceRecords.push({
-                ownerId: entry.ownerId,
-                entity: entry.type,
-                id: identity.value,
-                fields: sourceFields
-            });
             if (!ownerId) {
+                sourceRecords.push({
+                    ownerId: entry.ownerId,
+                    entity: entry.type,
+                    id: identity.value,
+                    fields: sourceFields
+                });
                 addDataMismatch(mismatches, entry, 'ownerId');
                 return;
             }
@@ -380,13 +512,14 @@ async function inspectData(db, collectionPrefix, legacyCollections, owners, migr
                 addDataMismatch(mismatches, entry, 'identity');
                 return;
             }
-            sourceIdentities.set(key, true);
+            sourceIdentities.set(key, entry);
 
             var target = targetByIdentity.get(key);
             if (!target) {
                 addDataMismatch(mismatches, entry, entry.identity.field);
                 return;
             }
+            if (modifiedAfterMigration(group.type, target, migration && migration.startedAt)) return;
 
             var sourceFields = canonicalDataFields(
                 entry.type, entry.document, true, migration && migration.startedAt
@@ -394,6 +527,12 @@ async function inspectData(db, collectionPrefix, legacyCollections, owners, migr
             var targetFields = canonicalDataFields(
                 entry.type, target, false, migration && migration.startedAt
             );
+            sourceRecords.push({
+                ownerId: entry.ownerId,
+                entity: entry.type,
+                id: entry.identity.value,
+                fields: sourceFields
+            });
             matchedCount++;
             targetRecords.push({
                 ownerId: entry.ownerId,
@@ -406,6 +545,18 @@ async function inspectData(db, collectionPrefix, legacyCollections, owners, migr
                     addDataMismatch(mismatches, entry, field);
                 }
             });
+        });
+
+        targetByIdentity.forEach(function (target, key) {
+            if (!sourceIdentities.has(key) &&
+                    !modifiedAfterMigration(group.type, target, migration && migration.startedAt)) {
+                addDataMismatch(mismatches, {
+                    ownerId: group.ownerId,
+                    collection: (collectionPrefix || '') + group.type,
+                    type: group.type,
+                    identity: dataIdentity(group.type, target)
+                }, dataIdentity(group.type, target).field);
+            }
         });
     }
 
@@ -442,9 +593,17 @@ async function run(options) {
         var fileResult = readUsersFile(options.usersFile, options.usersFileBound !== undefined ?
             options.usersFileBound : !!options.usersFile);
         var mongoUsers = await db.collection(names.users).find({}).toArray();
+        var usersMigrationEvidence = await db.collection(names.migrations)
+            .findOne({ _id: USER_MIGRATION_ID });
+        var usersMigration = inspectUsersMigration(
+            usersMigrationEvidence, fileResult.users, mongoUsers,
+            options.usersFile, options.mongoUrl
+        );
         var mongoIndex = buildMongoIdentityIndex(mongoUsers);
         var identities = inspectFileIdentities(fileResult.users, mongoIndex);
-        var identityManifest = inspectIdentityManifest(fileResult.users, mongoUsers);
+        var identityManifest = inspectIdentityManifest(
+            fileResult.users, mongoUsers, usersMigrationEvidence
+        );
         var legacyCollections = await inspectLegacyCollections(db, options.collectionPrefix);
         var owners = inspectOwners(legacyCollections, mongoIndex, identities.mappings);
         var migration = await db.collection(names.migrations).findOne({ _id: 'schema-v2' });
@@ -462,6 +621,7 @@ async function run(options) {
                 safe: fileResult.report.bound && fileResult.report.exists &&
                     fileResult.report.valid && fileResult.report.count > 0
             }),
+            usersMigration: usersMigration,
             identities: Object.assign({}, identityManifest, {
                 safe: identityManifest.sourceCount > 0 &&
                     identityManifest.validSourceCount === identityManifest.sourceCount &&

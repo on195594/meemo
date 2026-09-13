@@ -10,13 +10,28 @@ var expect = require('expect.js'),
     MongoClient = require('mongodb').MongoClient,
     ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
+    userMigrator = require('../../scripts/migrate-users-to-mongo.js'),
     preflight = require('../../scripts/preflight-legacy-retirement.js');
 
-var OWNER_ID = new ObjectId('000000000000000000002040');
 var THING_ID = new ObjectId('000000000000000000002041');
 
-function seedRetirementState(db, prefix) {
-    var ownerId = String(OWNER_ID);
+function createUserManifest(usersFile, mongoUrl, manifestFile) {
+    fs.rmSync(manifestFile, { force: true });
+    return new Promise(function (resolve, reject) {
+        userMigrator.dryRun({
+            usersFile: usersFile,
+            mongoUrl: mongoUrl,
+            manifestFile: manifestFile
+        }, function (error, report) {
+            if (error) return reject(error);
+            resolve(report.manifest);
+        });
+    });
+}
+
+function seedRetirementState(db, prefix, manifest) {
+    var ownerObjectId = new ObjectId(manifest.usernameToId.alice);
+    var ownerId = String(ownerObjectId);
     var thing = {
         _id: THING_ID,
         content: 'Migrated note',
@@ -34,13 +49,14 @@ function seedRetirementState(db, prefix) {
 
     return Promise.all([
         db.collection(prefix + 'users').insertOne({
-            _id: OWNER_ID,
+            _id: ownerObjectId,
             username: 'alice',
             usernameNorm: 'alice',
             displayName: 'alice',
             email: '',
             passwordHash: 'hash',
-            status: 'active'
+            status: 'active',
+            createdAt: manifest.transformationTimestamp
         }),
         db.collection(prefix + 'alice_things').insertOne(thing),
         db.collection(prefix + 'alice_tags').insertOne(tag),
@@ -60,6 +76,18 @@ function seedRetirementState(db, prefix) {
             targetVersion: 2,
             phase: 'complete',
             startedAt: 1000
+        }),
+        db.collection(prefix + 'system_migrations').insertOne({
+            _id: 'users-file-to-mongo',
+            stateVersion: 1,
+            phase: 'applied',
+            runId: manifest.runId,
+            manifestDigest: manifest.manifestDigest,
+            manifest: manifest,
+            nextIndex: manifest.transformed.count,
+            startedAt: manifest.transformationTimestamp,
+            plannedAppliedAt: manifest.transformationTimestamp,
+            appliedAt: manifest.transformationTimestamp
         })
     ]);
 }
@@ -70,11 +98,13 @@ describe('Legacy retirement preflight (VR-204)', function () {
     var client;
     var db;
     var usersFile;
+    var usersManifestFile;
 
     before(async function () {
         client = await MongoClient.connect(config.databaseUrl);
         db = client.db();
         usersFile = path.join(os.tmpdir(), 'meemo-retirement-' + process.pid + '.json');
+        usersManifestFile = usersFile + '.manifest.json';
     });
 
     beforeEach(async function () {
@@ -85,17 +115,20 @@ describe('Legacy retirement preflight (VR-204)', function () {
         fs.writeFileSync(usersFile, JSON.stringify({
             alice: { username: 'alice', passwordHash: 'hash' }
         }));
-        await seedRetirementState(db, 'vr204_');
+        var manifest = await createUserManifest(usersFile, config.databaseUrl, usersManifestFile);
+        await seedRetirementState(db, 'vr204_', manifest);
     });
 
     after(async function () {
         try { fs.unlinkSync(usersFile); } catch (ignore) {}
+        fs.rmSync(usersManifestFile, { force: true });
         await client.close();
     });
 
     function options(overrides) {
         return Object.assign({
             db: db,
+            mongoUrl: config.databaseUrl,
             collectionPrefix: 'vr204_',
             usersFile: usersFile,
             usersFileBound: true,
@@ -186,6 +219,63 @@ describe('Legacy retirement preflight (VR-204)', function () {
         expect(countMismatch.safe).to.be(false);
     });
 
+    [
+        {
+            name: 'missing',
+            mutate: function () {
+                return db.collection('vr204_system_migrations')
+                    .deleteOne({ _id: 'users-file-to-mongo' });
+            }
+        },
+        {
+            name: 'tampered',
+            mutate: function () {
+                return db.collection('vr204_system_migrations').updateOne(
+                    { _id: 'users-file-to-mongo' },
+                    { $set: { 'manifest.source.count': 2 } }
+                );
+            }
+        }
+    ].forEach(function (testCase) {
+        it('fails closed for ' + testCase.name + ' finalized user migration evidence', async function () {
+            await testCase.mutate();
+            var report = await preflight.run(options());
+
+            expect(report.safe).to.be(false);
+            expect(report.checks.usersMigration.safe).to.be(false);
+            expect(JSON.stringify(report)).not.to.contain('hash');
+            expect(JSON.stringify(report)).not.to.contain(config.databaseUrl);
+        });
+    });
+
+    [
+        {
+            name: 'createdAt',
+            mutate: function () {
+                return db.collection('vr204_users').updateOne(
+                    { usernameNorm: 'alice' }, { $inc: { createdAt: 1 } }
+                );
+            }
+        },
+        {
+            name: 'username-to-id mapping',
+            mutate: async function () {
+                var user = await db.collection('vr204_users').findOne({ usernameNorm: 'alice' });
+                await db.collection('vr204_users').deleteOne({ _id: user._id });
+                user._id = new ObjectId('000000000000000000002042');
+                await db.collection('vr204_users').insertOne(user);
+            }
+        }
+    ].forEach(function (testCase) {
+        it('fails closed on migrated user ' + testCase.name + ' divergence', async function () {
+            await testCase.mutate();
+            var report = await preflight.run(options());
+
+            expect(report.safe).to.be(false);
+            expect(report.checks.usersMigration.safe).to.be(false);
+        });
+    });
+
     it('fails closed when the authoritative users source does not bind a legacy owner', async function () {
         fs.writeFileSync(usersFile, JSON.stringify({
             bob: { username: 'bob', passwordHash: 'hash' }
@@ -228,12 +318,89 @@ describe('Legacy retirement preflight (VR-204)', function () {
         expect(report.unmatchedOwners).to.contain('orphan');
     });
 
+    [
+        {
+            entity: 'things', identityField: '_id',
+            add: function (ownerId, modifiedAt) {
+                return db.collection('vr204_things').insertOne({
+                    _id: new ObjectId('000000000000000000002043'), ownerId: ownerId,
+                    content: 'destination only', createdAt: modifiedAt, modifiedAt: modifiedAt,
+                    attachments: [], externalContent: [], public: false, shared: false,
+                    archived: false, sticky: false
+                });
+            },
+            edit: function (modifiedAt) {
+                return db.collection('vr204_things').updateOne(
+                    { _id: THING_ID }, { $set: { content: 'destination edit', modifiedAt: modifiedAt } }
+                );
+            }
+        },
+        {
+            entity: 'tags', identityField: 'name',
+            add: function (ownerId, modifiedAt) {
+                return db.collection('vr204_tags').insertOne({
+                    ownerId: ownerId, name: 'destination-only', usage: 1,
+                    createdAt: modifiedAt, modifiedAt: modifiedAt
+                });
+            },
+            edit: function (modifiedAt) {
+                return db.collection('vr204_tags').updateOne(
+                    { name: 'work' }, { $set: { usage: 99, modifiedAt: modifiedAt } }
+                );
+            }
+        },
+        {
+            entity: 'settings', identityField: 'type',
+            add: function (ownerId, modifiedAt) {
+                return db.collection('vr204_settings').insertOne({
+                    ownerId: ownerId, type: 'destination-only',
+                    value: { title: 'Destination only' }, modifiedAt: modifiedAt
+                });
+            },
+            edit: function (modifiedAt) {
+                return db.collection('vr204_settings').updateOne(
+                    { type: 'frontend' },
+                    { $set: { value: { title: 'Destination edit' }, modifiedAt: modifiedAt } }
+                );
+            }
+        }
+    ].forEach(function (testCase) {
+        it('rejects an unmatched destination ' + testCase.entity + ' record at the migration boundary', async function () {
+            var user = await db.collection('vr204_users').findOne({ usernameNorm: 'alice' });
+            await testCase.add(String(user._id), 1000);
+            var report = await preflight.run(options());
+
+            expect(report.safe).to.be(false);
+            expect(report.checks.data.safe).to.be(false);
+            expect(report.dataMismatches.some(function (mismatch) {
+                return mismatch.entity === testCase.entity && mismatch.field === testCase.identityField;
+            })).to.be(true);
+        });
+
+        it('excludes post-boundary destination ' + testCase.entity + ' additions and edits symmetrically', async function () {
+            var user = await db.collection('vr204_users').findOne({ usernameNorm: 'alice' });
+            await Promise.all([
+                testCase.add(String(user._id), 1001),
+                testCase.edit(1001)
+            ]);
+            var report = await preflight.run(options());
+
+            expect(report.safe).to.be(true);
+            expect(report.checks.data.safe).to.be(true);
+            expect(report.checks.data.sourceCount).to.be(2);
+            expect(report.checks.data.matchedCount).to.be(2);
+            expect(report.checks.data.sourceDigest).to.be(report.checks.data.targetDigest);
+        });
+    });
+
     it('prints the boolean CLI contract and exits 0 safe / 1 unsafe', async function () {
         var cliDatabaseName = 'vr204_cli_' + process.pid;
         var cliDb = client.db(cliDatabaseName);
         var cliMongoUrl = config.databaseUrl.replace(/\/[^/?]+(\?.*)?$/, '/' + cliDatabaseName + '$1');
+        var cliManifestFile = usersManifestFile + '.cli';
         await cliDb.dropDatabase();
-        await seedRetirementState(cliDb, '');
+        var cliManifest = await createUserManifest(usersFile, cliMongoUrl, cliManifestFile);
+        await seedRetirementState(cliDb, '', cliManifest);
 
         var args = [
             path.resolve(__dirname, '../../scripts/preflight-legacy-retirement.js'),
@@ -258,6 +425,7 @@ describe('Legacy retirement preflight (VR-204)', function () {
         expect(unsafe.status).to.be(1);
         expect(unsafe.stdout).to.contain('SAFE_TO_RETIRE=false');
         await cliDb.dropDatabase();
+        fs.rmSync(cliManifestFile, { force: true });
     });
 
     it('uses only filesystem and MongoDB read operations', async function () {
