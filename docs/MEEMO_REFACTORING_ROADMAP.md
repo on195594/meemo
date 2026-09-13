@@ -1,9 +1,11 @@
 # Meemo 重构执行路线图
 
 > 建议仓库路径：`docs/MEEMO_REFACTORING_ROADMAP.md`
-> 状态：COMPLETE，Gate G0~G5 全部通过；`v2.0.0-rc1` 已发布并完成镜像、部署与恢复验收
+> 状态：Historical / Complete。RF-xxx 记录 v2.0 重构历史；当前演进路线为 **v2.1 Production Evolution**。
 > 基线：`master` @ `3a8fa1585280b6ccff699a10120c3cafccfb90c2`（2026-09-09）
 > 目标：在不进行“大爆炸式重写”的前提下，把 Meemo 演进成安全、可测试、可迁移、可持续维护的现代自托管应用。
+
+> 当前边界：统一 collections 已成为唯一业务数据 runtime；动态 legacy collections 只保留在 migration/preflight tooling。账户 file/fallback source 仍是显式迁移/回滚兼容模式，实际切换、观察窗口和数据退休属于独立运维门禁。master required checks 的配置属于仓库管理动作，以 `docs/BRANCH_PROTECTION.md` 的读回证据为准。
 
 ---
 

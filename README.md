@@ -1,6 +1,6 @@
 # Meemo
 
-Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It uses username/password authentication, MongoDB for application data and sessions, and the local filesystem for accounts and attachments.
+Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It uses username/password authentication, MongoDB for application data and sessions, and the local filesystem for attachments. Accounts can use MongoDB or the legacy file repository selected by configuration.
 
 ## Features
 
@@ -10,7 +10,7 @@ Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It
 - JSON archive import and export
 - Local username/password accounts with bcrypt password hashes
 - MongoDB unified collection model with stable user identity decoupling
-- Zero-downtime shadow data migration tooling
+- Read-only retirement preflight and historical v1-to-v2 migration tooling
 - Docker Compose deployment
 
 ## Quick start
@@ -28,11 +28,11 @@ Open <http://localhost:3000>, register an account, and sign in. View logs with `
 
 ## Authentication and storage
 
-Meemo supports username/password authentication. Accounts can be stored natively in MongoDB or in the legacy JSON file configured by `USERS_FILE`. Successful logins create server-side sessions stored in MongoDB with decoupled, stable user IDs.
+Meemo supports username/password authentication. `AUTH_USER_SOURCE` selects MongoDB, the legacy JSON file configured by `USERS_FILE`, or the temporary fallback repository. MongoDB is the production target; keep the file source only while migration or rollback compatibility is explicitly required. Successful logins create server-side sessions stored in MongoDB with decoupled, stable user IDs.
 
 The Compose stack uses two named volumes:
 
-- `meemo_data`: accounts and attachments
+- `meemo_data`: attachments and, while the legacy file account source is selected, the account file
 - `mongodb_data`: notes, tags, settings, and sessions
 
 Set a stable, strong `SESSION_SECRET`. When it is omitted, Meemo generates a process-local secret and existing sessions become invalid after every restart.
@@ -49,7 +49,7 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `APP_ORIGIN` | `http://localhost` | `http://localhost:3000` | Public origin used in RSS links |
 | `ATTACHMENT_DIR` | `./storage` | `/app/data/storage` | Attachment directory |
 | `USERS_FILE` | `./.users.json` | `/app/data/.users.json` | Account data file |
-| `AUTH_USER_SOURCE` | `file` | `file` | Primary account source: `file` or `mongo` |
+| `AUTH_USER_SOURCE` | `file` | `file` | Account repository: `file`, `mongo`, or temporary migration-only `fallback` |
 | `SESSION_SECRET` | Random on startup | Value of host `SESSION_SECRET` | Session signing secret |
 | `REGISTRATION_MODE` | `open` | `first-user` | Registration policy: `open`, `first-user`, or `disabled` |
 | `URL_ENRICHMENT_ENABLED` | `false` | `false` | Outbound URL metadata fetch (disabled by default for SSRF safety) |
@@ -76,12 +76,15 @@ Requirements: Node.js 20 or newer, npm, and Docker.
 
 ```sh
 npm ci
+npm --prefix web ci
+npm --prefix web run typecheck
+npm --prefix web test
 npm run build
 npm test
 ./localdevelopment
 ```
 
-`npm run build` compiles modern Vue 3 web source in `web/` into the ignored `public/` directory. `npm test` starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application.
+`npm run build` compiles modern Vue 3 web source in `web/` into the ignored `public/` directory. Frontend behavior tests use Vitest; backend and contract tests use Mocha through `npm test`, which starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application.
 
 To run only the Node.js process, provide MongoDB separately and use `npm start`.
 
@@ -89,17 +92,17 @@ To run only the Node.js process, provide MongoDB separately and use `npm start`.
 
 | Path | Contents |
 | --- | --- |
-| `app.js` | Express entry point, app factory (`createApp`), and server lifecycle (`startServer`) |
+| `app.js` | Runtime composition root and server entry point (`startServer`) |
 | `src/lifecycle.js` | Worker management, MongoDB pool lifecycle, and graceful shutdown sequencing |
-| `src/http/` | Domain route modules, authentication middleware, Zod validation, and uniform HTTP errors |
+| `src/http/` | Injected Express app factory, session/upload setup, domain routes, validation, and uniform HTTP errors |
 | `src/services/` | Promise-first authentication, things, attachments, sharing, settings, health, and import/export behavior |
 | `src/storage/` | Local filesystem attachment adapter |
 | `src/database/` | MongoDB persistence (things, tags, settings, users, and sessions) |
 | `src/users.js` | Account repository abstraction and password handling |
 | `types/` | TypeScript domain definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`) |
-| `scripts/` | Idempotent zero-downtime migration scripts (`dry-run`, `apply`, `verify`) and attachment GC |
-| `src/test/` | Mocha tests |
-| `web/` | Modern Vue 3 + Vite + TypeScript browser application compiled into `public/` |
+| `scripts/` | Historical v1-to-v2 migration tools, read-only retirement preflight, benchmark, and attachment GC |
+| `src/test/` | Backend and contract tests run by Mocha |
+| `web/` | Vue 3 + Vite + TypeScript application and Vitest behavior tests; route query owns note filters |
 | `docs/` | Architecture, security, backup/restore, release, and refactoring documentation |
 | `Dockerfile`, `docker-compose.yml` | Container build and deployment |
 | `.github/` | Continuous integration and repository configuration |
@@ -112,6 +115,7 @@ Do not commit generated `public/`, `node_modules/`, account files, attachments, 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
+- [Master branch protection](docs/BRANCH_PROTECTION.md)
 - [Security policy](SECURITY.md)
 
 ## License
