@@ -10,32 +10,6 @@ var fs = require('fs'),
 describe('Vue 3 Notes Read Path (RF-503)', function () {
     var webDir = path.resolve(__dirname, '../../web');
 
-    it('implements useNotes composable in web/src/composables/useNotes.ts', function () {
-        var filePath = path.join(webDir, 'src/composables/useNotes.ts');
-        expect(fs.existsSync(filePath)).to.be(true);
-
-        var src = fs.readFileSync(filePath, 'utf8');
-        expect(src).to.contain('export function useNotes');
-        expect(src).to.contain('const things = ref<Thing[]>');
-        expect(src).to.contain('const tags = ref<Tag[]>');
-        expect(src).to.contain('const isLoading = ref(false)');
-        expect(src).to.contain('const isLoadingMore = ref(false)');
-        expect(src).to.contain('const hasMore = ref(true)');
-        expect(src).to.contain('const searchQuery = ref');
-        expect(src).to.contain('const selectedTag = ref');
-        expect(src).to.contain('const isArchived = ref(false)');
-        expect(src).to.contain('const activeFilter = computed(');
-        expect(src).to.contain('const hasActiveFilter = computed(');
-        expect(src).to.contain('async function fetchNotes(');
-        expect(src).to.contain('async function fetchMore(');
-        expect(src).to.contain('async function fetchTags(');
-        expect(src).to.contain('async function setSearch(');
-        expect(src).to.contain('async function selectTag(');
-        expect(src).to.contain('async function toggleArchived(');
-        expect(src).to.contain('async function clearFilters(');
-        expect(src).to.contain('api.things.list(');
-        expect(src).to.contain('api.things.tags(');
-    });
 
     it('implements NoteCard component in web/src/components/NoteCard.vue', function () {
         var filePath = path.join(webDir, 'src/components/NoteCard.vue');
@@ -79,7 +53,6 @@ describe('Vue 3 Notes Read Path (RF-503)', function () {
         expect(src).to.contain('active-filter-bar');
         expect(src).to.contain('load-more-btn');
         expect(src).to.contain('handleTagClick');
-        expect(src).to.contain('handleSearchSubmit');
         expect(src).to.contain('handleViewSwitch');
         expect(src).to.contain('IntersectionObserver');
     });

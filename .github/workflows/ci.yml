@@ -34,6 +34,8 @@ jobs:
           git diff --exit-code -- types/generated/api-types.ts
       - name: Type-check frontend
         run: npm --prefix web run typecheck
+      - name: Test frontend behavior
+        run: npm --prefix web test
       - name: Build frontend
         run: npm run build
       - name: Run tests

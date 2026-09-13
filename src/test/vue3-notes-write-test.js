@@ -10,21 +10,6 @@ var fs = require('fs'),
 describe('Vue 3 Notes Write Path (RF-504)', function () {
     var webDir = path.resolve(__dirname, '../../web');
 
-    it('implements write operations in web/src/composables/useNotes.ts', function () {
-        var filePath = path.join(webDir, 'src/composables/useNotes.ts');
-        expect(fs.existsSync(filePath)).to.be(true);
-
-        var src = fs.readFileSync(filePath, 'utf8');
-        expect(src).to.contain('async function createNote(');
-        expect(src).to.contain('async function updateNote(');
-        expect(src).to.contain('async function deleteNote(');
-        expect(src).to.contain('async function toggleSticky(');
-        expect(src).to.contain('async function togglePublic(');
-        expect(src).to.contain('async function toggleArchive(');
-        expect(src).to.contain('api.things.create(');
-        expect(src).to.contain('api.things.update(');
-        expect(src).to.contain('api.things.delete(');
-    });
 
     it('implements NoteComposer component in web/src/components/NoteComposer.vue', function () {
         var filePath = path.join(webDir, 'src/components/NoteComposer.vue');
