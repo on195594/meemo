@@ -4,9 +4,12 @@
 
 'use strict';
 
-var fs = require('fs'),
+var crypto = require('crypto'),
+    fs = require('fs'),
     path = require('path'),
-    MongoClient = require('mongodb').MongoClient;
+    mongodb = require('mongodb'),
+    MongoClient = mongodb.MongoClient,
+    EJSON = mongodb.BSON.EJSON;
 
 function parseArgs(argv, env) {
     var args = argv || process.argv.slice(2);
@@ -39,6 +42,74 @@ function parseArgs(argv, env) {
 
 function normalized(value) {
     return typeof value === 'string' ? value.toLowerCase() : null;
+}
+
+function sortFields(value) {
+    if (Array.isArray(value)) return value.map(sortFields);
+    if (!value || typeof value !== 'object') return value;
+    if (Object.getPrototypeOf(value) !== Object.prototype &&
+            Object.getPrototypeOf(value) !== null) return value;
+
+    var sorted = Object.create(null);
+    Object.keys(value).sort().forEach(function (key) {
+        sorted[key] = sortFields(value[key]);
+    });
+    return sorted;
+}
+
+function canonicalJson(value) {
+    return EJSON.stringify(sortFields(value), { relaxed: false });
+}
+
+function recordsDigest(records) {
+    var sorted = records.slice().sort(function (left, right) {
+        var leftJson = canonicalJson(left);
+        var rightJson = canonicalJson(right);
+        if (leftJson < rightJson) return -1;
+        if (leftJson > rightJson) return 1;
+        return 0;
+    });
+    return crypto.createHash('sha256').update(canonicalJson(sorted)).digest('hex');
+}
+
+function sourceIdentityRecord(key, user) {
+    if (!user || typeof user !== 'object') return null;
+    var username = user.username || key;
+    if (typeof username !== 'string' || !username || typeof user.passwordHash !== 'string') return null;
+    return {
+        username: username,
+        usernameNorm: username.toLowerCase(),
+        displayName: user.displayName || username,
+        email: user.email || '',
+        passwordHash: user.passwordHash,
+        status: 'active'
+    };
+}
+
+function mongoIdentityRecord(user) {
+    return {
+        username: user.username,
+        usernameNorm: user.usernameNorm,
+        displayName: user.displayName,
+        email: user.email,
+        passwordHash: user.passwordHash,
+        status: user.status
+    };
+}
+
+function inspectIdentityManifest(fileUsers, mongoUsers) {
+    var sourceKeys = Object.keys(fileUsers);
+    var sourceRecords = sourceKeys.map(function (key) {
+        return sourceIdentityRecord(key, fileUsers[key]);
+    }).filter(Boolean);
+    var mongoRecords = mongoUsers.map(mongoIdentityRecord);
+    return {
+        sourceCount: sourceKeys.length,
+        mongoCount: mongoUsers.length,
+        validSourceCount: sourceRecords.length,
+        sourceDigest: recordsDigest(sourceRecords),
+        mongoDigest: recordsDigest(mongoRecords)
+    };
 }
 
 function addAlias(index, alias, user) {
@@ -156,8 +227,12 @@ async function inspectLegacyCollections(db, collectionPrefix) {
     return legacy;
 }
 
-function inspectOwners(legacyCollections, mongoIndex) {
+function inspectOwners(legacyCollections, mongoIndex, fileMappings) {
     var prefixes = [];
+    var authoritativeOwners = Object.create(null);
+    fileMappings.forEach(function (mapping) {
+        authoritativeOwners[mapping.mongoUserId] = true;
+    });
     legacyCollections.forEach(function (entry) {
         if (prefixes.indexOf(entry.prefix) === -1) prefixes.push(entry.prefix);
     });
@@ -170,11 +245,181 @@ function inspectOwners(legacyCollections, mongoIndex) {
         if (matches.length === 0) unmatched.push(prefix);
         else if (matches.length > 1) {
             collisions.push({ prefix: prefix, mongoUserIds: matches.map(userIdentity) });
+        } else if (!authoritativeOwners[userIdentity(matches[0])]) {
+            unmatched.push(prefix);
         } else {
             mappings.push({ prefix: prefix, mongoUserId: userIdentity(matches[0]), username: matches[0].username });
         }
     });
     return { mappings: mappings, unmatched: unmatched, collisions: collisions };
+}
+
+var THING_FIELDS = [
+    '_id', 'content', 'createdAt', 'modifiedAt', 'attachments',
+    'externalContent', 'public', 'shared', 'archived', 'sticky'
+];
+
+function canonicalField(document, field, expectedValue) {
+    if (arguments.length === 3) return { present: true, value: expectedValue };
+    if (!Object.prototype.hasOwnProperty.call(document, field)) return { present: false };
+    return { present: true, value: document[field] };
+}
+
+function canonicalDataFields(type, document, source, startedAt) {
+    if (type === 'things') {
+        var thing = {};
+        THING_FIELDS.forEach(function (field) {
+            if (source && (field === 'public' || field === 'shared' ||
+                    field === 'archived' || field === 'sticky')) {
+                thing[field] = canonicalField(document, field, !!document[field]);
+            } else thing[field] = canonicalField(document, field);
+        });
+        return thing;
+    }
+    if (type === 'tags') {
+        return {
+            name: canonicalField(document, 'name'),
+            usage: source ? canonicalField(document, 'usage', document.usage || 1) :
+                canonicalField(document, 'usage'),
+            createdAt: source ? canonicalField(document, 'createdAt', document.createdAt || startedAt) :
+                canonicalField(document, 'createdAt')
+        };
+    }
+    var value = document && typeof document.value === 'object' ?
+        document.value : { title: 'Meemo' };
+    return {
+        value: source ? canonicalField(document, 'value', value) :
+            canonicalField(document, 'value')
+    };
+}
+
+function dataIdentity(type, document) {
+    var field = type === 'things' ? '_id' : type === 'tags' ? 'name' : 'type';
+    return { field: field, value: canonicalField(document, field) };
+}
+
+function addDataMismatch(mismatches, entry, field) {
+    mismatches.push({
+        ownerId: entry.ownerId,
+        legacyCollection: entry.collection,
+        entity: entry.type,
+        id: String(entry.identity.value.value),
+        field: field
+    });
+}
+
+async function inspectData(db, collectionPrefix, legacyCollections, owners, migration) {
+    var ownerByPrefix = Object.create(null);
+    var groups = new Map();
+    var mismatches = [];
+    var sourceRecords = [];
+    var targetRecords = [];
+    var matchedCount = 0;
+
+    owners.mappings.forEach(function (mapping) {
+        ownerByPrefix[mapping.prefix] = mapping.mongoUserId;
+    });
+
+    for (var collectionIndex = 0; collectionIndex < legacyCollections.length; collectionIndex++) {
+        var collection = legacyCollections[collectionIndex];
+        var documents = await db.collection(collection.name).find({}).toArray();
+        collection.count = documents.length;
+        var ownerId = ownerByPrefix[collection.prefix];
+
+        documents.forEach(function (document) {
+            var identity = dataIdentity(collection.type, document);
+            var entry = {
+                ownerId: ownerId || null,
+                collection: collection.name,
+                type: collection.type,
+                document: document,
+                identity: identity
+            };
+            var sourceFields = canonicalDataFields(
+                collection.type, document, true, migration && migration.startedAt
+            );
+            sourceRecords.push({
+                ownerId: entry.ownerId,
+                entity: entry.type,
+                id: identity.value,
+                fields: sourceFields
+            });
+            if (!ownerId) {
+                addDataMismatch(mismatches, entry, 'ownerId');
+                return;
+            }
+            var groupKey = canonicalJson([ownerId, collection.type]);
+            if (!groups.has(groupKey)) {
+                groups.set(groupKey, { ownerId: ownerId, type: collection.type, entries: [] });
+            }
+            groups.get(groupKey).entries.push(entry);
+        });
+    }
+
+    for (var group of groups.values()) {
+        var targets = await db.collection((collectionPrefix || '') + group.type)
+            .find({ ownerId: group.ownerId }).toArray();
+        var targetByIdentity = new Map();
+        targets.forEach(function (target) {
+            var identity = dataIdentity(group.type, target);
+            var key = canonicalJson(identity.value);
+            if (targetByIdentity.has(key)) {
+                addDataMismatch(mismatches, {
+                    ownerId: group.ownerId,
+                    collection: (collectionPrefix || '') + group.type,
+                    type: group.type,
+                    identity: identity
+                }, 'identity');
+            } else targetByIdentity.set(key, target);
+        });
+
+        var sourceIdentities = new Map();
+        group.entries.forEach(function (entry) {
+            var key = canonicalJson(entry.identity.value);
+            if (sourceIdentities.has(key)) {
+                addDataMismatch(mismatches, entry, 'identity');
+                return;
+            }
+            sourceIdentities.set(key, true);
+
+            var target = targetByIdentity.get(key);
+            if (!target) {
+                addDataMismatch(mismatches, entry, entry.identity.field);
+                return;
+            }
+
+            var sourceFields = canonicalDataFields(
+                entry.type, entry.document, true, migration && migration.startedAt
+            );
+            var targetFields = canonicalDataFields(
+                entry.type, target, false, migration && migration.startedAt
+            );
+            matchedCount++;
+            targetRecords.push({
+                ownerId: entry.ownerId,
+                entity: entry.type,
+                id: entry.identity.value,
+                fields: targetFields
+            });
+            Object.keys(sourceFields).forEach(function (field) {
+                if (canonicalJson(sourceFields[field]) !== canonicalJson(targetFields[field])) {
+                    addDataMismatch(mismatches, entry, field);
+                }
+            });
+        });
+    }
+
+    var sourceDigest = recordsDigest(sourceRecords);
+    var targetDigest = recordsDigest(targetRecords);
+    return {
+        sourceCount: sourceRecords.length,
+        matchedCount: matchedCount,
+        sourceDigest: sourceDigest,
+        targetDigest: targetDigest,
+        mismatches: mismatches,
+        safe: mismatches.length === 0 && sourceRecords.length === matchedCount &&
+            sourceDigest === targetDigest
+    };
 }
 
 async function run(options) {
@@ -199,9 +444,13 @@ async function run(options) {
         var mongoUsers = await db.collection(names.users).find({}).toArray();
         var mongoIndex = buildMongoIdentityIndex(mongoUsers);
         var identities = inspectFileIdentities(fileResult.users, mongoIndex);
+        var identityManifest = inspectIdentityManifest(fileResult.users, mongoUsers);
         var legacyCollections = await inspectLegacyCollections(db, options.collectionPrefix);
-        var owners = inspectOwners(legacyCollections, mongoIndex);
+        var owners = inspectOwners(legacyCollections, mongoIndex, identities.mappings);
         var migration = await db.collection(names.migrations).findOne({ _id: 'schema-v2' });
+        var data = await inspectData(
+            db, options.collectionPrefix, legacyCollections, owners, migration
+        );
 
         var checks = {
             authUserSource: {
@@ -210,13 +459,25 @@ async function run(options) {
                 safe: options.authUserSource === 'mongo'
             },
             usersFile: Object.assign({}, fileResult.report, {
-                safe: fileResult.report.bound && fileResult.report.exists && fileResult.report.valid
+                safe: fileResult.report.bound && fileResult.report.exists &&
+                    fileResult.report.valid && fileResult.report.count > 0
             }),
-            identities: {
-                safe: identities.collisions.length === 0 && identities.unmatched.length === 0
-            },
+            identities: Object.assign({}, identityManifest, {
+                safe: identityManifest.sourceCount > 0 &&
+                    identityManifest.validSourceCount === identityManifest.sourceCount &&
+                    identityManifest.sourceCount === identityManifest.mongoCount &&
+                    identityManifest.sourceDigest === identityManifest.mongoDigest &&
+                    identities.collisions.length === 0 && identities.unmatched.length === 0
+            }),
             owners: {
                 safe: owners.collisions.length === 0 && owners.unmatched.length === 0
+            },
+            data: {
+                sourceCount: data.sourceCount,
+                matchedCount: data.matchedCount,
+                sourceDigest: data.sourceDigest,
+                targetDigest: data.targetDigest,
+                safe: data.safe
             },
             migration: {
                 phase: migration && migration.phase || null,
@@ -252,7 +513,8 @@ async function run(options) {
             unmatchedFileUsers: identities.unmatched,
             ownerMappings: owners.mappings,
             ownerCollisions: owners.collisions,
-            unmatchedOwners: owners.unmatched
+            unmatchedOwners: owners.unmatched,
+            dataMismatches: data.mismatches
         };
     } finally {
         await close();
@@ -269,10 +531,11 @@ async function main() {
         }
         var report = await run(options);
         console.log(JSON.stringify(report, null, 2));
-        console.log(report.status);
-        process.exit(report.safe ? 0 : 2);
+        console.log('SAFE_TO_RETIRE=' + report.safe);
+        process.exit(report.safe ? 0 : 1);
     } catch (error) {
         console.error('RETIREMENT_PREFLIGHT_ERROR:', error.message);
+        console.log('SAFE_TO_RETIRE=false');
         process.exit(1);
     }
 }
