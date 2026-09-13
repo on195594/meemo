@@ -356,6 +356,42 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 expect(results[1].value).to.eql({ title: 'Legacy title', legacyOnly: true });
             });
         });
+
+        it('uses the current database after runtime database replacement', function () {
+            var originalDb = config.db;
+            var firstCollections = {};
+            var secondCollections = {};
+            function fakeDb(collections) {
+                return {
+                    collection: function (name) {
+                        if (!collections[name]) {
+                            collections[name] = { createIndex: function () { return Promise.resolve(); } };
+                        }
+                        return collections[name];
+                    }
+                };
+            }
+
+            try {
+                things.resetCache();
+                tags.resetCache();
+                settings.resetCache();
+                config.db = fakeDb(firstCollections);
+                things.getUnifiedCollection();
+                tags.getUnifiedCollection();
+                settings.getUnifiedCollection();
+
+                config.db = fakeDb(secondCollections);
+                expect(things.getUnifiedCollection()).to.equal(secondCollections.things);
+                expect(tags.getUnifiedCollection()).to.equal(secondCollections.tags);
+                expect(settings.getUnifiedCollection()).to.equal(secondCollections.settings);
+            } finally {
+                config.db = originalDb;
+                things.resetCache();
+                tags.resetCache();
+                settings.resetCache();
+            }
+        });
     });
 
     describe('Data Migration Script (migrate-data-to-v2.js)', function () {

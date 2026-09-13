@@ -7,18 +7,21 @@ var assert = require('assert'),
     config = require('../config.js'),
     nodeify = require('../promise.js');
 
-var unifiedCollection = null;
+var collectionDatabase = null;
 var indexesCreated = false;
 var lastModifiedAt = 0;
 
 function resetCache() {
-    unifiedCollection = null;
+    collectionDatabase = null;
     indexesCreated = false;
 }
 
 function getUnifiedCollection() {
     if (!config.db) throw new Error('MongoDB database is not connected');
-    if (!unifiedCollection) unifiedCollection = config.db.collection('tags');
+    if (collectionDatabase !== config.db) {
+        collectionDatabase = config.db;
+        indexesCreated = false;
+    }
     if (!indexesCreated) {
         indexesCreated = true;
         ensureIndexes().catch(function (error) {
@@ -26,7 +29,7 @@ function getUnifiedCollection() {
             console.error('Warning: could not create tags indexes:', error);
         });
     }
-    return unifiedCollection;
+    return config.db.collection('tags');
 }
 
 function ensureIndexes(callback) {

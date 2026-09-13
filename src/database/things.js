@@ -7,20 +7,17 @@ var assert = require('assert'),
     config = require('../config.js'),
     nodeify = require('../promise.js');
 
-var unifiedCollection = null;
 var activeUserIds = {};
 var indexesCreated = false;
 
 function resetCache() {
-    unifiedCollection = null;
     activeUserIds = {};
     indexesCreated = false;
 }
 
 function getUnifiedCollection() {
     if (!config.db) throw new Error('MongoDB database is not connected');
-    if (!unifiedCollection) unifiedCollection = config.db.collection('things');
-    return unifiedCollection;
+    return config.db.collection('things');
 }
 
 function createIndex(collection, spec, options) {

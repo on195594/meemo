@@ -6,17 +6,20 @@ var assert = require('assert'),
     config = require('../config.js'),
     nodeify = require('../promise.js');
 
-var unifiedCollection = null;
+var collectionDatabase = null;
 var indexesCreated = false;
 
 function resetCache() {
-    unifiedCollection = null;
+    collectionDatabase = null;
     indexesCreated = false;
 }
 
 function getUnifiedCollection() {
     if (!config.db) throw new Error('MongoDB database is not connected');
-    if (!unifiedCollection) unifiedCollection = config.db.collection('settings');
+    if (collectionDatabase !== config.db) {
+        collectionDatabase = config.db;
+        indexesCreated = false;
+    }
     if (!indexesCreated) {
         indexesCreated = true;
         ensureIndexes().catch(function (error) {
@@ -24,7 +27,7 @@ function getUnifiedCollection() {
             console.error('Warning: could not create settings indexes:', error);
         });
     }
-    return unifiedCollection;
+    return config.db.collection('settings');
 }
 
 function ensureIndexes(callback) {
