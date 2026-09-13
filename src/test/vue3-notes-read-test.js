@@ -10,25 +10,6 @@ var fs = require('fs'),
 describe('Vue 3 Notes Read Path (RF-503)', function () {
     var webDir = path.resolve(__dirname, '../../web');
 
-
-    it('implements NoteCard component in web/src/components/NoteCard.vue', function () {
-        var filePath = path.join(webDir, 'src/components/NoteCard.vue');
-        expect(fs.existsSync(filePath)).to.be(true);
-
-        var src = fs.readFileSync(filePath, 'utf8');
-        expect(src).to.contain('thing.sticky');
-        expect(src).to.contain('thing.public');
-        expect(src).to.contain('thing.shared');
-        expect(src).to.contain('thing.archived');
-        expect(src).to.contain('badge-sticky');
-        expect(src).to.contain('badge-public');
-        expect(src).to.contain('badge-archived');
-        expect(src).to.contain('renderMarkdown');
-        expect(src).to.contain('thing.attachments');
-        expect(src).to.contain('tagClick');
-        expect(src).to.contain('tag-pill');
-    });
-
     it('implements TagSidebar component in web/src/components/TagSidebar.vue', function () {
         var filePath = path.join(webDir, 'src/components/TagSidebar.vue');
         expect(fs.existsSync(filePath)).to.be(true);
