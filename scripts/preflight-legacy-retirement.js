@@ -217,10 +217,13 @@ function readUsersFile(filePath, bound) {
 function inspectUsersMigration(evidence, fileUsers, mongoUsers, usersFile, mongoUrl) {
     var manifest = evidence && evidence.manifest;
     var sourceRaw;
+    var sourcePath;
     try {
-        sourceRaw = fs.readFileSync(usersFile, 'utf8');
+        sourcePath = fs.realpathSync(usersFile);
+        sourceRaw = fs.readFileSync(sourcePath);
     } catch (ignore) {
         sourceRaw = null;
+        sourcePath = null;
     }
     var usernameToId = manifest && manifest.usernameToId;
     var sourceRecords = Object.keys(fileUsers).sort().map(function (key) {
@@ -238,7 +241,7 @@ function inspectUsersMigration(evidence, fileUsers, mongoUsers, usersFile, mongo
         migration: USER_MIGRATION_ID,
         runId: manifest.runId,
         source: {
-            identity: usersFile && path.resolve(usersFile),
+            identity: sourcePath,
             byteCount: sourceRaw === null ? null : sourceRaw.length,
             byteDigest: sourceRaw === null ? null : byteDigest(sourceRaw),
             canonicalDigest: stableDigest(fileUsers),
@@ -262,7 +265,7 @@ function inspectUsersMigration(evidence, fileUsers, mongoUsers, usersFile, mongo
         exactKeys(manifest.target, ['database', 'hosts']) &&
         exactKeys(manifest.usernameToId, Object.keys(fileUsers).map(function (key) {
             var user = fileUsers[key];
-            return user && user.username || key;
+            return (user && user.username || key).toLowerCase();
         })) && stableJson(manifest) === stableJson(Object.assign({}, expectedManifest, {
             manifestDigest: stableDigest(expectedManifest)
         }));
@@ -440,7 +443,7 @@ function modifiedAfterMigration(type, document, startedAt) {
     return typeof timestamp === 'number' && timestamp > startedAt;
 }
 
-async function inspectData(db, collectionPrefix, legacyCollections, owners, migration) {
+async function inspectData(db, collectionPrefix, legacyCollections, owners, authoritativeUsers, migration) {
     var ownerByPrefix = Object.create(null);
     var groups = new Map();
     var mismatches = [];
@@ -450,6 +453,16 @@ async function inspectData(db, collectionPrefix, legacyCollections, owners, migr
 
     owners.mappings.forEach(function (mapping) {
         ownerByPrefix[mapping.prefix] = mapping.mongoUserId;
+    });
+    authoritativeUsers.forEach(function (mapping) {
+        ['things', 'tags', 'settings'].forEach(function (type) {
+            var groupKey = canonicalJson([mapping.mongoUserId, type]);
+            if (!groups.has(groupKey)) {
+                groups.set(groupKey, {
+                    ownerId: mapping.mongoUserId, type: type, entries: []
+                });
+            }
+        });
     });
 
     for (var collectionIndex = 0; collectionIndex < legacyCollections.length; collectionIndex++) {
@@ -580,7 +593,12 @@ async function run(options) {
 
     if (!db) {
         if (!options.mongoUrl) throw new Error('MONGODB_URL or --mongo-url must be explicitly bound');
-        var client = await MongoClient.connect(options.mongoUrl);
+        var client;
+        try {
+            client = await MongoClient.connect(options.mongoUrl);
+        } catch (ignore) {
+            throw new Error('Failed to connect to target MongoDB');
+        }
         db = client.db();
         close = function () { return client.close(); };
     }
@@ -608,7 +626,8 @@ async function run(options) {
         var owners = inspectOwners(legacyCollections, mongoIndex, identities.mappings);
         var migration = await db.collection(names.migrations).findOne({ _id: 'schema-v2' });
         var data = await inspectData(
-            db, options.collectionPrefix, legacyCollections, owners, migration
+            db, options.collectionPrefix, legacyCollections, owners,
+            identities.mappings, migration
         );
 
         var checks = {

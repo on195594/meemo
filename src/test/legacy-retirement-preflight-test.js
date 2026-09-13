@@ -276,6 +276,35 @@ describe('Legacy retirement preflight (VR-204)', function () {
         });
     });
 
+    it('accepts valid UTF-8, mixed-case, symlink-bound user migration evidence', async function () {
+        var linkedUsersFile = usersFile + '.link';
+        fs.writeFileSync(usersFile, JSON.stringify({
+            Alice: { username: 'Alice', displayName: '爱丽丝', passwordHash: 'hash' }
+        }));
+        fs.rmSync(linkedUsersFile, { force: true });
+        fs.symlinkSync(usersFile, linkedUsersFile);
+        try {
+            var collections = await db.listCollections().toArray();
+            await Promise.all(collections.map(function (entry) {
+                if (/^vr204_/.test(entry.name)) return db.collection(entry.name).drop();
+            }));
+            var manifest = await createUserManifest(
+                linkedUsersFile, config.databaseUrl, usersManifestFile
+            );
+            await seedRetirementState(db, 'vr204_', manifest);
+            await db.collection('vr204_users').updateOne(
+                { usernameNorm: 'alice' },
+                { $set: { username: 'Alice', displayName: '爱丽丝' } }
+            );
+
+            var report = await preflight.run(options({ usersFile: linkedUsersFile }));
+            expect(report.checks.usersMigration.safe).to.be(true);
+            expect(report.safe).to.be(true);
+        } finally {
+            fs.rmSync(linkedUsersFile, { force: true });
+        }
+    });
+
     it('fails closed when the authoritative users source does not bind a legacy owner', async function () {
         fs.writeFileSync(usersFile, JSON.stringify({
             bob: { username: 'bob', passwordHash: 'hash' }
@@ -391,6 +420,66 @@ describe('Legacy retirement preflight (VR-204)', function () {
             expect(report.checks.data.matchedCount).to.be(2);
             expect(report.checks.data.sourceDigest).to.be(report.checks.data.targetDigest);
         });
+    });
+
+    [
+        {
+            entity: 'things',
+            add: function (ownerId) {
+                return db.collection('vr204_things').insertOne({
+                    _id: new ObjectId('000000000000000000002044'), ownerId: ownerId,
+                    content: 'unmatched', createdAt: 1000, modifiedAt: 1000,
+                    attachments: [], externalContent: [], public: false, shared: false,
+                    archived: false, sticky: false
+                });
+            }
+        },
+        {
+            entity: 'tags',
+            add: function (ownerId) {
+                return db.collection('vr204_tags').insertOne({
+                    ownerId: ownerId, name: 'unmatched', usage: 1,
+                    createdAt: 1000, modifiedAt: 1000
+                });
+            }
+        },
+        {
+            entity: 'settings',
+            add: function (ownerId) {
+                return db.collection('vr204_settings').insertOne({
+                    ownerId: ownerId, type: 'unmatched', value: {}, modifiedAt: 1000
+                });
+            }
+        }
+    ].forEach(function (testCase) {
+        it('rejects boundary ' + testCase.entity + ' when no legacy entity collection exists', async function () {
+            var user = await db.collection('vr204_users').findOne({ usernameNorm: 'alice' });
+            await db.collection('vr204_alice_' + testCase.entity).drop();
+            await db.collection('vr204_' + testCase.entity).deleteMany({});
+            await testCase.add(String(user._id));
+
+            var report = await preflight.run(options());
+            expect(report.safe).to.be(false);
+            expect(report.dataMismatches.some(function (mismatch) {
+                return mismatch.entity === testCase.entity;
+            })).to.be(true);
+        });
+    });
+
+    it('redacts malformed MongoDB connection strings from CLI errors', function () {
+        var marker = 'do-not-echo-this';
+        var result = childProcess.spawnSync(process.execPath, [
+            path.resolve(__dirname, '../../scripts/preflight-legacy-retirement.js'),
+            '--mongo-url', 'mongodb://' + marker + ':password@[/database',
+            '--users-file', usersFile,
+            '--expect-environment', 'test',
+            '--expect-database', 'database'
+        ], { encoding: 'utf8', timeout: 10000 });
+
+        expect(result.status).to.be(1);
+        expect(result.stdout).to.contain('SAFE_TO_RETIRE=false');
+        expect(result.stderr).not.to.contain(marker);
+        expect(result.stderr).not.to.contain('password');
     });
 
     it('prints the boolean CLI contract and exits 0 safe / 1 unsafe', async function () {
