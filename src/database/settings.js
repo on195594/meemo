@@ -4,16 +4,13 @@
 
 var assert = require('assert'),
     config = require('../config.js'),
-    nodeify = require('../promise.js'),
-    users = require('../users.js');
+    nodeify = require('../promise.js');
 
 var unifiedCollection = null;
-var legacyCollections = {};
 var indexesCreated = false;
 
 function resetCache() {
     unifiedCollection = null;
-    legacyCollections = {};
     indexesCreated = false;
 }
 
@@ -46,21 +43,6 @@ function ensureIndexes(callback) {
     return nodeify(promise, callback);
 }
 
-function getLegacyCollection(userId) {
-    assert.strictEqual(typeof userId, 'string');
-    if (!legacyCollections[userId]) legacyCollections[userId] = config.db.collection(userId + '_settings');
-    return legacyCollections[userId];
-}
-
-async function getAlternateUserId(userId) {
-    try {
-        var user = await users.resolveUser(userId);
-        if (user.id === userId && user.username && user.username !== userId) return user.username;
-        if (user.username === userId && user.id && user.id !== userId) return user.id;
-    } catch (error) {}
-    return null;
-}
-
 function put(userId, value, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert(value && typeof value === 'object');
@@ -79,20 +61,8 @@ function put(userId, value, callback) {
 function get(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
 
-    var promise = getAlternateUserId(userId).then(async function (alternateUserId) {
-        var doc = await getUnifiedCollection().findOne({ ownerId: userId });
+    var promise = getUnifiedCollection().findOne({ ownerId: userId }).then(function (doc) {
         if (doc && typeof doc.value === 'object') return doc.value;
-        if (alternateUserId) {
-            doc = await getUnifiedCollection().findOne({ ownerId: alternateUserId });
-            if (doc && typeof doc.value === 'object') return doc.value;
-        }
-
-        doc = await getLegacyCollection(userId).findOne({ type: 'frontend' });
-        if (doc && typeof doc.value === 'object') return doc.value;
-        if (alternateUserId) {
-            doc = await getLegacyCollection(alternateUserId).findOne({ type: 'frontend' });
-            if (doc && typeof doc.value === 'object') return doc.value;
-        }
         return { title: 'Meemo' };
     });
     return nodeify(promise, callback);

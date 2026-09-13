@@ -173,6 +173,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         var tagOwner = 'rf703_tag_owner';
         var settingsOwner = 'rf703_settings_owner';
         var legacyThings;
+        var legacyTagId = new ObjectId();
 
         before(function (done) {
             legacyThings = Array.from({ length: 100 }, function (_, index) {
@@ -201,7 +202,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 db.collection('things').insertMany(copiedThings),
                 db.collection(tagOwner + '_tags').insertMany([
                     { _id: new ObjectId(), name: 'alpha', usage: 1, createdAt: 1 },
-                    { _id: new ObjectId(), name: 'beta', usage: 5, createdAt: 2 }
+                    { _id: legacyTagId, name: 'beta', usage: 5, createdAt: 2 }
                 ]),
                 db.collection('tags').insertMany([
                     { ownerId: tagOwner, name: 'alpha', usage: 10, createdAt: 3 },
@@ -268,16 +269,36 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             });
         });
 
-        it('merges tags by name, prefers Unified, and sorts the merged result', function () {
+        it('reads tags only from the Unified collection', function () {
             return tags.get(tagOwner).then(function (list) {
-                expect(list.map(function (tag) { return tag.name; })).to.eql(['alpha', 'beta', 'gamma']);
+                expect(list.map(function (tag) { return tag.name; })).to.eql(['alpha', 'gamma']);
                 expect(list[0].usage).to.equal(10);
             });
         });
 
-        it('treats settings as a singleton and prefers Unified without field merging', function () {
+        it('does not delete a tag from the Legacy collection', function () {
+            return tags.del(tagOwner, String(legacyTagId)).then(function () {
+                return db.collection(tagOwner + '_tags').countDocuments({ _id: legacyTagId });
+            }).then(function (count) {
+                expect(count).to.equal(1);
+            });
+        });
+
+        it('reads settings only from the Unified collection', function () {
             return settings.get(settingsOwner).then(function (value) {
                 expect(value).to.eql({ title: 'Unified title' });
+            });
+        });
+
+        it('writes settings only to the Unified collection', function () {
+            return settings.put(settingsOwner, { title: 'Updated title' }).then(function () {
+                return Promise.all([
+                    db.collection('settings').findOne({ ownerId: settingsOwner }),
+                    db.collection(settingsOwner + '_settings').findOne({ type: 'frontend' })
+                ]);
+            }).then(function (results) {
+                expect(results[0].value).to.eql({ title: 'Updated title' });
+                expect(results[1].value).to.eql({ title: 'Legacy title', legacyOnly: true });
             });
         });
     });
