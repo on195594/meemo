@@ -10,6 +10,7 @@ var MongoClient = require('mongodb').MongoClient;
 var ObjectId = require('mongodb').ObjectId;
 var config = require('../config.js');
 var things = require('../database/things.js');
+var thingService = require('../services/thing-service.js');
 var tags = require('../database/tags.js');
 var settings = require('../database/settings.js');
 var migrator = require('../../scripts/migrate-data-to-v2.js');
@@ -63,9 +64,8 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, sticky: -1, modifiedAt: -1 }));
             // ownerId + archived + modifiedAt
             expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, archived: 1, modifiedAt: -1 }));
-            // text(content)
-            var hasText = idxs.some(function (idx) { return idx.weights && idx.weights.content; });
-            expect(hasText).to.be(true);
+            // ownerId + tags
+            expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, tags: 1 }));
         });
 
         it('creates unique compound index on unified tags collection', async function () {
@@ -104,8 +104,8 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             expect(mongoDoc.content).to.equal('Unified note test content #unified');
         });
 
-        it('queries things filtered by ownerId and supports full-text search', function (done) {
-            things.getAll(testUserId, { $text: { $search: 'Unified' } }, 0, 10, function (err, list) {
+        it('queries things filtered by ownerId using the runtime search filter', function (done) {
+            things.getAll(testUserId, thingService.buildSearchFilter('Unified'), 0, 10, function (err, list) {
                 if (err) return done(err);
                 expect(list).to.be.an(Array);
                 expect(list.length).to.equal(1);
