@@ -2,8 +2,6 @@
 
 'use strict';
 
-require('supererror')({ splatchError: true });
-
 const PORT = process.env.VITE_DEV_PORT || process.env.PORT || 3000;
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
 
