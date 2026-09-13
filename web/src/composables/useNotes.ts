@@ -116,31 +116,10 @@ export function useNotes() {
     await fetchNotes(false);
   }
 
-  async function setSearch(query: string): Promise<void> {
-    searchQuery.value = query;
-    selectedTag.value = null;
-    await fetchNotes(true);
-  }
-
-  async function selectTag(tagName: string | null): Promise<void> {
-    if (selectedTag.value === tagName) {
-      selectedTag.value = null;
-    } else {
-      selectedTag.value = tagName;
-      searchQuery.value = '';
-    }
-    await fetchNotes(true);
-  }
-
-  async function toggleArchived(): Promise<void> {
-    isArchived.value = !isArchived.value;
-    await fetchNotes(true);
-  }
-
-  async function clearFilters(): Promise<void> {
-    searchQuery.value = '';
-    selectedTag.value = null;
-    isArchived.value = false;
+  async function setFilters(filters: { search: string; tag: string | null; archived: boolean }): Promise<void> {
+    searchQuery.value = filters.search;
+    selectedTag.value = filters.tag;
+    isArchived.value = filters.archived;
     await fetchNotes(true);
   }
 
@@ -273,10 +252,7 @@ export function useNotes() {
     fetchNotes,
     fetchMore,
     fetchTags,
-    setSearch,
-    selectTag,
-    toggleArchived,
-    clearFilters,
+    setFilters,
     clearNotes,
     reset: resetNotesState,
 

@@ -214,28 +214,22 @@ import { ref, computed, onMounted, onUnmounted, provide, watch, defineAsyncCompo
 import { useRouter, useRoute } from 'vue-router';
 import { useAuth } from './composables/useAuth';
 import { useSettings } from './composables/useSettings';
-import { useNotes } from './composables/useNotes';
 import LoginModal from './components/LoginModal.vue';
 
 const router = useRouter();
 const route = useRoute();
 
-const {
-  searchQuery,
-  isArchived,
-  setSearch,
-  toggleArchived,
-} = useNotes();
+const isArchived = computed(() => route.query.archived === '1' || route.query.archived === 'true');
 
 const headerSearchQuery = ref('');
 const isSearchFocused = ref(false);
 const headerSearchInputRef = ref<HTMLInputElement | null>(null);
 let headerSearchTimer: number | null = null;
 
-// Sync header input with active searchQuery
-watch(searchQuery, (newVal) => {
-  if (headerSearchQuery.value !== newVal) {
-    headerSearchQuery.value = newVal;
+watch(() => route.query.q, (newVal) => {
+  const query = typeof newVal === 'string' ? newVal : '';
+  if (headerSearchQuery.value !== query) {
+    headerSearchQuery.value = query;
   }
 }, { immediate: true });
 
@@ -253,31 +247,27 @@ function handleHeaderSearchSubmit() {
 
 function executeHeaderSearch() {
   const q = headerSearchQuery.value.trim();
+  const query = { ...route.query, q: q || undefined, tag: q ? undefined : route.query.tag };
   if (route.path !== '/') {
-    router.push({ path: '/', query: { q: q || undefined } });
+    router.push({ path: '/', query });
   } else {
-    router.replace({ query: { ...route.query, q: q || undefined } });
+    router.replace({ query });
   }
-  setSearch(q);
 }
 
 function handleHeaderSearchClear() {
   if (headerSearchTimer) clearTimeout(headerSearchTimer);
   headerSearchQuery.value = '';
-  if (route.path === '/') {
-    const newQuery = { ...route.query };
-    delete newQuery.q;
-    router.replace({ query: newQuery });
-  }
-  setSearch('');
+  const query = { ...route.query };
+  delete query.q;
+  router.replace({ query });
   headerSearchInputRef.value?.focus();
 }
 
 function handleToggleArchiveView() {
-  if (route.path !== '/') {
-    router.push('/');
-  }
-  toggleArchived();
+  const query = { ...route.query, archived: isArchived.value ? undefined : 'true' };
+  if (route.path !== '/') router.push({ path: '/', query });
+  else router.replace({ query });
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
@@ -394,11 +384,6 @@ onMounted(() => {
   document.addEventListener('click', handleGlobalClick);
   window.addEventListener('keydown', handleGlobalKeydown);
 
-  // Sync initial search from URL query if present
-  if (route.query.q && typeof route.query.q === 'string') {
-    headerSearchQuery.value = route.query.q;
-    setSearch(route.query.q);
-  }
 });
 
 onUnmounted(() => {
