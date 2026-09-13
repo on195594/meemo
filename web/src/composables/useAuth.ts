@@ -5,6 +5,8 @@ import {
   onUnauthorized,
   ApiError,
 } from '../api/client';
+import { resetNotesState } from './useNotes';
+import { resetSettingsState } from './useSettings';
 
 export interface RegisterPayload {
   username: string;
@@ -22,6 +24,16 @@ const isFirstUser = ref(false);
 const initialized = ref(false);
 const SESSION_STORAGE_KEY = 'meemo_has_session';
 
+function resetUserScopedState(): void {
+  resetNotesState();
+  resetSettingsState();
+}
+
+function setUser(nextUser: UserProfile | null): void {
+  if (user.value?.id !== nextUser?.id) resetUserScopedState();
+  user.value = nextUser;
+}
+
 function setSessionMarker(active: boolean) {
   if (typeof localStorage !== 'undefined') {
     if (active) {
@@ -35,6 +47,7 @@ function setSessionMarker(active: boolean) {
 // Register 401 unauthorized listener to handle expired or invalid sessions
 onUnauthorized((path: string) => {
   setSessionMarker(false);
+  resetUserScopedState();
   if (user.value) {
     user.value = null;
     sessionExpired.value = true;
@@ -64,12 +77,12 @@ export function useAuth() {
     authError.value = null;
     try {
       const res = await api.auth.profile();
-      user.value = res.user;
+      setUser(res.user);
       sessionExpired.value = false;
       isFirstUser.value = false;
       setSessionMarker(true);
     } catch (err: any) {
-      user.value = null;
+      setUser(null);
       setSessionMarker(false);
       if (err instanceof ApiError && err.status === 401) {
         await checkFirstUser();
@@ -88,7 +101,7 @@ export function useAuth() {
     try {
       await api.auth.login(username.trim().toLowerCase(), password);
       const res = await api.auth.profile();
-      user.value = res.user;
+      setUser(res.user);
       sessionExpired.value = false;
       isFirstUser.value = false;
       setSessionMarker(true);
@@ -132,6 +145,7 @@ export function useAuth() {
   async function logout(): Promise<void> {
     isLoading.value = true;
     setSessionMarker(false);
+    resetUserScopedState();
     try {
       await api.auth.logout();
     } catch (err) {
@@ -157,12 +171,14 @@ export function useAuth() {
   function setSessionExpired(expired = true): void {
     sessionExpired.value = expired;
     if (expired) {
+      resetUserScopedState();
       user.value = null;
     }
   }
 
   // Testing helper to reset internal state
   function _resetState(): void {
+    resetUserScopedState();
     user.value = null;
     isLoading.value = false;
     authError.value = null;
