@@ -2,8 +2,20 @@
 
 'use strict';
 
-var os = require('os'),
-    search = require('../src/services/search-service.js');
+var MongoClient = require('mongodb').MongoClient,
+    config = require('../src/config.js'),
+    databaseThings = require('../src/database/things.js'),
+    os = require('os'),
+    search = require('../src/services/search-service.js'),
+    thingService = require('../src/services/thing-service.js');
+
+var SCENARIOS = [
+    { name: 'single-keyword', options: { filter: 'benchmark', archived: false } },
+    { name: 'chinese-keyword', options: { filter: '基准', archived: false } },
+    { name: 'multi-term', options: { filter: 'benchmark project', archived: false } },
+    { name: 'tag', options: { filter: '#work', archived: false } },
+    { name: 'archived', options: { archived: true } }
+];
 
 function parseCount(name, fallback) {
     var prefix = '--' + name + '=';
@@ -13,101 +25,172 @@ function parseCount(name, fallback) {
     return value;
 }
 
-function fixture(size) {
-    return Array.from({ length: size }, function (_, index) {
+function fixture(size, ownerId) {
+    var timestamp = 1700000000000;
+    return Array.from({ length: size }, function (unused, index) {
+        var benchmark = index % 10 === 0;
         return {
-            content: index % 10 === 0 ? 'benchmark note ' + index : 'ordinary note ' + index,
+            ownerId: ownerId,
+            content: benchmark ? 'benchmark project 基准 note ' + index + ' #work' : 'ordinary personal note ' + index,
             tags: [index % 5 === 0 ? 'work' : 'personal'],
             archived: index % 20 === 0,
-            sticky: index % 2 === 0
+            sticky: index % 2 === 0,
+            public: false,
+            shared: false,
+            attachments: [],
+            externalContent: [],
+            createdAt: timestamp + index,
+            modifiedAt: timestamp + index
         };
     });
-}
-
-function compile(query) {
-    if (query.$and) {
-        var andMatchers = query.$and.map(compile);
-        return function (item) { return andMatchers.every(function (matches) { return matches(item); }); };
-    }
-    if (query.$or) {
-        var orMatchers = query.$or.map(compile);
-        return function (item) { return orMatchers.some(function (matches) { return matches(item); }); };
-    }
-    var key = Object.keys(query)[0];
-    var condition = query[key];
-    if (condition && condition.$regex !== undefined) {
-        var regex = new RegExp(condition.$regex, condition.$options || '');
-        return function (item) { return regex.test(item[key] || ''); };
-    }
-    if (condition && condition.$exists !== undefined) {
-        return function (item) { return (item[key] !== undefined) === condition.$exists; };
-    }
-    return function (item) {
-        return Array.isArray(item[key]) ? item[key].indexOf(condition) !== -1 : item[key] === condition;
-    };
 }
 
 function percentile(sorted, value) {
     return sorted[Math.max(0, Math.ceil(sorted.length * value) - 1)];
 }
 
-function benchmark(size, warmupRuns, repetitions, matcher) {
-    var items = fixture(size);
-    function execute() {
-        var matched = 0;
-        for (var i = 0; i < items.length; i++) if (matcher(items[i])) matched++;
-        return matched;
+function round(value) {
+    return Math.round(value * 1000) / 1000;
+}
+
+function latency(durations) {
+    return {
+        p50: round(percentile(durations, 0.50)),
+        p95: round(percentile(durations, 0.95)),
+        average: round(durations.reduce(function (total, duration) { return total + duration; }, 0) / durations.length)
+    };
+}
+
+function mongoQuery(ownerId, query) {
+    return Object.keys(query).length ? { $and: [{ ownerId: ownerId }, query] } : { ownerId: ownerId };
+}
+
+async function runApplicationScenario(ownerId, scenario, limit) {
+    return thingService.getAll(ownerId, search.buildQuery(scenario.options), 0, limit);
+}
+
+async function benchmarkScenario(db, ownerId, scenario, warmupRuns, repetitions, limit) {
+    var warmup;
+    for (warmup = 0; warmup < warmupRuns; warmup++) {
+        await runApplicationScenario(ownerId, scenario, limit);
     }
-    for (var warmup = 0; warmup < warmupRuns; warmup++) execute();
 
     var durations = [];
-    var matched;
+    var result;
     for (var repetition = 0; repetition < repetitions; repetition++) {
         var started = process.hrtime.bigint();
-        matched = execute();
+        result = await runApplicationScenario(ownerId, scenario, limit);
         durations.push(Number(process.hrtime.bigint() - started) / 1e6);
     }
     durations.sort(function (left, right) { return left - right; });
-    var average = durations.reduce(function (total, duration) { return total + duration; }, 0) / durations.length;
-    function round(value) { return Math.round(value * 1000) / 1000; }
+
+    var query = search.buildQuery(scenario.options);
+    var explanation = await db.collection('things').find(mongoQuery(ownerId, query))
+        .sort({ sticky: -1, modifiedAt: -1, _id: -1 })
+        .limit(limit)
+        .explain('executionStats');
+    var stats = explanation.executionStats;
 
     return {
-        fixtureSize: size,
-        p50Ms: round(percentile(durations, 0.50)),
-        p95Ms: round(percentile(durations, 0.95)),
-        avgMs: round(average),
-        executionStats: {
-            documentsExaminedPerRun: size,
-            documentsMatchedPerRun: matched,
-            totalDocumentsExamined: size * repetitions
+        name: scenario.name,
+        options: scenario.options,
+        query: query,
+        documentsReturned: result.length,
+        latencyMs: latency(durations),
+        mongo: {
+            nReturned: stats.nReturned,
+            executionTimeMillis: stats.executionTimeMillis,
+            totalDocsExamined: stats.totalDocsExamined,
+            totalKeysExamined: stats.totalKeysExamined
         }
     };
 }
 
-function main() {
+async function benchmarkDataset(db, options) {
+    options = options || {};
+    var size = options.size;
+    var ownerId = options.ownerId;
+    var warmupRuns = options.warmupRuns;
+    var repetitions = options.repetitions;
+    var limit = options.limit || 10;
+    var scenarios = options.scenarios || SCENARIOS;
+    if (!Number.isInteger(size) || size < 1) throw new Error('size must be a positive integer');
+    if (typeof ownerId !== 'string' || !ownerId) throw new Error('ownerId is required');
+    if (!Number.isInteger(warmupRuns) || warmupRuns < 1) throw new Error('warmupRuns must be a positive integer');
+    if (!Number.isInteger(repetitions) || repetitions < 1) throw new Error('repetitions must be a positive integer');
+
+    var collection = db.collection('things');
+    var originalDb = config.db;
+    config.db = db;
+    try {
+        await databaseThings.ensureIndexes();
+        await collection.deleteMany({ ownerId: ownerId });
+        await collection.insertMany(fixture(size, ownerId));
+
+        var results = [];
+        for (var index = 0; index < scenarios.length; index++) {
+            results.push(await benchmarkScenario(db, ownerId, scenarios[index], warmupRuns, repetitions, limit));
+        }
+        return { fixtureSize: size, scenarios: results };
+    } finally {
+        try {
+            await collection.deleteMany({ ownerId: ownerId });
+        } finally {
+            config.db = originalDb;
+            databaseThings.resetCache();
+        }
+    }
+}
+
+async function main() {
     var warmupRuns = parseCount('warmup', 3);
     var repetitions = parseCount('repetitions', 10);
-    var query = search.buildQuery({ filter: 'benchmark #work', archived: false });
-    var matcher = compile(query);
     var sizes = [1000, 10000, 50000];
-    var report = {
-        environment: {
-            node: process.version,
-            platform: process.platform,
-            arch: process.arch,
-            cpuCount: os.cpus().length
-        },
-        benchmark: {
-            implementation: 'in-process deterministic query-policy evaluator',
-            warmupRuns: warmupRuns,
-            repetitions: repetitions,
-            query: query,
-            results: sizes.map(function (size) { return benchmark(size, warmupRuns, repetitions, matcher); })
+    var ownerId = 'vr212-benchmark-' + process.pid + '-' + Date.now();
+    var client = await MongoClient.connect(config.databaseUrl);
+    try {
+        var db = client.db();
+        var serverInfo = await db.admin().serverInfo();
+        var results = [];
+        for (var index = 0; index < sizes.length; index++) {
+            results.push(await benchmarkDataset(db, {
+                size: sizes[index],
+                ownerId: ownerId,
+                warmupRuns: warmupRuns,
+                repetitions: repetitions
+            }));
         }
-    };
-    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+        var report = {
+            environment: {
+                node: process.version,
+                mongo: serverInfo.version,
+                platform: process.platform,
+                arch: process.arch,
+                cpuCount: os.cpus().length
+            },
+            benchmark: {
+                implementation: 'thing-service getAll with MongoDB executionStats',
+                warmupRuns: warmupRuns,
+                repetitions: repetitions,
+                limit: 10,
+                results: results
+            }
+        };
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+    } finally {
+        await client.close();
+    }
 }
 
-if (require.main === module) main();
+if (require.main === module) {
+    main().catch(function (error) {
+        console.error(error);
+        process.exitCode = 1;
+    });
+}
 
-module.exports = { benchmark: benchmark, compile: compile, fixture: fixture };
+module.exports = {
+    SCENARIOS: SCENARIOS,
+    benchmarkDataset: benchmarkDataset,
+    fixture: fixture
+};

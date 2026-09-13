@@ -24,17 +24,4 @@ describe('Search query policy', function () {
         expect(search.buildQuery({ filter: '  ', archived: true, sticky: false })).to.eql({ archived: true });
     });
 
-    it('benchmarks deterministic fixtures with execution stats', function () {
-        var benchmark = require('../../scripts/benchmark-search.js');
-        var matcher = benchmark.compile(search.buildQuery({ filter: 'benchmark #work', archived: false }));
-        var result = benchmark.benchmark(100, 1, 2, matcher);
-
-        expect(result.fixtureSize).to.equal(100);
-        expect(result.executionStats.documentsExaminedPerRun).to.equal(100);
-        expect(result.executionStats.documentsMatchedPerRun).to.equal(5);
-        expect(result.executionStats.totalDocumentsExamined).to.equal(200);
-        expect(result.p50Ms).to.be.a('number');
-        expect(result.p95Ms).to.be.a('number');
-        expect(result.avgMs).to.be.a('number');
-    });
 });
