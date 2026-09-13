@@ -4,7 +4,17 @@
 
 var MongoClient = require('mongodb').MongoClient,
     config = require('./config.js'),
+    defaultLogger = require('./http/middleware/logger.js').defaultLogger,
     nodeify = require('./promise.js');
+
+function durationMs(startTime) {
+    var elapsed = process.hrtime(startTime);
+    return Math.round(((elapsed[0] * 1e3) + (elapsed[1] * 1e-6)) * 100) / 100;
+}
+
+function writeLog(logger, record) {
+    try { logger.write(record); } catch (error) {}
+}
 
 function runWorker(worker) {
     if (worker.length === 0) return Promise.resolve().then(worker);
@@ -15,6 +25,7 @@ function runWorker(worker) {
 
 function WorkerManager(options) {
     this.options = options || {};
+    this.logger = this.options.logger || defaultLogger;
     this.workers = {};
     this.timers = {};
     this.running = false;
@@ -33,14 +44,29 @@ WorkerManager.prototype._run = function (name) {
     if (this.stopped) return Promise.reject(new Error('Worker manager is stopped'));
     if (worker.running) return worker.promise;
 
+    var self = this;
+    var startTime = process.hrtime();
     worker.running = true;
     worker.promise = runWorker(worker.fn).then(function (result) {
         worker.running = false;
         worker.promise = null;
+        writeLog(self.logger, {
+            level: 'info',
+            event: 'worker_completed',
+            worker: name,
+            durationMs: durationMs(startTime)
+        });
         return result;
     }, function (error) {
         worker.running = false;
         worker.promise = null;
+        writeLog(self.logger, {
+            level: 'error',
+            event: 'worker_failed',
+            worker: name,
+            durationMs: durationMs(startTime),
+            error: { code: (error && error.code) || 'worker_error' }
+        });
         throw error;
     });
     return worker.promise;

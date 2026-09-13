@@ -353,19 +353,48 @@ components:
       type: object
       required:
         - status
+        - uptimeSeconds
+        - memory
       properties:
         status:
           type: string
           enum: [ok]
+        uptimeSeconds:
+          type: number
+        memory:
+          $ref: '#/components/schemas/ProcessMemory'
 
     HealthReadyResponse:
       type: object
       required:
         - status
+        - uptimeSeconds
+        - memory
       properties:
         status:
           type: string
           enum: [ready]
+        uptimeSeconds:
+          type: number
+        memory:
+          $ref: '#/components/schemas/ProcessMemory'
+
+    ProcessMemory:
+      type: object
+      required:
+        - rssBytes
+        - heapUsedBytes
+        - heapTotalBytes
+        - externalBytes
+      properties:
+        rssBytes:
+          type: integer
+        heapUsedBytes:
+          type: integer
+        heapTotalBytes:
+          type: integer
+        externalBytes:
+          type: integer
 
   parameters:
     ThingIdPath:
