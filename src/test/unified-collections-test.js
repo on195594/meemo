@@ -168,7 +168,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         });
     });
 
-    describe('Migration dual-read correctness (RF-703)', function () {
+    describe('Unified-only runtime after migration (VR-205/VR-206)', function () {
         var thingOwner = 'rf703_partial_owner';
         var tagOwner = 'rf703_tag_owner';
         var settingsOwner = 'rf703_settings_owner';
@@ -230,33 +230,32 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             ]).then(function () { done(); }, done);
         });
 
-        it('shows all 100 unique things when 40 have been copied and Unified wins duplicates', function () {
+        it('reads things only from the Unified collection', function () {
             return things.getAll(thingOwner, {}, 0, 0).then(function (list) {
-                expect(list.length).to.equal(100);
-                expect(new Set(list.map(function (thing) { return thing._id; })).size).to.equal(100);
+                expect(list.length).to.equal(40);
                 expect(list.find(function (thing) {
                     return thing._id === String(legacyThings[0]._id);
                 }).content).to.equal('unified-0');
             });
         });
 
-        it('sorts and paginates only after merging both thing sources', function () {
+        it('sorts and paginates Unified things', function () {
             return things.getAll(thingOwner, {}, 2, 5).then(function (list) {
-                expect(list.map(function (thing) { return thing.modifiedAt; })).to.eql([25, 0, 99, 98, 97]);
+                expect(list.map(function (thing) { return thing.modifiedAt; })).to.eql([39, 38, 37, 36, 35]);
             });
         });
 
-        it('filters the winning Unified version instead of exposing a stale Legacy duplicate', function () {
+        it('does not expose a Legacy duplicate excluded by the Unified query', function () {
             var query = { $or: [{ archived: false }, { archived: { $exists: false } }] };
             return things.getAll(thingOwner, query, 0, 0).then(function (list) {
-                expect(list.length).to.equal(99);
+                expect(list.length).to.equal(39);
                 expect(list.some(function (thing) {
                     return thing._id === String(legacyThings[0]._id);
                 })).to.be(false);
             });
         });
 
-        it('keeps all 100 things visible after an interrupted copy and restart', function () {
+        it('does not resume Legacy reads after the runtime cache resets', function () {
             var nextCopies = legacyThings.slice(40, 50).map(function (thing) {
                 return Object.assign({}, thing, { ownerId: thingOwner });
             });
@@ -265,8 +264,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 things.resetCache();
                 return things.getAllLean(thingOwner);
             }).then(function (list) {
-                expect(list.length).to.equal(100);
-                expect(new Set(list.map(function (thing) { return thing._id; })).size).to.equal(100);
+                expect(list.length).to.equal(50);
             });
         });
 

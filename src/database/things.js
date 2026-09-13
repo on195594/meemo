@@ -5,17 +5,14 @@
 var assert = require('assert'),
     ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
-    nodeify = require('../promise.js'),
-    users = require('../users.js');
+    nodeify = require('../promise.js');
 
 var unifiedCollection = null;
-var legacyCollections = {};
 var activeUserIds = {};
 var indexesCreated = false;
 
 function resetCache() {
     unifiedCollection = null;
-    legacyCollections = {};
     activeUserIds = {};
     indexesCreated = false;
 }
@@ -46,16 +43,10 @@ function ensureIndexes(callback) {
     return nodeify(promise, callback);
 }
 
-function getLegacyCollection(userId) {
-    assert.strictEqual(typeof userId, 'string');
-    if (!legacyCollections[userId]) legacyCollections[userId] = config.db.collection(userId + '_things');
-    return legacyCollections[userId];
-}
-
 function getAllActiveUserIds(callback) {
     var promise = Promise.resolve().then(async function () {
         var seen = {};
-        Object.keys(activeUserIds).concat(Object.keys(legacyCollections)).forEach(function (id) {
+        Object.keys(activeUserIds).forEach(function (id) {
             seen[id] = true;
         });
 
@@ -64,13 +55,6 @@ function getAllActiveUserIds(callback) {
                 var dbUserIds = await getUnifiedCollection().distinct('ownerId');
                 (dbUserIds || []).forEach(function (id) {
                     if (id) seen[id] = true;
-                });
-                var cols = await config.db.listCollections().toArray();
-                (cols || []).forEach(function (col) {
-                    if (col.name && col.name.endsWith('_things')) {
-                        var legacyId = col.name.slice(0, -7);
-                        if (legacyId) seen[legacyId] = true;
-                    }
                 });
             } catch (err) {
                 // DB not connected or indexing error
@@ -82,15 +66,6 @@ function getAllActiveUserIds(callback) {
     return nodeify(promise, callback);
 }
 
-async function getAlternateUserId(userId) {
-    try {
-        var user = await users.resolveUser(userId);
-        if (user.id === userId && user.username && user.username !== userId) return user.username;
-        if (user.username === userId && user.id && user.id !== userId) return user.id;
-    } catch (error) {}
-    return null;
-}
-
 function postProcess(userId, thing) {
     if (!thing) return;
     thing._id = String(thing._id);
@@ -99,33 +74,6 @@ function postProcess(userId, thing) {
     thing.shared = !!thing.shared;
     thing.archived = !!thing.archived;
     thing.sticky = !!thing.sticky;
-}
-
-function queryLegacy(userId, alternateUserId, query) {
-    var userIds = alternateUserId ? [userId, alternateUserId] : [userId];
-    return Promise.all(userIds.map(function (id) {
-        var collectionName = id + '_things';
-        return config.db.listCollections({ name: collectionName }, { nameOnly: true }).hasNext().then(function (exists) {
-            if (!exists) return [];
-            return getLegacyCollection(id).find(query).toArray();
-        });
-    })).then(function (results) {
-        return results.reduce(function (all, result) { return all.concat(result); }, []);
-    });
-}
-
-function mergeThings(unified, legacy, unifiedIdentities) {
-    var byId = {};
-    var unifiedIds = {};
-    (unifiedIdentities || unified).forEach(function (thing) {
-        unifiedIds[String(thing._id)] = true;
-    });
-    legacy.filter(function (thing) {
-        return !unifiedIds[String(thing._id)];
-    }).concat(unified).forEach(function (thing) {
-        byId[String(thing._id)] = thing;
-    });
-    return Object.keys(byId).map(function (id) { return byId[id]; });
 }
 
 function sortAndPaginate(result, skip, limit, lean) {
@@ -142,16 +90,10 @@ function getAll(userId, query, skip, limit, callback) {
     assert.strictEqual(typeof query, 'object');
     activeUserIds[userId] = true;
 
-    var promise = getAlternateUserId(userId).then(function (alternateUserId) {
-        var ownerCondition = alternateUserId ? { $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { ownerId: userId };
-        var unifiedQuery = Object.keys(query).length ? { $and: [ownerCondition, query] } : ownerCondition;
-        return Promise.all([
-            getUnifiedCollection().find(unifiedQuery).toArray(),
-            getUnifiedCollection().find(ownerCondition).project({ _id: 1 }).toArray(),
-            queryLegacy(userId, alternateUserId, query)
-        ]).then(function (results) {
-            return sortAndPaginate(mergeThings(results[0], results[2], results[1]), skip, limit, false);
-        });
+    var ownerCondition = { ownerId: userId };
+    var unifiedQuery = Object.keys(query).length ? { $and: [ownerCondition, query] } : ownerCondition;
+    var promise = getUnifiedCollection().find(unifiedQuery).toArray().then(function (result) {
+        return sortAndPaginate(result, skip, limit, false);
     }).then(function (result) {
         (result || []).forEach(postProcess.bind(null, userId));
         return result || [];
@@ -163,14 +105,8 @@ function getAllLean(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
     activeUserIds[userId] = true;
 
-    var promise = getAlternateUserId(userId).then(function (alternateUserId) {
-        var ownerCondition = alternateUserId ? { $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { ownerId: userId };
-        return Promise.all([
-            getUnifiedCollection().find(ownerCondition).toArray(),
-            queryLegacy(userId, alternateUserId, {})
-        ]).then(function (results) {
-            return sortAndPaginate(mergeThings(results[0], results[1]), 0, 0, true);
-        });
+    var promise = getUnifiedCollection().find({ ownerId: userId }).toArray().then(function (result) {
+        return sortAndPaginate(result, 0, 0, true);
     }).then(function (result) {
         (result || []).forEach(postProcess.bind(null, userId));
         return result || [];
@@ -185,12 +121,8 @@ function get(userId, thingId, callback) {
     var promise = Promise.resolve().then(async function () {
         if (!ObjectId.isValid(thingId)) throw new Error('not found');
         activeUserIds[userId] = true;
-        var alternateUserId = await getAlternateUserId(userId);
-        var ownerCondition = alternateUserId ? { $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { ownerId: userId };
         var id = new ObjectId(thingId);
-        var result = await getUnifiedCollection().findOne({ $and: [{ _id: id }, ownerCondition] });
-        if (!result) result = await getLegacyCollection(userId).findOne({ _id: id });
-        if (!result && alternateUserId) result = await getLegacyCollection(alternateUserId).findOne({ _id: id });
+        var result = await getUnifiedCollection().findOne({ _id: id, ownerId: userId });
         if (!result) throw new Error('not found');
         postProcess(userId, result);
         return result;
@@ -205,16 +137,6 @@ function getById(thingId, callback) {
         if (!ObjectId.isValid(thingId)) throw new Error('not found');
         var id = new ObjectId(thingId);
         var result = await getUnifiedCollection().findOne({ _id: id });
-        if (!result) {
-            var activeIds = await getAllActiveUserIds();
-            for (var i = 0; i < activeIds.length; i++) {
-                result = await getLegacyCollection(activeIds[i]).findOne({ _id: id });
-                if (result) {
-                    result.ownerId = result.ownerId || activeIds[i];
-                    break;
-                }
-            }
-        }
         if (!result) throw new Error('not found');
         postProcess(result.ownerId, result);
         return result;
@@ -283,16 +205,9 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
         sticky: isSticky
     };
 
-    var promise = getAlternateUserId(userId).then(async function (alternateUserId) {
+    var promise = Promise.resolve().then(async function () {
         var id = new ObjectId(thingId);
-        var ownerCondition = alternateUserId ? { $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { ownerId: userId };
-        var result = await getUnifiedCollection().updateOne({ $and: [{ _id: id }, ownerCondition] }, { $set: data });
-        if (!result || !result.matchedCount) {
-            result = await getLegacyCollection(userId).updateOne({ _id: id }, { $set: data });
-            if ((!result || !result.matchedCount) && alternateUserId) {
-                await getLegacyCollection(alternateUserId).updateOne({ _id: id }, { $set: data });
-            }
-        }
+        await getUnifiedCollection().updateOne({ _id: id, ownerId: userId }, { $set: data });
         return get(userId, thingId);
     });
     return nodeify(promise, callback);
@@ -304,12 +219,9 @@ function del(userId, thingId, callback) {
     if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(new Error('not found')), callback);
     activeUserIds[userId] = true;
 
-    var promise = getAlternateUserId(userId).then(async function (alternateUserId) {
+    var promise = Promise.resolve().then(async function () {
         var id = new ObjectId(thingId);
-        var ownerCondition = alternateUserId ? { $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { ownerId: userId };
-        await getUnifiedCollection().deleteOne({ $and: [{ _id: id }, ownerCondition] });
-        await getLegacyCollection(userId).deleteOne({ _id: id });
-        if (alternateUserId) await getLegacyCollection(alternateUserId).deleteOne({ _id: id });
+        await getUnifiedCollection().deleteOne({ _id: id, ownerId: userId });
     });
     return nodeify(promise, callback);
 }
