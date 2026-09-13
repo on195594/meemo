@@ -168,11 +168,13 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         });
     });
 
-    describe('Unified-only runtime after migration (VR-205/VR-206)', function () {
+    describe('Unified-only runtime and pagination (VR-205/VR-206/VR-207)', function () {
         var thingOwner = 'rf703_partial_owner';
+        var paginationOwner = 'vr207_pagination_owner';
         var tagOwner = 'rf703_tag_owner';
         var settingsOwner = 'rf703_settings_owner';
         var legacyThings;
+        var paginationThings;
         var legacyTagId = new ObjectId();
 
         before(function (done) {
@@ -197,9 +199,27 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 });
             });
 
+            paginationThings = [1, 6, 3, 5, 2, 4].map(function (suffix) {
+                return {
+                    _id: new ObjectId('00000000000000000000000' + suffix),
+                    ownerId: paginationOwner,
+                    content: 'vr207-' + suffix,
+                    tags: [],
+                    attachments: [],
+                    externalContent: [],
+                    createdAt: 207,
+                    modifiedAt: 207,
+                    public: true,
+                    shared: false,
+                    archived: false,
+                    sticky: suffix === 2 || suffix === 5
+                };
+            });
+
             Promise.all([
                 db.collection(thingOwner + '_things').insertMany(legacyThings),
                 db.collection('things').insertMany(copiedThings),
+                db.collection('things').insertMany(paginationThings),
                 db.collection(tagOwner + '_tags').insertMany([
                     { _id: new ObjectId(), name: 'alpha', usage: 1, createdAt: 1 },
                     { _id: legacyTagId, name: 'beta', usage: 5, createdAt: 2 }
@@ -224,6 +244,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             Promise.all([
                 db.collection(thingOwner + '_things').drop().catch(function () {}),
                 db.collection('things').deleteMany({ ownerId: thingOwner }),
+                db.collection('things').deleteMany({ ownerId: paginationOwner }),
                 db.collection(tagOwner + '_tags').drop().catch(function () {}),
                 db.collection('tags').deleteMany({ ownerId: tagOwner }),
                 db.collection(settingsOwner + '_settings').drop().catch(function () {}),
@@ -244,6 +265,40 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             return things.getAll(thingOwner, {}, 2, 5).then(function (list) {
                 expect(list.map(function (thing) { return thing.modifiedAt; })).to.eql([39, 38, 37, 36, 35]);
             });
+        });
+
+        it('orders equal timestamps deterministically across pages and lean reads', async function () {
+            var firstPage = await things.getAll(paginationOwner, {}, 0, 3);
+            var secondPage = await things.getAll(paginationOwner, {}, 3, 3);
+            var ids = firstPage.concat(secondPage).map(function (thing) { return thing._id; });
+
+            expect(ids).to.eql([
+                '000000000000000000000005',
+                '000000000000000000000002',
+                '000000000000000000000006',
+                '000000000000000000000004',
+                '000000000000000000000003',
+                '000000000000000000000001'
+            ]);
+            expect(new Set(ids).size).to.equal(6);
+
+            var lean = await things.getAllLean(paginationOwner);
+            expect(lean.map(function (thing) { return thing._id; })).to.eql([
+                '000000000000000000000006',
+                '000000000000000000000005',
+                '000000000000000000000004',
+                '000000000000000000000003',
+                '000000000000000000000002',
+                '000000000000000000000001'
+            ]);
+        });
+
+        it('keeps authenticated and public pagination in parity', async function () {
+            var authenticated = await thingService.getAll(paginationOwner, {}, 0, 3);
+            var published = await thingService.getAllPublic(paginationOwner, {}, 0, 3);
+
+            expect(published.map(function (thing) { return thing._id; })).to.eql(
+                authenticated.map(function (thing) { return thing._id; }));
         });
 
         it('does not expose a Legacy duplicate excluded by the Unified query', function () {

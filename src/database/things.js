@@ -76,15 +76,6 @@ function postProcess(userId, thing) {
     thing.sticky = !!thing.sticky;
 }
 
-function sortAndPaginate(result, skip, limit, lean) {
-    result.sort(function (left, right) {
-        var modifiedOrder = (right.modifiedAt || 0) - (left.modifiedAt || 0);
-        var stickyOrder = Number(!!right.sticky) - Number(!!left.sticky);
-        return lean ? modifiedOrder || -stickyOrder : stickyOrder || modifiedOrder;
-    });
-    return result.slice(skip, limit > 0 ? skip + limit : undefined);
-}
-
 function getAll(userId, query, skip, limit, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof query, 'object');
@@ -92,9 +83,11 @@ function getAll(userId, query, skip, limit, callback) {
 
     var ownerCondition = { ownerId: userId };
     var unifiedQuery = Object.keys(query).length ? { $and: [ownerCondition, query] } : ownerCondition;
-    var promise = getUnifiedCollection().find(unifiedQuery).toArray().then(function (result) {
-        return sortAndPaginate(result, skip, limit, false);
-    }).then(function (result) {
+    var promise = getUnifiedCollection().find(unifiedQuery)
+        .sort({ sticky: -1, modifiedAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray().then(function (result) {
         (result || []).forEach(postProcess.bind(null, userId));
         return result || [];
     });
@@ -105,9 +98,9 @@ function getAllLean(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
     activeUserIds[userId] = true;
 
-    var promise = getUnifiedCollection().find({ ownerId: userId }).toArray().then(function (result) {
-        return sortAndPaginate(result, 0, 0, true);
-    }).then(function (result) {
+    var promise = getUnifiedCollection().find({ ownerId: userId })
+        .sort({ modifiedAt: -1, _id: -1 })
+        .toArray().then(function (result) {
         (result || []).forEach(postProcess.bind(null, userId));
         return result || [];
     });
