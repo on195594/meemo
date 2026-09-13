@@ -276,6 +276,29 @@ describe('Legacy retirement preflight (VR-204)', function () {
         });
     });
 
+    it('accepts valid manifests when source-key and normalized-username order differ', async function () {
+        fs.writeFileSync(usersFile, JSON.stringify({
+            Zed: { username: 'zed', passwordHash: 'zed-hash' },
+            alice: { username: 'alice', passwordHash: 'hash' }
+        }));
+        var collections = await db.listCollections().toArray();
+        await Promise.all(collections.map(function (entry) {
+            if (/^vr204_/.test(entry.name)) return db.collection(entry.name).drop();
+        }));
+        var manifest = await createUserManifest(usersFile, config.databaseUrl, usersManifestFile);
+        await seedRetirementState(db, 'vr204_', manifest);
+        await db.collection('vr204_users').insertOne({
+            _id: new ObjectId(manifest.usernameToId.zed),
+            username: 'zed', usernameNorm: 'zed', displayName: 'zed', email: '',
+            passwordHash: 'zed-hash', status: 'active',
+            createdAt: manifest.transformationTimestamp
+        });
+
+        var report = await preflight.run(options());
+        expect(report.checks.usersMigration.safe).to.be(true);
+        expect(report.safe).to.be(true);
+    });
+
     it('accepts valid UTF-8, mixed-case, symlink-bound user migration evidence', async function () {
         var linkedUsersFile = usersFile + '.link';
         fs.writeFileSync(usersFile, JSON.stringify({

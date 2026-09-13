@@ -230,7 +230,10 @@ function inspectUsersMigration(evidence, fileUsers, mongoUsers, usersFile, mongo
         return sourceIdentityRecord(
             key, fileUsers[key], manifest && manifest.transformationTimestamp, usernameToId
         );
-    }).filter(Boolean);
+    }).filter(Boolean).sort(function (left, right) {
+        return left.usernameNorm < right.usernameNorm ? -1 :
+            (left.usernameNorm > right.usernameNorm ? 1 : 0);
+    });
     var transformedRecords = sourceRecords.map(function (record) {
         var result = { _id: String(record._id) };
         USER_FIELDS.forEach(function (field) { result[field] = record[field]; });
