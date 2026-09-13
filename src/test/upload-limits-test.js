@@ -13,6 +13,7 @@ var request = require('supertest');
 var config = require('../config.js');
 var users = require('../users.js');
 var fileRoutes = require('../http/routes/files.js');
+var uploads = require('../http/uploads.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
 
@@ -190,8 +191,7 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
         it('configures an aggregate parts cap in addition to stricter file and field caps', function () {
             // files (1) + fields (10) is stricter than parts (12), so a valid
             // multipart body cannot reach LIMIT_PART_COUNT before another cap.
-            var appSource = fs.readFileSync(path.resolve(__dirname, '../../app.js'), 'utf8');
-            expect(appSource).to.contain('parts: 12');
+            expect(uploads.uploadLimits(1024).parts).to.equal(12);
         });
 
         uploadRoutes.forEach(function (route) {
