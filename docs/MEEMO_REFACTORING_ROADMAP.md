@@ -441,20 +441,23 @@ LegacyFileUserRepository
 增加迁移命令，示例：
 
 ```text
-node scripts/migrate-users-to-mongo.js --dry-run --users-file /path/to/.users.json --mongo-url mongodb://host/database
-node scripts/migrate-users-to-mongo.js --apply --users-file /path/to/.users.json --mongo-url mongodb://host/database --expected-source-count <count> --expected-source-digest <sha256-from-dry-run>
-node scripts/migrate-users-to-mongo.js --verify --users-file /path/to/.users.json --mongo-url mongodb://host/database --expected-source-count <count> --expected-source-digest <sha256-from-dry-run>
+node scripts/migrate-users-to-mongo.js --dry-run --users-file /path/to/.users.json --mongo-url mongodb://host/database --manifest /secure/review/users-migration.json
+node scripts/migrate-users-to-mongo.js --apply --users-file /path/to/.users.json --mongo-url mongodb://host/database --manifest /secure/review/users-migration.json
+node scripts/migrate-users-to-mongo.js --verify --users-file /path/to/.users.json --mongo-url mongodb://host/database --manifest /secure/review/users-migration.json
 ```
+
+`--dry-run` exclusively creates (and never overwrites) the reviewed manifest. The same file is required by `--apply` and `--verify`; copied counts or digests are not accepted. Keep it with the migration evidence until rollback compatibility is retired.
 
 迁移要求：
 
-1. dry-run 不写数据库。
+1. dry-run 不写数据库，并生成绑定源文件字节、规范化内容、固定转换时间、脱敏目标数据库身份和 username-to-id 映射的完整 manifest。
 2. 检测 username collision/normalization collision。
-3. passwordHash 原样迁移，不重新计算密码。
-4. apply 必须幂等。
-5. verify 校验 source/target 用户数量及关键字段。
-6. 切换后保留 `.users.json` 作为只读回滚材料一段兼容期。
-7. 回滚期间不允许双写造成两个用户源分叉。
+3. passwordHash 原样迁移，不重新计算密码，也不写入 manifest 或日志。
+4. apply 使用持久化 `applying`/`applied` 状态机；中断后只允许同一 manifest 恢复，完成后的重放只读校验。
+5. 写用户前必须存在精确的唯一 `usernameNorm` 索引；冲突索引必须在零用户写入时失败。
+6. verify 使用同一 manifest 校验 finalized evidence、source/target 用户数量、ID 及关键字段。
+7. 切换后保留 `.users.json` 和 reviewed manifest 作为只读回滚材料一段兼容期。
+8. 回滚期间不允许双写造成两个用户源分叉。
 
 切换完成后：
 

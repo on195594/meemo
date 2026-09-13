@@ -25,6 +25,7 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
     var dbClient;
     var mongoRepo;
     var testUsersFile = '/tmp/meemo-mongo-test-' + process.pid + '.json';
+    var testManifestFile = '/tmp/meemo-mongo-test-' + process.pid + '.manifest.json';
     var prevUsersFile = process.env.USERS_FILE;
     var prevAuthSource = process.env.AUTH_USER_SOURCE;
 
@@ -47,6 +48,7 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
 
         users.setRepository(new LegacyFileUserRepository());
         fs.rmSync(testUsersFile, { force: true });
+        fs.rmSync(testManifestFile, { force: true });
 
         if (dbClient) {
             await config.db.collection('users').drop();
@@ -58,23 +60,24 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
         await config.db.collection('users').deleteMany({});
         await config.db.collection('system_migrations').deleteOne({ _id: 'users-file-to-mongo' });
         fs.rmSync(testUsersFile, { force: true });
+        fs.rmSync(testManifestFile, { force: true });
     });
 
     function migrationOptions(usersFile) {
         var failure;
         var report;
-        var identity = { usersFile: usersFile, mongoUrl: config.databaseUrl };
+        var identity = {
+            usersFile: usersFile,
+            mongoUrl: config.databaseUrl,
+            manifestFile: testManifestFile
+        };
         migrator.dryRun(identity, function (error, result) {
             failure = error;
             report = result;
         });
         if (failure) throw failure;
-        return {
-            usersFile: usersFile,
-            mongoUrl: config.databaseUrl,
-            expectedSourceCount: report.manifest.count,
-            expectedSourceDigest: report.manifest.digest
-        };
+        expect(report.manifest.manifestDigest).to.be.ok();
+        return identity;
     }
 
     describe('MongoUserRepository CRUD & constraints', function () {
@@ -228,7 +231,11 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
 
 
         it('--dry-run inspects source file without writing to MongoDB', function (done) {
-            migrator.dryRun({ usersFile: testUsersFile, mongoUrl: config.databaseUrl }, function (err, report) {
+            migrator.dryRun({
+                usersFile: testUsersFile,
+                mongoUrl: config.databaseUrl,
+                manifestFile: testManifestFile
+            }, function (err, report) {
                 if (err) return done(err);
 
                 expect(report.success).to.be(true);
@@ -251,12 +258,18 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
                 Alice: { username: 'Alice', passwordHash: 'hash2' }
             };
             var collideFile = '/tmp/meemo-collide-test-' + process.pid + '.json';
+            var collideManifest = collideFile + '.manifest.json';
             fs.writeFileSync(collideFile, JSON.stringify(collidedSource, null, 4));
 
-            migrator.dryRun({ usersFile: collideFile, mongoUrl: config.databaseUrl }, function (err) {
+            migrator.dryRun({
+                usersFile: collideFile,
+                mongoUrl: config.databaseUrl,
+                manifestFile: collideManifest
+            }, function (err) {
                 expect(err).to.be.ok();
                 expect(err.message).to.contain('Normalization collisions detected');
                 fs.rmSync(collideFile, { force: true });
+                fs.rmSync(collideManifest, { force: true });
                 done();
             });
         });
@@ -280,7 +293,8 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
                     // Idempotency check: apply again
                     migrator.apply(options, function (err, stats2) {
                         if (err) return done(err);
-                        expect(stats2.migrated).to.equal(2);
+                        expect(stats2.migrated).to.equal(0);
+                        expect(stats2.replayed).to.equal(true);
 
                         mongoRepo.count(function (err, count) {
                             if (err) return done(err);
