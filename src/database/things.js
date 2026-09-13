@@ -23,14 +23,6 @@ function resetCache() {
 function getUnifiedCollection() {
     if (!config.db) throw new Error('MongoDB database is not connected');
     if (!unifiedCollection) unifiedCollection = config.db.collection('things');
-
-    if (!indexesCreated) {
-        indexesCreated = true;
-        ensureIndexes().catch(function (error) {
-            indexesCreated = false;
-            console.error('Warning: could not create things indexes:', error);
-        });
-    }
     return unifiedCollection;
 }
 

@@ -78,23 +78,9 @@ function facelift(userId, thing, callback) {
     var promise = Promise.resolve().then(async function () {
         var data = thing.content;
         var tagObjects = thing.tags;
-        var externalContent = thing.externalContent;
+        var externalContent = Array.isArray(thing.externalContent) ? thing.externalContent : [];
         var attachments = thing.attachments || [];
-
-        if (!Array.isArray(externalContent)) {
-            try {
-                externalContent = await extractExternalContent(thing.content);
-                debug('update %s with new external content.', thing._id, externalContent);
-                try {
-                    await things.put(userId, thing._id, thing.content, thing.tags, attachments, externalContent, false, false, false, false);
-                } catch (updateError) {
-                    console.error('Failed to update external content:', updateError);
-                }
-            } catch (error) {
-                console.error('Failed to extract external content:', error);
-                externalContent = [];
-            }
-        }
+        thing.externalContent = externalContent;
 
         tagObjects.forEach(function (tag) {
             data = data.replace(new RegExp('#' + tag + '(#|\\s|$)', 'gmi'), '[#' + tag + '](#search?#' + tag + ')$1').trim();
