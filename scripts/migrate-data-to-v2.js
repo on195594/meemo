@@ -290,7 +290,11 @@ function formatMismatch(mismatch) {
     ].join('\n');
 }
 
-function groupPrefixesByOwner(db, prefixes, ownerMap, phase, callback) {
+function groupPrefixesByOwner(db, prefixes, ownerMap, phase, plannedOwners, callback) {
+    if (typeof plannedOwners === 'function') {
+        callback = plannedOwners;
+        plannedOwners = null;
+    }
     var groupsByOwner = new Map();
     var groups = [];
 
@@ -307,7 +311,7 @@ function groupPrefixesByOwner(db, prefixes, ownerMap, phase, callback) {
             }
             group.prefixes.push(prefix);
             nextPrefix();
-        }, phase, ownerMap);
+        }, phase, ownerMap, plannedOwners);
     }, function (err) {
         callback(err, groups);
     });
@@ -339,6 +343,27 @@ function validateSourceIdentities(entries, identity, entity) {
         if (identities.has(key)) throw new Error('Duplicate mapped legacy ' + entity + ' identity');
         identities.set(key, true);
     });
+}
+
+function collapseIdenticalThingEntries(entries) {
+    var byIdentity = new Map();
+    var collapsed = [];
+
+    entries.forEach(function (entry) {
+        var key = canonicalJson(entry.document._id);
+        var existing = byIdentity.get(key);
+        if (!existing) {
+            byIdentity.set(key, entry);
+            collapsed.push(entry);
+            return;
+        }
+        if (canonicalJson(canonicalThing(existing.document, true)) !==
+                canonicalJson(canonicalThing(entry.document, true))) {
+            throw new Error('Conflicting mapped legacy thing identity');
+        }
+    });
+
+    return collapsed;
 }
 
 function findLegacyOwnerDocuments(db, phase, group, suffix, query, callback) {
@@ -374,9 +399,7 @@ function loadOwnerSources(db, groups, phase, callback) {
         }, function (err, sources) {
             if (err) return nextGroup(err);
             try {
-                validateSourceIdentities(sources.things, function (document) {
-                    return document._id;
-                }, 'thing');
+                sources.things = collapseIdenticalThingEntries(sources.things);
                 validateSourceIdentities(sources.tags, function (document) {
                     return document.name;
                 }, 'tag');
@@ -762,32 +785,46 @@ function dryRun(options, callback) {
                     return closeConnection(close, 'dry-run', err, callback);
                 }
 
-                var totalThings = 0;
-                var totalTags = 0;
-                var totalSettings = 0;
+                groupPrefixesByOwner(
+                    db, prefixes, ownerMapInfo.map, 'dry-run:resolve-owner', plannedOwners,
+                    function (groupError, ownerGroups) {
+                        if (groupError) {
+                            return closeConnection(close, 'dry-run', groupError, callback);
+                        }
+                        loadOwnerSources(db, ownerGroups, 'dry-run', function (sourceError) {
+                            if (sourceError) {
+                                return closeConnection(close, 'dry-run', sourceError, callback);
+                            }
 
-                Object.keys(userMap).forEach(function (k) {
-                    totalThings += userMap[k].thingsCount;
-                    totalTags += userMap[k].tagsCount;
-                    if (userMap[k].hasSettings) totalSettings++;
-                });
+                            var totalThings = ownerGroups.reduce(function (count, group) {
+                                return count + group.sources.things.length;
+                            }, 0);
+                            var totalTags = ownerGroups.reduce(function (count, group) {
+                                return count + group.sources.tags.length;
+                            }, 0);
+                            var totalSettings = ownerGroups.reduce(function (count, group) {
+                                return count + group.sources.settings.length;
+                            }, 0);
 
-                var report = {
-                    totalLegacyUsers: prefixes.length,
-                    totalThingsToMigrate: totalThings,
-                    totalTagsToMigrate: totalTags,
-                    totalSettingsToMigrate: totalSettings,
-                    ownerMap: {
-                        count: ownerMapInfo.count,
-                        digest: ownerMapInfo.digest
-                    },
-                    users: userMap
-                };
+                            var report = {
+                                totalLegacyUsers: prefixes.length,
+                                totalThingsToMigrate: totalThings,
+                                totalTagsToMigrate: totalTags,
+                                totalSettingsToMigrate: totalSettings,
+                                ownerMap: {
+                                    count: ownerMapInfo.count,
+                                    digest: ownerMapInfo.digest
+                                },
+                                users: userMap
+                            };
 
-                closeConnection(close, 'dry-run', null, function (closeError) {
-                    if (closeError) return callback(closeError);
-                    callback(null, report);
-                });
+                            closeConnection(close, 'dry-run', null, function (closeError) {
+                                if (closeError) return callback(closeError);
+                                callback(null, report);
+                            });
+                        });
+                    }
+                );
             });
         }, 'dry-run');
     });
@@ -1086,6 +1123,11 @@ function verify(options, callback) {
                             findLegacyOwnerDocuments(
                                 db, 'verify:things', group, '_things', {}, function (err, sourceEntries) {
                                     if (err) return doneCheckThings(err);
+                                    try {
+                                        sourceEntries = collapseIdenticalThingEntries(sourceEntries);
+                                    } catch (error) {
+                                        return doneCheckThings(error);
+                                    }
                                     findDocuments(
                                         db, 'verify:things', group.canonicalId, 'things',
                                         { ownerId: group.canonicalId }, function (err, targetDocuments) {

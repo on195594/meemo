@@ -145,6 +145,42 @@ describe('Migration owner maps', function () {
         expect(verified.success).to.be(true);
     });
 
+    it('collapses identical mapped thing identities and rejects conflicts during dry-run', async function () {
+        writeMap('{"alpha":"canonical-owner","beta":"canonical-owner"}');
+        await Promise.all([
+            db.collection('alpha_things').insertOne(thing(ALPHA_THING_ID, 'same')),
+            db.collection('beta_things').insertOne(thing(ALPHA_THING_ID, 'same'))
+        ]);
+
+        var report = await callbackPromise(function (done) {
+            migrator.dryRun({ db: db, ownerMapPath: ownerMapFile }, done);
+        });
+        expect(report.totalThingsToMigrate).to.be(1);
+
+        await callbackPromise(function (done) {
+            migrator.apply({ db: db, ownerMapPath: ownerMapFile }, done);
+        });
+        expect(await db.collection('things').countDocuments({ ownerId: OWNER_ID })).to.be(1);
+        var verified = await callbackPromise(function (done) {
+            migrator.verify({ db: db, ownerMapPath: ownerMapFile }, done);
+        });
+        expect(verified.success).to.be(true);
+
+        await db.collection('things').deleteMany({});
+        await db.collection('system_migrations').deleteMany({});
+        await db.collection('beta_things').updateOne(
+            { _id: ALPHA_THING_ID }, { $set: { content: 'different' } }
+        );
+
+        var result = await outcome(function (done) {
+            migrator.dryRun({ db: db, ownerMapPath: ownerMapFile }, done);
+        });
+
+        expect(result.error).to.be.an(Error);
+        expect(result.error.message).to.contain('Conflicting mapped legacy thing identity');
+        expect(await db.collection('things').countDocuments({})).to.be(0);
+    });
+
     it('uses a reviewed users manifest for dry-run before users are applied', async function () {
         var usersFile = path.join(os.tmpdir(), 'meemo-owner-users-' + process.pid + '.json');
         var manifestFile = path.join(os.tmpdir(), 'meemo-owner-users-manifest-' + process.pid + '.json');

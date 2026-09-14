@@ -277,15 +277,27 @@ describe('Canonical migration verification (RF-706)', function () {
         });
     });
 
-    it('rejects a duplicate source identity across legacy aliases', function () {
+    it('collapses an identical source identity across legacy aliases', function () {
         return db.collection(PREFIX + '_things').findOne({ _id: THING_ID }).then(function (thing) {
             return db.collection(ALIAS_PREFIX + '_things').insertOne(thing);
         }).then(function () {
             return verificationResult(db);
         }).then(function (outcome) {
+            if (outcome.error) throw outcome.error;
+            expect(outcome.result.manifest.thingsCount).to.equal(2);
+            return db.collection(ALIAS_PREFIX + '_things').deleteMany({});
+        });
+    });
+
+    it('rejects a conflicting source identity across legacy aliases', function () {
+        return db.collection(PREFIX + '_things').findOne({ _id: THING_ID }).then(function (thing) {
+            thing.content = 'conflict';
+            return db.collection(ALIAS_PREFIX + '_things').insertOne(thing);
+        }).then(function () {
+            return verificationResult(db);
+        }).then(function (outcome) {
             expect(outcome.error).to.be.ok();
-            expect(outcome.error.message).to.contain('entity=thing');
-            expect(outcome.error.message).to.contain('field=identity');
+            expect(outcome.error.message).to.contain('Conflicting mapped legacy thing identity');
             return db.collection(ALIAS_PREFIX + '_things').deleteMany({});
         });
     });
