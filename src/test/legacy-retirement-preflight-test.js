@@ -11,6 +11,7 @@ var expect = require('expect.js'),
     ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
     userMigrator = require('../../scripts/migrate-users-to-mongo.js'),
+    ownerMaps = require('../../scripts/owner-map.js'),
     preflight = require('../../scripts/preflight-legacy-retirement.js');
 
 var THING_ID = new ObjectId('000000000000000000002041');
@@ -75,7 +76,8 @@ function seedRetirementState(db, prefix, manifest) {
             sourceVersion: 1,
             targetVersion: 2,
             phase: 'complete',
-            startedAt: 1000
+            startedAt: 1000,
+            ownerMapDigest: ownerMaps.NO_OWNER_MAP
         }),
         db.collection(prefix + 'system_migrations').insertOne({
             _id: 'users-file-to-mongo',
@@ -99,12 +101,14 @@ describe('Legacy retirement preflight (VR-204)', function () {
     var db;
     var usersFile;
     var usersManifestFile;
+    var ownerMapFile;
 
     before(async function () {
         client = await MongoClient.connect(config.databaseUrl);
         db = client.db();
         usersFile = path.join(os.tmpdir(), 'meemo-retirement-' + process.pid + '.json');
         usersManifestFile = usersFile + '.manifest.json';
+        ownerMapFile = usersFile + '.owner-map.json';
     });
 
     beforeEach(async function () {
@@ -122,6 +126,7 @@ describe('Legacy retirement preflight (VR-204)', function () {
     after(async function () {
         try { fs.unlinkSync(usersFile); } catch (ignore) {}
         fs.rmSync(usersManifestFile, { force: true });
+        fs.rmSync(ownerMapFile, { force: true });
         await client.close();
     });
 
@@ -139,6 +144,11 @@ describe('Legacy retirement preflight (VR-204)', function () {
         }, overrides || {});
     }
 
+    function writeOwnerMap(raw) {
+        fs.writeFileSync(ownerMapFile, raw);
+        return ownerMaps.load(ownerMapFile);
+    }
+
     it('returns safe only after proving every populated legacy document equivalent', async function () {
         var report = await preflight.run(options());
 
@@ -153,6 +163,69 @@ describe('Legacy retirement preflight (VR-204)', function () {
         ]);
         expect(report.ownerMappings).to.have.length(1);
         expect(report.ownerMappings[0].prefix).to.be('alice');
+    });
+
+    it('requires the exact migration owner map and validates mapped owners', async function () {
+        var owner = await db.collection('vr204_users').findOne({ usernameNorm: 'alice' });
+        var aliasThingId = new ObjectId('000000000000000000002043');
+        var aliasThing = {
+            _id: aliasThingId,
+            content: 'Alias note',
+            createdAt: 300,
+            modifiedAt: 400,
+            attachments: [],
+            externalContent: [],
+            public: false,
+            shared: false,
+            archived: false,
+            sticky: false
+        };
+        var aliasTag = { name: 'home', usage: 1, createdAt: 300 };
+        await Promise.all([
+            db.collection('vr204_alias_things').insertOne(aliasThing),
+            db.collection('vr204_alias_tags').insertOne(aliasTag),
+            db.collection('vr204_alias_settings').insertOne({
+                type: 'frontend', value: { title: 'Migrated' }
+            }),
+            db.collection('vr204_things').insertOne(Object.assign({}, aliasThing, {
+                ownerId: String(owner._id)
+            })),
+            db.collection('vr204_tags').insertOne(Object.assign({}, aliasTag, {
+                ownerId: String(owner._id), modifiedAt: 300
+            }))
+        ]);
+
+        var correctMap = writeOwnerMap('{"alias":"alice"}');
+        await db.collection('vr204_system_migrations').updateOne(
+            { _id: 'schema-v2' }, { $set: { ownerMapDigest: correctMap.digest } }
+        );
+        var correct = await preflight.run(options({ ownerMapPath: ownerMapFile }));
+        expect(correct.safe).to.be(true);
+        expect(correct.checks.ownerMap).to.eql({ count: 1, digest: correctMap.digest, safe: true });
+        expect(correct.checks.data.sourceCount).to.be(5);
+        expect(JSON.stringify(correct.checks.ownerMap)).not.to.contain('alice');
+
+        var absent = await preflight.run(options());
+        expect(absent.safe).to.be(false);
+        expect(absent.checks.migration.safe).to.be(false);
+
+        var wrongMap = writeOwnerMap('{"alias":"missing-user"}');
+        await db.collection('vr204_system_migrations').updateOne(
+            { _id: 'schema-v2' }, { $set: { ownerMapDigest: wrongMap.digest } }
+        );
+        var wrong = await preflight.run(options({ ownerMapPath: ownerMapFile }));
+        expect(wrong.safe).to.be(false);
+        expect(wrong.checks.owners.safe).to.be(false);
+        expect(JSON.stringify(wrong)).not.to.contain('missing-user');
+
+        var extraMap = writeOwnerMap('{"alias":"alice","ghost":"alice"}');
+        await db.collection('vr204_system_migrations').updateOne(
+            { _id: 'schema-v2' }, { $set: { ownerMapDigest: extraMap.digest } }
+        );
+        var extra = await preflight.run(options({ ownerMapPath: ownerMapFile }));
+        expect(extra.safe).to.be(false);
+        expect(extra.checks.ownerMap.safe).to.be(false);
+        expect(JSON.stringify(extra)).not.to.contain('ghost');
     });
 
     [

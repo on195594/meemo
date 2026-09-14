@@ -51,6 +51,8 @@ chmod 600 "$BACKUP_DIR"/*
 
 For a standalone backup outside a release freeze, restart Meemo only after `sha256sum -c "$BACKUP_DIR/SHA256SUMS"` passes. During release, keep the write freeze in force through final migration, deployment verification, and cutover.
 
+When legacy collection prefixes need explicit account ownership, keep a private JSON object mapping each prefix to an authoritative username and pass its path as `--owner-map PATH` to `migrate-data-to-v2.js` dry-run/apply/verify and `preflight-legacy-retirement.js`. The migration binds the raw-file SHA-256 in `schema-v2` state, so a missing or changed map fails replay and preflight. Multiple prefixes may map to one account only when Thing/tag identities remain unique and canonical settings values are identical; otherwise migration fails before legacy data is removed.
+
 ## Restore into a clean isolated stack
 
 Never test a restore against production volumes. The commands load the retained image, verify its immutable ID, give it an isolated tag, and generate a Compose override that removes `build`. Every Compose invocation uses that override and `--no-build`.

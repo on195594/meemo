@@ -10,7 +10,8 @@ var crypto = require('crypto'),
     mongodb = require('mongodb'),
     MongoClient = mongodb.MongoClient,
     ObjectId = mongodb.ObjectId,
-    EJSON = mongodb.BSON.EJSON;
+    EJSON = mongodb.BSON.EJSON,
+    ownerMaps = require('./owner-map');
 
 var USER_MIGRATION_ID = 'users-file-to-mongo';
 var USER_FIELDS = [
@@ -28,7 +29,8 @@ function parseArgs(argv, env) {
         authUserSource: env.AUTH_USER_SOURCE,
         environment: env.DEPLOYMENT_ENV || env.NODE_ENV,
         expectedEnvironment: env.EXPECTED_ENVIRONMENT,
-        expectedDatabase: env.EXPECTED_DATABASE
+        expectedDatabase: env.EXPECTED_DATABASE,
+        ownerMapPath: null
     };
 
     for (var index = 0; index < args.length; index++) {
@@ -41,6 +43,8 @@ function parseArgs(argv, env) {
             options.expectedEnvironment = args[++index];
         } else if (arg === '--expect-database' && args[index + 1]) {
             options.expectedDatabase = args[++index];
+        } else if (arg === '--owner-map' && args[index + 1]) {
+            options.ownerMapPath = args[++index];
         } else if (arg === '--help' || arg === '-h') options.help = true;
         else throw new Error('Unknown or incomplete argument: ' + arg);
     }
@@ -358,7 +362,7 @@ async function inspectLegacyCollections(db, collectionPrefix) {
     return legacy;
 }
 
-function inspectOwners(legacyCollections, mongoIndex, fileMappings) {
+function inspectOwners(legacyCollections, mongoIndex, fileMappings, ownerMap, usernameToId) {
     var prefixes = [];
     var authoritativeOwners = Object.create(null);
     fileMappings.forEach(function (mapping) {
@@ -372,14 +376,18 @@ function inspectOwners(legacyCollections, mongoIndex, fileMappings) {
     var unmatched = [];
     var collisions = [];
     prefixes.forEach(function (prefix) {
-        var matches = matchingUsers(mongoIndex, [prefix]);
+        var mapped = ownerMaps.has(ownerMap, prefix);
+        var identifier = mapped ? ownerMap[prefix] : prefix;
+        var expectedId = mapped && usernameToId && usernameToId[normalized(identifier)];
+        var matches = mapped && !expectedId ? [] : matchingUsers(mongoIndex, [identifier]);
         if (matches.length === 0) unmatched.push(prefix);
         else if (matches.length > 1) {
             collisions.push({ prefix: prefix, mongoUserIds: matches.map(userIdentity) });
-        } else if (!authoritativeOwners[userIdentity(matches[0])]) {
+        } else if (!authoritativeOwners[userIdentity(matches[0])] ||
+                (mapped && String(expectedId) !== userIdentity(matches[0]))) {
             unmatched.push(prefix);
         } else {
-            mappings.push({ prefix: prefix, mongoUserId: userIdentity(matches[0]), username: matches[0].username });
+            mappings.push({ prefix: prefix, mongoUserId: userIdentity(matches[0]) });
         }
     });
     return { mappings: mappings, unmatched: unmatched, collisions: collisions };
@@ -505,6 +513,21 @@ async function inspectData(db, collectionPrefix, legacyCollections, owners, auth
     }
 
     for (var group of groups.values()) {
+        if (group.type === 'settings' && group.entries.length > 1) {
+            var expectedSettings = canonicalJson(canonicalDataFields(
+                'settings', group.entries[0].document, true, migration && migration.startedAt
+            ));
+            for (var settingsIndex = 1; settingsIndex < group.entries.length; settingsIndex++) {
+                if (canonicalJson(canonicalDataFields(
+                    'settings', group.entries[settingsIndex].document, true,
+                    migration && migration.startedAt
+                )) !== expectedSettings) {
+                    addDataMismatch(mismatches, group.entries[settingsIndex], 'value');
+                }
+            }
+            group.entries = [group.entries[0]];
+        }
+
         var targets = await db.collection((collectionPrefix || '') + group.type)
             .find({ ownerId: group.ownerId }).toArray();
         var targetByIdentity = new Map();
@@ -591,6 +614,7 @@ async function inspectData(db, collectionPrefix, legacyCollections, owners, auth
 
 async function run(options) {
     options = options || {};
+    var ownerMapInfo = ownerMaps.load(options.ownerMapPath);
     var db = options.db;
     var close = function () { return Promise.resolve(); };
 
@@ -626,7 +650,22 @@ async function run(options) {
             fileResult.users, mongoUsers, usersMigrationEvidence
         );
         var legacyCollections = await inspectLegacyCollections(db, options.collectionPrefix);
-        var owners = inspectOwners(legacyCollections, mongoIndex, identities.mappings);
+        var legacyPrefixes = legacyCollections.reduce(function (prefixes, entry) {
+            if (prefixes.indexOf(entry.prefix) === -1) prefixes.push(entry.prefix);
+            return prefixes;
+        }, []);
+        var ownerMapSafe = true;
+        try {
+            ownerMaps.validatePrefixes(ownerMapInfo.map, legacyPrefixes);
+        } catch (ignore) {
+            ownerMapSafe = false;
+        }
+        var manifestUsernameToId = usersMigrationEvidence && usersMigrationEvidence.manifest &&
+            usersMigrationEvidence.manifest.usernameToId || Object.create(null);
+        var owners = inspectOwners(
+            legacyCollections, mongoIndex, identities.mappings,
+            ownerMapInfo.map, manifestUsernameToId
+        );
         var migration = await db.collection(names.migrations).findOne({ _id: 'schema-v2' });
         var data = await inspectData(
             db, options.collectionPrefix, legacyCollections, owners,
@@ -651,6 +690,11 @@ async function run(options) {
                     identityManifest.sourceDigest === identityManifest.mongoDigest &&
                     identities.collisions.length === 0 && identities.unmatched.length === 0
             }),
+            ownerMap: {
+                count: ownerMapInfo.count,
+                digest: ownerMapInfo.digest,
+                safe: ownerMapSafe
+            },
             owners: {
                 safe: owners.collisions.length === 0 && owners.unmatched.length === 0
             },
@@ -666,7 +710,8 @@ async function run(options) {
                 sourceVersion: migration && migration.sourceVersion,
                 targetVersion: migration && migration.targetVersion,
                 safe: !!migration && migration.phase === 'complete' &&
-                    migration.sourceVersion === 1 && migration.targetVersion === 2
+                    migration.sourceVersion === 1 && migration.targetVersion === 2 &&
+                    migration.ownerMapDigest === ownerMapInfo.digest
             },
             environment: {
                 actual: options.environment || null,
@@ -708,7 +753,7 @@ async function main() {
     try {
         options = parseArgs();
         if (options.help) {
-            console.log('Usage: node scripts/preflight-legacy-retirement.js --mongo-url <url> --users-file <path> --expect-environment <name> --expect-database <name>');
+            console.log('Usage: node scripts/preflight-legacy-retirement.js --mongo-url <url> --users-file <path> --owner-map <path> --expect-environment <name> --expect-database <name>');
             process.exit(0);
         }
         var report = await run(options);

@@ -167,7 +167,6 @@ describe('Migration fail-fast behavior (RF-704)', function () {
             expectContext(error, 'apply:things', 'alice', 'things', 'replaceOne');
             expect(error.message).not.to.contain(secretUri);
             expect(error.message).not.to.contain('rf704-secret');
-            expect(db.calls).not.to.contain('alice_tags.find');
             expect(db.calls).not.to.contain('tags.updateOne');
             done();
         });
