@@ -746,7 +746,8 @@ module.exports = {
     parseArgs: parseArgs,
     dryRun: dryRun,
     apply: apply,
-    verify: verify
+    verify: verify,
+    loadReviewedRun: loadReviewedRun
 };
 
 if (require.main === module) main();
