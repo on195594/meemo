@@ -112,6 +112,7 @@ function createLogger(options) {
 
             var logEntry = {
                 level: level,
+                event: 'http_request',
                 requestId: requestId,
                 method: req.method,
                 path: req.baseUrl ? (req.baseUrl + req.path) : req.path,

@@ -146,7 +146,7 @@ function colorizeIt(md) {
 }
 
 var markdown = require('markdown-it')({ breaks: true, html: true, linkify: true })
-    .use(require('markdown-it-emoji'))
+    .use(require('markdown-it-emoji').full)
     .use(colorizeIt)
     .use(require('markdown-it-checkbox'))
     .use(markdownTargetBlank);

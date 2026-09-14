@@ -7,16 +7,17 @@ var health = require('../../services/health-service.js'),
     HttpSuccess = responses.HttpSuccess;
 
 function live(req, res, next) {
-    next(new HttpSuccess(200, { status: 'ok' }));
+    next(new HttpSuccess(200, Object.assign({ status: 'ok' }, health.processStats())));
 }
 
 async function ready(req, res, next) {
+    var stats;
     try {
-        await health.ready();
+        stats = await health.ready();
     } catch (error) {
         throw new HttpError(503, error.message);
     }
-    next(new HttpSuccess(200, { status: 'ready' }));
+    next(new HttpSuccess(200, Object.assign({ status: 'ready' }, stats)));
 }
 
 function healthcheck(req, res, next) {

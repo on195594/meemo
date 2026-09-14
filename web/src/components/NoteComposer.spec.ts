@@ -1,0 +1,55 @@
+import { flushPromises, mount } from '@vue/test-utils';
+import { describe, expect, it, vi } from 'vitest';
+import NoteComposer from './NoteComposer.vue';
+
+describe('NoteComposer behavior', () => {
+  it('saves trimmed content, clears the composer, and emits created', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteComposer, { props: { onSave } });
+
+    await wrapper.get('.composer-textarea').setValue('  New note  ');
+    await wrapper.get('.btn-composer.primary').trigger('click');
+    await flushPromises();
+
+    expect(onSave).toHaveBeenCalledWith('New note', []);
+    expect(wrapper.emitted('created')).toHaveLength(1);
+    expect((wrapper.get('.composer-textarea').element as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('submits with Ctrl+Enter', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteComposer, { props: { onSave } });
+    const textarea = wrapper.get('.composer-textarea');
+    await textarea.setValue('Shortcut note');
+
+    await textarea.trigger('keydown', { key: 'Enter', ctrlKey: true });
+    await flushPromises();
+
+    expect(onSave).toHaveBeenCalledWith('Shortcut note', []);
+    expect(wrapper.emitted('created')).toHaveLength(1);
+  });
+
+  it('preserves content and displays the save error', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: false, error: 'Try again' });
+    const wrapper = mount(NoteComposer, { props: { onSave } });
+    await wrapper.get('.composer-textarea').setValue('Keep this note');
+
+    await wrapper.get('.btn-composer.primary').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.get('[role="alert"]').text()).toBe('Try again');
+    expect((wrapper.get('.composer-textarea').element as HTMLTextAreaElement).value).toBe('Keep this note');
+    expect(wrapper.emitted('created')).toBeUndefined();
+  });
+
+  it('clears an in-progress note without saving it', async () => {
+    const onSave = vi.fn();
+    const wrapper = mount(NoteComposer, { props: { onSave } });
+    await wrapper.get('.composer-textarea').setValue('Discard me');
+
+    await wrapper.get('.btn-composer.secondary').trigger('click');
+
+    expect((wrapper.get('.composer-textarea').element as HTMLTextAreaElement).value).toBe('');
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});

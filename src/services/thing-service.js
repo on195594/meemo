@@ -2,6 +2,7 @@
 
 var debug = require('debug')('services:things'),
     nodeify = require('../promise.js'),
+    search = require('./search-service.js'),
     ssrf = require('../ssrf.js'),
     tags = require('../database/tags.js'),
     things = require('../database/things.js');
@@ -23,9 +24,7 @@ function extractURLs(content) {
     return urls.filter(function (item, pos, self) { return self.indexOf(item) === pos; });
 }
 
-function escapeRegExp(value) {
-    return value.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, '\\$&');
-}
+var escapeRegExp = search.escapeRegExp;
 
 function extractTags(content) {
     var tagObjects = [];
@@ -45,31 +44,6 @@ function extractTags(content) {
     return tagObjects;
 }
 
-function buildSearchFilter(filterStr) {
-    if (!filterStr || typeof filterStr !== 'string') return null;
-    var trimmed = filterStr.trim();
-    if (!trimmed) return null;
-
-    var words = trimmed.split(/\s+/).filter(Boolean);
-    if (!words.length) return null;
-
-    var wordConditions = words.map(function (w) {
-        if (w.startsWith('#') && w.length > 1) {
-            var tag = w.slice(1).toLowerCase();
-            return { tags: tag };
-        }
-        var escaped = escapeRegExp(w);
-        return {
-            $or: [
-                { content: { $regex: escaped, $options: 'i' } },
-                { tags: w.toLowerCase() }
-            ]
-        };
-    });
-
-    return wordConditions.length === 1 ? wordConditions[0] : { $and: wordConditions };
-}
-
 function extractExternalContent(content, callback) {
     return nodeify(ssrf.enrichUrls(extractURLs(content)), callback);
 }
@@ -78,23 +52,9 @@ function facelift(userId, thing, callback) {
     var promise = Promise.resolve().then(async function () {
         var data = thing.content;
         var tagObjects = thing.tags;
-        var externalContent = thing.externalContent;
+        var externalContent = Array.isArray(thing.externalContent) ? thing.externalContent : [];
         var attachments = thing.attachments || [];
-
-        if (!Array.isArray(externalContent)) {
-            try {
-                externalContent = await extractExternalContent(thing.content);
-                debug('update %s with new external content.', thing._id, externalContent);
-                try {
-                    await things.put(userId, thing._id, thing.content, thing.tags, attachments, externalContent, false, false, false, false);
-                } catch (updateError) {
-                    console.error('Failed to update external content:', updateError);
-                }
-            } catch (error) {
-                console.error('Failed to extract external content:', error);
-                externalContent = [];
-            }
-        }
+        thing.externalContent = externalContent;
 
         tagObjects.forEach(function (tag) {
             data = data.replace(new RegExp('#' + tag + '(#|\\s|$)', 'gmi'), '[#' + tag + '](#search?#' + tag + ')$1').trim();
@@ -268,7 +228,7 @@ module.exports = {
     extractExternalContent: extractExternalContent,
     facelift: facelift,
     cleanupTags: cleanupTags,
-    buildSearchFilter: buildSearchFilter,
+    buildSearchFilter: search.buildSearchFilter,
     escapeRegExp: escapeRegExp,
     TYPE_IMAGE: TYPE_IMAGE,
     TYPE_UNKNOWN: TYPE_UNKNOWN

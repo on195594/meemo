@@ -4,6 +4,19 @@ var config = require('../config.js'),
     nodeify = require('../promise.js'),
     storage = require('../storage/local-storage.js');
 
+function processStats() {
+    var memory = process.memoryUsage();
+    return {
+        uptimeSeconds: process.uptime(),
+        memory: {
+            rssBytes: memory.rss,
+            heapUsedBytes: memory.heapUsed,
+            heapTotalBytes: memory.heapTotal,
+            externalBytes: memory.external
+        }
+    };
+}
+
 function ready(callback) {
     var promise = Promise.resolve().then(async function () {
         if (!config.db) throw new Error('Database not connected');
@@ -17,10 +30,12 @@ function ready(callback) {
         } catch (error) {
             throw new Error('Attachment directory not accessible');
         }
+        return processStats();
     });
     return nodeify(promise, callback);
 }
 
 module.exports = {
-    ready: ready
+    ready: ready,
+    processStats: processStats
 };

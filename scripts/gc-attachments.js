@@ -3,7 +3,26 @@
 'use strict';
 
 var lifecycle = require('../src/lifecycle.js'),
-    attachments = require('../src/services/attachment-service.js');
+    attachments = require('../src/services/attachment-service.js'),
+    logger = require('../src/http/middleware/logger.js').defaultLogger;
+
+function completionRecord(result) {
+    return Object.assign({}, result, {
+        level: 'info',
+        event: 'attachment_gc_completed',
+        storageBackend: 'local'
+    });
+}
+
+function failureRecord(error, mode) {
+    return {
+        level: 'error',
+        event: 'attachment_gc_failed',
+        storageBackend: 'local',
+        mode: mode,
+        error: { code: (error && error.code) || 'attachment_gc_error' }
+    };
+}
 
 function parseArgs(argv) {
     var modes = argv.filter(function (argument) { return argument === '--dry-run' || argument === '--apply'; });
@@ -26,14 +45,16 @@ async function run(argv) {
 
 if (require.main === module) {
     run(process.argv.slice(2)).then(function (result) {
-        console.log(JSON.stringify(result, null, 2));
+        logger.write(completionRecord(result));
     }).catch(function (error) {
-        console.error(error && error.stack ? error.stack : error);
+        logger.write(failureRecord(error, process.argv.indexOf('--apply') === -1 ? 'dry-run' : 'apply'));
         process.exitCode = 1;
     });
 }
 
 module.exports = {
     parseArgs: parseArgs,
-    run: run
+    run: run,
+    completionRecord: completionRecord,
+    failureRecord: failureRecord
 };

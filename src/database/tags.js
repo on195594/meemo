@@ -5,23 +5,23 @@
 var assert = require('assert'),
     ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
-    nodeify = require('../promise.js'),
-    users = require('../users.js');
+    nodeify = require('../promise.js');
 
-var unifiedCollection = null;
-var legacyCollections = {};
+var collectionDatabase = null;
 var indexesCreated = false;
 var lastModifiedAt = 0;
 
 function resetCache() {
-    unifiedCollection = null;
-    legacyCollections = {};
+    collectionDatabase = null;
     indexesCreated = false;
 }
 
 function getUnifiedCollection() {
     if (!config.db) throw new Error('MongoDB database is not connected');
-    if (!unifiedCollection) unifiedCollection = config.db.collection('tags');
+    if (collectionDatabase !== config.db) {
+        collectionDatabase = config.db;
+        indexesCreated = false;
+    }
     if (!indexesCreated) {
         indexesCreated = true;
         ensureIndexes().catch(function (error) {
@@ -29,7 +29,7 @@ function getUnifiedCollection() {
             console.error('Warning: could not create tags indexes:', error);
         });
     }
-    return unifiedCollection;
+    return config.db.collection('tags');
 }
 
 function ensureIndexes(callback) {
@@ -48,36 +48,11 @@ function ensureIndexes(callback) {
     return nodeify(promise, callback);
 }
 
-function getLegacyCollection(userId) {
-    assert.strictEqual(typeof userId, 'string');
-    if (!legacyCollections[userId]) legacyCollections[userId] = config.db.collection(userId + '_tags');
-    return legacyCollections[userId];
-}
-
-async function getAlternateUserId(userId) {
-    try {
-        var user = await users.resolveUser(userId);
-        if (user.id === userId && user.username && user.username !== userId) return user.username;
-        if (user.username === userId && user.id && user.id !== userId) return user.id;
-    } catch (error) {}
-    return null;
-}
-
 function get(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
 
-    var promise = getAlternateUserId(userId).then(async function (alternateUserId) {
-        var userIds = alternateUserId ? [alternateUserId, userId] : [userId];
-        var results = await Promise.all(userIds.map(function (id) {
-            return getLegacyCollection(id).find({}).toArray();
-        }).concat(userIds.map(function (id) {
-            return getUnifiedCollection().find({ ownerId: id }).toArray();
-        })));
-        var byName = new Map();
-        results.reduce(function (all, result) { return all.concat(result); }, []).forEach(function (tag) {
-            byName.set(tag.name, tag);
-        });
-        return Array.from(byName.values()).sort(function (left, right) {
+    var promise = getUnifiedCollection().find({ ownerId: userId }).toArray().then(function (result) {
+        return result.sort(function (left, right) {
             return (right.usage || 0) - (left.usage || 0) || (right.createdAt || 0) - (left.createdAt || 0);
         });
     });
@@ -144,12 +119,8 @@ function del(userId, tagId, callback) {
     assert.strictEqual(typeof tagId, 'string');
     if (!ObjectId.isValid(tagId)) return nodeify(Promise.reject(new Error('not found')), callback);
 
-    var promise = getAlternateUserId(userId).then(async function (alternateUserId) {
-        var id = new ObjectId(tagId);
-        var query = alternateUserId ? { _id: id, $or: [{ ownerId: userId }, { ownerId: alternateUserId }] } : { _id: id, ownerId: userId };
-        await getUnifiedCollection().deleteOne(query);
-        await getLegacyCollection(userId).deleteOne({ _id: id });
-        if (alternateUserId) await getLegacyCollection(alternateUserId).deleteOne({ _id: id });
+    var promise = getUnifiedCollection().deleteOne({ _id: new ObjectId(tagId), ownerId: userId }).then(function () {
+        return undefined;
     });
     return nodeify(promise, callback);
 }

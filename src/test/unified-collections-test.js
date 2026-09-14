@@ -10,6 +10,7 @@ var MongoClient = require('mongodb').MongoClient;
 var ObjectId = require('mongodb').ObjectId;
 var config = require('../config.js');
 var things = require('../database/things.js');
+var thingService = require('../services/thing-service.js');
 var tags = require('../database/tags.js');
 var settings = require('../database/settings.js');
 var migrator = require('../../scripts/migrate-data-to-v2.js');
@@ -63,9 +64,8 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, sticky: -1, modifiedAt: -1 }));
             // ownerId + archived + modifiedAt
             expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, archived: 1, modifiedAt: -1 }));
-            // text(content)
-            var hasText = idxs.some(function (idx) { return idx.weights && idx.weights.content; });
-            expect(hasText).to.be(true);
+            // ownerId + tags
+            expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, tags: 1 }));
         });
 
         it('creates unique compound index on unified tags collection', async function () {
@@ -104,8 +104,8 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             expect(mongoDoc.content).to.equal('Unified note test content #unified');
         });
 
-        it('queries things filtered by ownerId and supports full-text search', function (done) {
-            things.getAll(testUserId, { $text: { $search: 'Unified' } }, 0, 10, function (err, list) {
+        it('queries things filtered by ownerId using the runtime search filter', function (done) {
+            things.getAll(testUserId, thingService.buildSearchFilter('Unified'), 0, 10, function (err, list) {
                 if (err) return done(err);
                 expect(list).to.be.an(Array);
                 expect(list.length).to.equal(1);
@@ -168,11 +168,14 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         });
     });
 
-    describe('Migration dual-read correctness (RF-703)', function () {
+    describe('Unified-only runtime and pagination (VR-205/VR-206/VR-207)', function () {
         var thingOwner = 'rf703_partial_owner';
+        var paginationOwner = 'vr207_pagination_owner';
         var tagOwner = 'rf703_tag_owner';
         var settingsOwner = 'rf703_settings_owner';
         var legacyThings;
+        var paginationThings;
+        var legacyTagId = new ObjectId();
 
         before(function (done) {
             legacyThings = Array.from({ length: 100 }, function (_, index) {
@@ -196,12 +199,30 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 });
             });
 
+            paginationThings = [1, 6, 3, 5, 2, 4].map(function (suffix) {
+                return {
+                    _id: new ObjectId('00000000000000000000000' + suffix),
+                    ownerId: paginationOwner,
+                    content: 'vr207-' + suffix,
+                    tags: [],
+                    attachments: [],
+                    externalContent: [],
+                    createdAt: 207,
+                    modifiedAt: 207,
+                    public: true,
+                    shared: false,
+                    archived: false,
+                    sticky: suffix === 2 || suffix === 5
+                };
+            });
+
             Promise.all([
                 db.collection(thingOwner + '_things').insertMany(legacyThings),
                 db.collection('things').insertMany(copiedThings),
+                db.collection('things').insertMany(paginationThings),
                 db.collection(tagOwner + '_tags').insertMany([
                     { _id: new ObjectId(), name: 'alpha', usage: 1, createdAt: 1 },
-                    { _id: new ObjectId(), name: 'beta', usage: 5, createdAt: 2 }
+                    { _id: legacyTagId, name: 'beta', usage: 5, createdAt: 2 }
                 ]),
                 db.collection('tags').insertMany([
                     { ownerId: tagOwner, name: 'alpha', usage: 10, createdAt: 3 },
@@ -223,6 +244,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             Promise.all([
                 db.collection(thingOwner + '_things').drop().catch(function () {}),
                 db.collection('things').deleteMany({ ownerId: thingOwner }),
+                db.collection('things').deleteMany({ ownerId: paginationOwner }),
                 db.collection(tagOwner + '_tags').drop().catch(function () {}),
                 db.collection('tags').deleteMany({ ownerId: tagOwner }),
                 db.collection(settingsOwner + '_settings').drop().catch(function () {}),
@@ -230,33 +252,66 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             ]).then(function () { done(); }, done);
         });
 
-        it('shows all 100 unique things when 40 have been copied and Unified wins duplicates', function () {
+        it('reads things only from the Unified collection', function () {
             return things.getAll(thingOwner, {}, 0, 0).then(function (list) {
-                expect(list.length).to.equal(100);
-                expect(new Set(list.map(function (thing) { return thing._id; })).size).to.equal(100);
+                expect(list.length).to.equal(40);
                 expect(list.find(function (thing) {
                     return thing._id === String(legacyThings[0]._id);
                 }).content).to.equal('unified-0');
             });
         });
 
-        it('sorts and paginates only after merging both thing sources', function () {
+        it('sorts and paginates Unified things', function () {
             return things.getAll(thingOwner, {}, 2, 5).then(function (list) {
-                expect(list.map(function (thing) { return thing.modifiedAt; })).to.eql([25, 0, 99, 98, 97]);
+                expect(list.map(function (thing) { return thing.modifiedAt; })).to.eql([39, 38, 37, 36, 35]);
             });
         });
 
-        it('filters the winning Unified version instead of exposing a stale Legacy duplicate', function () {
+        it('orders equal timestamps deterministically across pages and lean reads', async function () {
+            var firstPage = await things.getAll(paginationOwner, {}, 0, 3);
+            var secondPage = await things.getAll(paginationOwner, {}, 3, 3);
+            var ids = firstPage.concat(secondPage).map(function (thing) { return thing._id; });
+
+            expect(ids).to.eql([
+                '000000000000000000000005',
+                '000000000000000000000002',
+                '000000000000000000000006',
+                '000000000000000000000004',
+                '000000000000000000000003',
+                '000000000000000000000001'
+            ]);
+            expect(new Set(ids).size).to.equal(6);
+
+            var lean = await things.getAllLean(paginationOwner);
+            expect(lean.map(function (thing) { return thing._id; })).to.eql([
+                '000000000000000000000006',
+                '000000000000000000000005',
+                '000000000000000000000004',
+                '000000000000000000000003',
+                '000000000000000000000002',
+                '000000000000000000000001'
+            ]);
+        });
+
+        it('keeps authenticated and public pagination in parity', async function () {
+            var authenticated = await thingService.getAll(paginationOwner, {}, 0, 3);
+            var published = await thingService.getAllPublic(paginationOwner, {}, 0, 3);
+
+            expect(published.map(function (thing) { return thing._id; })).to.eql(
+                authenticated.map(function (thing) { return thing._id; }));
+        });
+
+        it('does not expose a Legacy duplicate excluded by the Unified query', function () {
             var query = { $or: [{ archived: false }, { archived: { $exists: false } }] };
             return things.getAll(thingOwner, query, 0, 0).then(function (list) {
-                expect(list.length).to.equal(99);
+                expect(list.length).to.equal(39);
                 expect(list.some(function (thing) {
                     return thing._id === String(legacyThings[0]._id);
                 })).to.be(false);
             });
         });
 
-        it('keeps all 100 things visible after an interrupted copy and restart', function () {
+        it('does not resume Legacy reads after the runtime cache resets', function () {
             var nextCopies = legacyThings.slice(40, 50).map(function (thing) {
                 return Object.assign({}, thing, { ownerId: thingOwner });
             });
@@ -265,22 +320,77 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 things.resetCache();
                 return things.getAllLean(thingOwner);
             }).then(function (list) {
-                expect(list.length).to.equal(100);
-                expect(new Set(list.map(function (thing) { return thing._id; })).size).to.equal(100);
+                expect(list.length).to.equal(50);
             });
         });
 
-        it('merges tags by name, prefers Unified, and sorts the merged result', function () {
+        it('reads tags only from the Unified collection', function () {
             return tags.get(tagOwner).then(function (list) {
-                expect(list.map(function (tag) { return tag.name; })).to.eql(['alpha', 'beta', 'gamma']);
+                expect(list.map(function (tag) { return tag.name; })).to.eql(['alpha', 'gamma']);
                 expect(list[0].usage).to.equal(10);
             });
         });
 
-        it('treats settings as a singleton and prefers Unified without field merging', function () {
+        it('does not delete a tag from the Legacy collection', function () {
+            return tags.del(tagOwner, String(legacyTagId)).then(function () {
+                return db.collection(tagOwner + '_tags').countDocuments({ _id: legacyTagId });
+            }).then(function (count) {
+                expect(count).to.equal(1);
+            });
+        });
+
+        it('reads settings only from the Unified collection', function () {
             return settings.get(settingsOwner).then(function (value) {
                 expect(value).to.eql({ title: 'Unified title' });
             });
+        });
+
+        it('writes settings only to the Unified collection', function () {
+            return settings.put(settingsOwner, { title: 'Updated title' }).then(function () {
+                return Promise.all([
+                    db.collection('settings').findOne({ ownerId: settingsOwner }),
+                    db.collection(settingsOwner + '_settings').findOne({ type: 'frontend' })
+                ]);
+            }).then(function (results) {
+                expect(results[0].value).to.eql({ title: 'Updated title' });
+                expect(results[1].value).to.eql({ title: 'Legacy title', legacyOnly: true });
+            });
+        });
+
+        it('uses the current database after runtime database replacement', function () {
+            var originalDb = config.db;
+            var firstCollections = {};
+            var secondCollections = {};
+            function fakeDb(collections) {
+                return {
+                    collection: function (name) {
+                        if (!collections[name]) {
+                            collections[name] = { createIndex: function () { return Promise.resolve(); } };
+                        }
+                        return collections[name];
+                    }
+                };
+            }
+
+            try {
+                things.resetCache();
+                tags.resetCache();
+                settings.resetCache();
+                config.db = fakeDb(firstCollections);
+                things.getUnifiedCollection();
+                tags.getUnifiedCollection();
+                settings.getUnifiedCollection();
+
+                config.db = fakeDb(secondCollections);
+                expect(things.getUnifiedCollection()).to.equal(secondCollections.things);
+                expect(tags.getUnifiedCollection()).to.equal(secondCollections.tags);
+                expect(settings.getUnifiedCollection()).to.equal(secondCollections.settings);
+            } finally {
+                config.db = originalDb;
+                things.resetCache();
+                tags.resetCache();
+                settings.resetCache();
+            }
         });
     });
 

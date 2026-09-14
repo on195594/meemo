@@ -30,29 +30,12 @@
 
     <!-- Authenticated Notes Workspace -->
     <template v-else>
-      <!-- Hidden fallback toolbar preserving test contract & accessibility -->
-      <section class="notes-toolbar sr-only" aria-hidden="true" style="display: none;">
-        <div class="search-box">
-          <input
-            type="search"
-            v-model="searchInput"
-            class="search-input"
-            placeholder="Search notes or #tags..."
-            @input="handleSearchInput"
-            @keydown.enter="handleSearchSubmit"
-          />
-        </div>
-        <div class="view-toggles">
-          <button type="button" class="view-toggle-btn" @click="handleViewSwitch(!isArchived)">Toggle</button>
-        </div>
-      </section>
-
       <!-- Active Filters Summary Banner -->
       <div v-if="hasActiveFilter" class="active-filter-bar">
         <span class="filter-label">Filter:</span>
         <span v-if="selectedTag" class="filter-chip">
           Tag: #{{ selectedTag }}
-          <button type="button" class="chip-remove" @click="selectTag(null)">&times;</button>
+          <button type="button" class="chip-remove" @click="clearTagFilter">&times;</button>
         </span>
         <span v-if="searchQuery" class="filter-chip">
           Query: "{{ searchQuery }}"
@@ -62,7 +45,7 @@
           Archived View
           <button type="button" class="chip-remove" @click="handleViewSwitch(false)">&times;</button>
         </span>
-        <button type="button" class="clear-all-link" @click="clearFilters">
+        <button type="button" class="clear-all-link" @click="clearRouteFilters">
           Reset all filters
         </button>
       </div>
@@ -140,7 +123,7 @@
               v-if="hasActiveFilter"
               type="button"
               class="clear-filters-btn"
-              @click="clearFilters"
+              @click="clearRouteFilters"
             >
               Clear filters
             </button>
@@ -153,7 +136,7 @@
             :tags="tags"
             :selected-tag="selectedTag"
             @select-tag="handleTagClick"
-            @clear-tag="selectTag(null)"
+            @clear-tag="clearTagFilter"
           />
         </aside>
       </div>
@@ -163,6 +146,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, inject } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
 import { useNotes } from '../composables/useNotes';
 import { useSettings } from '../composables/useSettings';
@@ -171,8 +155,10 @@ import NoteComposer from '../components/NoteComposer.vue';
 import NoteCard from '../components/NoteCard.vue';
 import TagSidebar from '../components/TagSidebar.vue';
 
-const { isAuthenticated, isLoading: authLoading, isFirstUser, sessionExpired } = useAuth();
+const { isAuthenticated, isLoading: authLoading, isFirstUser } = useAuth();
 const { settings } = useSettings();
+const route = useRoute();
+const router = useRouter();
 const openAuthModal = inject<((tab?: 'login' | 'register') => void) | undefined>('openAuthModal', undefined);
 
 const {
@@ -190,11 +176,7 @@ const {
   fetchNotes,
   fetchMore,
   fetchTags,
-  setSearch,
-  selectTag,
-  toggleArchived,
-  clearFilters,
-  clearNotes,
+  setFilters,
   createNote,
   updateNote,
   deleteNote,
@@ -203,7 +185,6 @@ const {
   toggleArchive,
 } = useNotes();
 
-const searchInput = ref('');
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
 
@@ -259,40 +240,35 @@ async function handleDeleteNote(id: string) {
   return result;
 }
 
-let searchDebounceTimer: number | null = null;
-
-function handleSearchInput() {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-  searchDebounceTimer = window.setTimeout(() => {
-    setSearch(searchInput.value.trim());
-  }, 350);
-}
-
-function handleSearchSubmit() {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-  setSearch(searchInput.value.trim());
-}
-
-function handleSearchClear() {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-  searchInput.value = '';
-  setSearch('');
-}
-
 function handleQueryRemove() {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-  searchInput.value = '';
-  setSearch('');
+  const query = { ...route.query };
+  delete query.q;
+  router.replace({ query });
 }
 
 function handleViewSwitch(archived: boolean) {
-  if (isArchived.value !== archived) {
-    toggleArchived();
-  }
+  router.replace({ query: { ...route.query, archived: archived ? 'true' : undefined } });
 }
 
 function handleTagClick(tag: string) {
-  selectTag(tag);
+  router.replace({ query: { ...route.query, q: undefined, tag } });
+}
+
+function clearTagFilter() {
+  const query = { ...route.query };
+  delete query.tag;
+  router.replace({ query });
+}
+
+function clearRouteFilters() {
+  router.replace({ query: {} });
+}
+
+function syncRouteFilters() {
+  const q = typeof route.query.q === 'string' ? route.query.q : '';
+  const tag = typeof route.query.tag === 'string' ? route.query.tag : null;
+  const archived = route.query.archived === '1' || route.query.archived === 'true';
+  setFilters({ search: q, tag, archived });
 }
 
 function setupIntersectionObserver() {
@@ -314,30 +290,18 @@ function setupIntersectionObserver() {
   }
 }
 
-let initialLoadTriggered = false;
-
-watch(sessionExpired, (expired) => {
-  if (expired) {
-    initialLoadTriggered = false;
-  }
-});
-
-watch(searchQuery, (q) => {
-  searchInput.value = q;
+watch(isAuthenticated, (authenticated) => {
+  if (!authenticated) return;
+  syncRouteFilters();
+  fetchTags();
 }, { immediate: true });
 
-watch(isAuthenticated, (authenticated) => {
-  if (authenticated) {
-    if (!initialLoadTriggered) {
-      fetchNotes(true);
-      fetchTags();
-    }
-    initialLoadTriggered = false;
-  } else {
-    initialLoadTriggered = false;
-    clearNotes();
-  }
-});
+watch(
+  () => [route.query.q, route.query.tag, route.query.archived],
+  () => {
+    if (isAuthenticated.value) syncRouteFilters();
+  },
+);
 
 watch(hasMore, () => {
   if (loadMoreTrigger.value && observer && hasMore.value) {
@@ -352,12 +316,6 @@ function handleImportEvent() {
 }
 
 onMounted(() => {
-  const hasSession = typeof localStorage !== 'undefined' && localStorage.getItem('meemo_has_session') === '1';
-  if (isAuthenticated.value || hasSession) {
-    initialLoadTriggered = true;
-    fetchNotes(true);
-    fetchTags();
-  }
   setupIntersectionObserver();
   window.addEventListener('meemo:imported', handleImportEvent);
 });
@@ -368,9 +326,6 @@ onUnmounted(() => {
   }
   if (toastTimer) {
     clearTimeout(toastTimer);
-  }
-  if (searchDebounceTimer) {
-    clearTimeout(searchDebounceTimer);
   }
   window.removeEventListener('meemo:imported', handleImportEvent);
 });
@@ -466,96 +421,6 @@ onUnmounted(() => {
   background-color: #2c5282;
 }
 
-/* Toolbar */
-.notes-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  background: #ffffff;
-  border: 1px solid #cbd5e0;
-  border-radius: 6px;
-  padding: 0.25rem 0.5rem;
-  flex: 1;
-  min-width: 240px;
-  max-width: 480px;
-}
-
-.search-icon {
-  font-size: 0.9rem;
-  margin-right: 0.4rem;
-  color: #a0aec0;
-}
-
-.search-input {
-  border: none;
-  outline: none;
-  width: 100%;
-  font-size: 0.9rem;
-  color: #2d3748;
-}
-
-.search-clear-btn {
-  background: none;
-  border: none;
-  color: #a0aec0;
-  font-size: 1.1rem;
-  cursor: pointer;
-  padding: 0 0.3rem;
-}
-
-.search-submit-btn {
-  background-color: #edf2f7;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  padding: 0.25rem 0.6rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: #4a5568;
-  cursor: pointer;
-  margin-left: 0.25rem;
-}
-
-.search-submit-btn:hover {
-  background-color: #e2e8f0;
-  color: #2b6cb0;
-}
-
-.view-toggles {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.view-toggle-btn {
-  background: #ffffff;
-  border: 1px solid #cbd5e0;
-  border-radius: 6px;
-  padding: 0.4rem 0.8rem;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #4a5568;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.view-toggle-btn:hover {
-  border-color: #3182ce;
-  color: #2b6cb0;
-}
-
-.view-toggle-btn.active {
-  background-color: #ebf8ff;
-  border-color: #3182ce;
-  color: #2b6cb0;
-  font-weight: 600;
-}
 
 /* Active filter banner */
 .active-filter-bar {

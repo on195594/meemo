@@ -1265,10 +1265,20 @@ export interface components {
         HealthLiveResponse: {
             /** @enum {string} */
             status: "ok";
+            uptimeSeconds: number;
+            memory: components["schemas"]["ProcessMemory"];
         };
         HealthReadyResponse: {
             /** @enum {string} */
             status: "ready";
+            uptimeSeconds: number;
+            memory: components["schemas"]["ProcessMemory"];
+        };
+        ProcessMemory: {
+            rssBytes: number;
+            heapUsedBytes: number;
+            heapTotalBytes: number;
+            externalBytes: number;
         };
     };
     responses: {

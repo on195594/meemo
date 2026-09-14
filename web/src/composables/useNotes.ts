@@ -15,6 +15,25 @@ const isArchived = ref(false);
 
 const skip = ref(0);
 const limit = ref(15);
+let userGeneration = 0;
+let notesRequestGeneration = 0;
+let tagsRequestGeneration = 0;
+
+export function resetNotesState(): void {
+  userGeneration++;
+  notesRequestGeneration++;
+  tagsRequestGeneration++;
+  things.value = [];
+  tags.value = [];
+  isLoading.value = false;
+  isLoadingMore.value = false;
+  hasMore.value = true;
+  error.value = null;
+  searchQuery.value = '';
+  selectedTag.value = null;
+  isArchived.value = false;
+  skip.value = 0;
+}
 
 const activeFilter = computed(() => {
   if (selectedTag.value) {
@@ -30,18 +49,24 @@ const hasActiveFilter = computed(() => {
 export function useNotes() {
 
   async function fetchTags(): Promise<void> {
+    const generation = userGeneration;
+    const requestGeneration = ++tagsRequestGeneration;
     try {
       const res = await api.things.tags();
+      if (generation !== userGeneration || requestGeneration !== tagsRequestGeneration) return;
       tags.value = (res.tags || []).sort((a, b) => {
         if (b.usage !== a.usage) return b.usage - a.usage;
         return a.name.localeCompare(b.name);
       });
     } catch (err: any) {
+      if (generation !== userGeneration || requestGeneration !== tagsRequestGeneration) return;
       console.warn('Failed to fetch tags:', err);
     }
   }
 
   async function fetchNotes(reset = true): Promise<void> {
+    const generation = userGeneration;
+    const requestGeneration = reset ? ++notesRequestGeneration : notesRequestGeneration;
     if (reset) {
       skip.value = 0;
       hasMore.value = true;
@@ -61,6 +86,8 @@ export function useNotes() {
         limit: limit.value,
       });
 
+      if (generation !== userGeneration || requestGeneration !== notesRequestGeneration) return;
+
       const fetchedThings = res.things || [];
       if (reset) {
         things.value = fetchedThings;
@@ -73,10 +100,12 @@ export function useNotes() {
         hasMore.value = false;
       }
     } catch (err: any) {
+      if (generation !== userGeneration || requestGeneration !== notesRequestGeneration) return;
       if (err.status !== 401) {
         error.value = err.message || 'Failed to load notes';
       }
     } finally {
+      if (generation !== userGeneration || requestGeneration !== notesRequestGeneration) return;
       isLoading.value = false;
       isLoadingMore.value = false;
     }
@@ -87,43 +116,15 @@ export function useNotes() {
     await fetchNotes(false);
   }
 
-  async function setSearch(query: string): Promise<void> {
-    searchQuery.value = query;
-    selectedTag.value = null;
-    await fetchNotes(true);
-  }
-
-  async function selectTag(tagName: string | null): Promise<void> {
-    if (selectedTag.value === tagName) {
-      selectedTag.value = null;
-    } else {
-      selectedTag.value = tagName;
-      searchQuery.value = '';
-    }
-    await fetchNotes(true);
-  }
-
-  async function toggleArchived(): Promise<void> {
-    isArchived.value = !isArchived.value;
-    await fetchNotes(true);
-  }
-
-  async function clearFilters(): Promise<void> {
-    searchQuery.value = '';
-    selectedTag.value = null;
-    isArchived.value = false;
+  async function setFilters(filters: { search: string; tag: string | null; archived: boolean }): Promise<void> {
+    searchQuery.value = filters.search;
+    selectedTag.value = filters.tag;
+    isArchived.value = filters.archived;
     await fetchNotes(true);
   }
 
   function clearNotes(): void {
-    things.value = [];
-    tags.value = [];
-    skip.value = 0;
-    hasMore.value = true;
-    searchQuery.value = '';
-    selectedTag.value = null;
-    isArchived.value = false;
-    error.value = null;
+    resetNotesState();
   }
 
   // Write path operations (RF-504)
@@ -135,8 +136,10 @@ export function useNotes() {
       return { success: false, error: 'Content cannot be empty' };
     }
 
+    const generation = userGeneration;
     try {
       const res = await api.things.create({ content: content.trim(), attachments });
+      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
       if (!isArchived.value) {
         if (res.thing.sticky) {
           things.value.unshift(res.thing);
@@ -152,6 +155,7 @@ export function useNotes() {
       await fetchTags();
       return { success: true, thing: res.thing };
     } catch (err: any) {
+      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
       return { success: false, error: err.message || 'Failed to create note' };
     }
   }
@@ -175,8 +179,10 @@ export function useNotes() {
       sticky: updates.sticky !== undefined ? updates.sticky : (existing?.sticky || false),
     };
 
+    const generation = userGeneration;
     try {
       const res = await api.things.update(id, payload);
+      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
       const updated = res.thing;
 
       if (updated.archived !== isArchived.value) {
@@ -197,17 +203,21 @@ export function useNotes() {
       await fetchTags();
       return { success: true, thing: updated };
     } catch (err: any) {
+      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
       return { success: false, error: err.message || 'Failed to update note' };
     }
   }
 
   async function deleteNote(id: string): Promise<{ success: boolean; error?: string }> {
+    const generation = userGeneration;
     try {
       await api.things.delete(id);
+      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
       things.value = things.value.filter((t) => t._id !== id);
       await fetchTags();
       return { success: true };
     } catch (err: any) {
+      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
       return { success: false, error: err.message || 'Failed to delete note' };
     }
   }
@@ -242,11 +252,9 @@ export function useNotes() {
     fetchNotes,
     fetchMore,
     fetchTags,
-    setSearch,
-    selectTag,
-    toggleArchived,
-    clearFilters,
+    setFilters,
     clearNotes,
+    reset: resetNotesState,
 
     // Write Actions
     createNote,
