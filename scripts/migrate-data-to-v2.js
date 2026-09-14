@@ -9,6 +9,7 @@ var MongoClient = require('mongodb').MongoClient,
     EJSON = require('mongodb').BSON.EJSON,
     async = require('async'),
     crypto = require('crypto'),
+    ownerMaps = require('./owner-map.js'),
     config = require('../src/config.js'),
     users = require('../src/users.js');
 
@@ -82,11 +83,12 @@ function findDocuments(db, phase, user, collectionName, query, callback) {
     }, callback);
 }
 
-function newMigrationState() {
+function newMigrationState(ownerMapDigest) {
     return {
         _id: MIGRATION_ID,
         sourceVersion: 1,
         targetVersion: 2,
+        ownerMapDigest: ownerMapDigest,
         phase: 'pending',
         startedAt: null,
         copiedAt: null,
@@ -95,25 +97,31 @@ function newMigrationState() {
     };
 }
 
-function validateMigrationState(state, phase, callback) {
+function validateMigrationState(state, ownerMapDigest, phase, callback) {
     if (state.sourceVersion !== 1 || state.targetVersion !== 2 || !MIGRATION_PHASES[state.phase]) {
         return callback(migrationError(
             phase, '<all>', 'system_migrations', 'validate',
             new Error('Invalid ' + MIGRATION_ID + ' migration state')
         ));
     }
+    if (state.ownerMapDigest !== ownerMapDigest) {
+        return callback(migrationError(
+            phase, '<all>', 'system_migrations', 'validate-owner-map',
+            new Error('Owner map digest does not match the migration state')
+        ));
+    }
     callback(null, state);
 }
 
-function getMigrationState(db, phase, callback, createIfMissing) {
+function getMigrationState(db, ownerMapDigest, phase, callback, createIfMissing) {
     collectionOperation(db, phase, '<all>', 'system_migrations', 'findOne', [
         { _id: MIGRATION_ID }
     ], function (err, state) {
         if (err) return callback(err);
-        if (state) return validateMigrationState(state, phase, callback);
+        if (state) return validateMigrationState(state, ownerMapDigest, phase, callback);
         if (createIfMissing === false) return callback(null, null);
 
-        var initialState = newMigrationState();
+        var initialState = newMigrationState(ownerMapDigest);
         collectionOperation(db, phase, '<all>', 'system_migrations', 'updateOne', [
             { _id: MIGRATION_ID }, { $setOnInsert: initialState }, { upsert: true }
         ], function (err) {
@@ -123,7 +131,7 @@ function getMigrationState(db, phase, callback, createIfMissing) {
                 { _id: MIGRATION_ID }
             ], function (err, storedState) {
                 if (err) return callback(err);
-                validateMigrationState(storedState || initialState, phase, callback);
+                validateMigrationState(storedState || initialState, ownerMapDigest, phase, callback);
             });
         });
     });
@@ -281,7 +289,7 @@ function formatMismatch(mismatch) {
     ].join('\n');
 }
 
-function groupPrefixesByOwner(db, prefixes, phase, callback) {
+function groupPrefixesByOwner(db, prefixes, ownerMap, phase, callback) {
     var groupsByOwner = new Map();
     var groups = [];
 
@@ -298,9 +306,37 @@ function groupPrefixesByOwner(db, prefixes, phase, callback) {
             }
             group.prefixes.push(prefix);
             nextPrefix();
-        }, phase);
+        }, phase, ownerMap);
     }, function (err) {
         callback(err, groups);
+    });
+}
+
+function legacyPrefixes(legacy) {
+    var allPrefixes = Object.create(null);
+    legacy.things.forEach(function (c) { allPrefixes[c.prefix] = true; });
+    legacy.tags.forEach(function (c) { allPrefixes[c.prefix] = true; });
+    legacy.settings.forEach(function (c) { allPrefixes[c.prefix] = true; });
+    return Object.keys(allPrefixes);
+}
+
+function collapseSettingsEntries(entries) {
+    if (!entries.length) return [];
+    var expected = canonicalJson(canonicalSettings(entries[0].document, true));
+    for (var index = 1; index < entries.length; index++) {
+        if (canonicalJson(canonicalSettings(entries[index].document, true)) !== expected) {
+            throw new Error('Mapped legacy settings values conflict');
+        }
+    }
+    return [entries[0]];
+}
+
+function validateSourceIdentities(entries, identity, entity) {
+    var identities = new Map();
+    entries.forEach(function (entry) {
+        var key = canonicalJson(identity(entry.document));
+        if (identities.has(key)) throw new Error('Duplicate mapped legacy ' + entity + ' identity');
+        identities.set(key, true);
     });
 }
 
@@ -318,6 +354,41 @@ function findLegacyOwnerDocuments(db, phase, group, suffix, query, callback) {
             return all.concat(documents);
         }, []));
     });
+}
+
+function loadOwnerSources(db, groups, phase, callback) {
+    async.eachSeries(groups, function (group, nextGroup) {
+        async.parallel({
+            things: function (done) {
+                findLegacyOwnerDocuments(db, phase + ':things', group, '_things', {}, done);
+            },
+            tags: function (done) {
+                findLegacyOwnerDocuments(db, phase + ':tags', group, '_tags', {}, done);
+            },
+            settings: function (done) {
+                findLegacyOwnerDocuments(
+                    db, phase + ':settings', group, '_settings', { type: 'frontend' }, done
+                );
+            }
+        }, function (err, sources) {
+            if (err) return nextGroup(err);
+            try {
+                validateSourceIdentities(sources.things, function (document) {
+                    return document._id;
+                }, 'thing');
+                validateSourceIdentities(sources.tags, function (document) {
+                    return document.name;
+                }, 'tag');
+                sources.settings = collapseSettingsEntries(sources.settings);
+            } catch (error) {
+                return nextGroup(migrationError(
+                    phase, '<mapped>', '<legacy>', 'validate-alias-collision', error
+                ));
+            }
+            group.sources = sources;
+            nextGroup();
+        });
+    }, callback);
 }
 
 function indexCanonicalDocuments(entries, getIdentity, entity, mismatches) {
@@ -405,9 +476,11 @@ function parseArgs() {
         else if (arg === '--verify') options.mode = 'verify';
         else if (arg === '--mongo-url' && args[i + 1]) {
             options.mongoUrl = args[++i];
+        } else if (arg === '--owner-map' && args[i + 1]) {
+            options.ownerMapPath = args[++i];
         } else if (arg === '--help' || arg === '-h') {
             options.mode = 'help';
-        }
+        } else throw new Error('Unknown or incomplete argument: ' + arg);
     }
 
     return options;
@@ -532,8 +605,11 @@ function discoverLegacyCollections(db, callback, phase) {
     });
 }
 
-function resolveCanonicalOwner(db, prefix, callback, phase) {
+function resolveCanonicalOwner(db, prefix, callback, phase, ownerMap) {
     phase = phase || 'resolve-owner';
+    if (ownerMap && ownerMaps.has(ownerMap, prefix)) {
+        return resolveMappedOwner(db, prefix, ownerMap[prefix], callback, phase);
+    }
     if (users && typeof users.resolveUser === 'function') {
         users.resolveUser(prefix, function (err, u) {
             if (!err && u && u.id) {
@@ -549,7 +625,11 @@ function resolveCanonicalOwner(db, prefix, callback, phase) {
     }
 }
 
-function lookupInMongoUsers(db, prefix, callback, phase) {
+function resolveMappedOwner(db, prefix, username, callback, phase) {
+    lookupInMongoUsers(db, username, callback, phase, true, prefix);
+}
+
+function lookupInMongoUsers(db, prefix, callback, phase, required, errorOwner) {
     var query = {
         $or: [
             { usernameNorm: prefix.toLowerCase() },
@@ -561,8 +641,14 @@ function lookupInMongoUsers(db, prefix, callback, phase) {
         query.$or.unshift({ _id: new ObjectId(prefix) });
     }
 
-    collectionOperation(db, phase, prefix, 'users', 'findOne', [query], function (err, doc) {
+    collectionOperation(db, phase, errorOwner || prefix, 'users', 'findOne', [query], function (err, doc) {
         if (err) return callback(err);
+        if (!doc && required) {
+            return callback(migrationError(
+                phase, errorOwner || '<mapped>', 'users', 'resolve-mapped-owner',
+                new Error('Mapped owner was not found')
+            ));
+        }
         if (!doc) return callback(null, prefix, prefix);
         callback(null, String(doc._id), doc.username);
     });
@@ -570,6 +656,12 @@ function lookupInMongoUsers(db, prefix, callback, phase) {
 
 function dryRun(options, callback) {
     options = options || {};
+    var ownerMapInfo;
+    try {
+        ownerMapInfo = ownerMaps.load(options.ownerMapPath);
+    } catch (error) {
+        return callback(error);
+    }
     getDbConnection(options, 'dry-run', function (err, db, close) {
         if (err) return callback(err);
 
@@ -579,13 +671,12 @@ function dryRun(options, callback) {
             }
 
             var userMap = {};
-            var allPrefixes = {};
-
-            legacy.things.forEach(function (c) { allPrefixes[c.prefix] = true; });
-            legacy.tags.forEach(function (c) { allPrefixes[c.prefix] = true; });
-            legacy.settings.forEach(function (c) { allPrefixes[c.prefix] = true; });
-
-            var prefixes = Object.keys(allPrefixes);
+            var prefixes = legacyPrefixes(legacy);
+            try {
+                ownerMaps.validatePrefixes(ownerMapInfo.map, prefixes);
+            } catch (error) {
+                return closeConnection(close, 'dry-run', error, callback);
+            }
 
             async.eachSeries(prefixes, function (prefix, nextPrefix) {
                 resolveCanonicalOwner(db, prefix, function (err, canonicalId, username) {
@@ -593,8 +684,7 @@ function dryRun(options, callback) {
 
                     var entry = {
                         prefix: prefix,
-                        canonicalOwnerId: canonicalId,
-                        canonicalUsername: username,
+                        mappedOwner: ownerMaps.has(ownerMapInfo.map, prefix),
                         thingsCount: 0,
                         tagsCount: 0,
                         hasSettings: false
@@ -630,7 +720,7 @@ function dryRun(options, callback) {
                         userMap[prefix] = entry;
                         nextPrefix();
                     });
-                }, 'dry-run');
+                }, 'dry-run', ownerMapInfo.map);
             }, function (err) {
                 if (err) {
                     return closeConnection(close, 'dry-run', err, callback);
@@ -651,6 +741,10 @@ function dryRun(options, callback) {
                     totalThingsToMigrate: totalThings,
                     totalTagsToMigrate: totalTags,
                     totalSettingsToMigrate: totalSettings,
+                    ownerMap: {
+                        count: ownerMapInfo.count,
+                        digest: ownerMapInfo.digest
+                    },
                     users: userMap
                 };
 
@@ -665,6 +759,12 @@ function dryRun(options, callback) {
 
 function apply(options, callback) {
     options = options || {};
+    var ownerMapInfo;
+    try {
+        ownerMapInfo = ownerMaps.load(options.ownerMapPath);
+    } catch (error) {
+        return callback(error);
+    }
     getDbConnection(options, 'apply', function (err, db, close) {
         if (err) return callback(err);
 
@@ -687,7 +787,7 @@ function apply(options, callback) {
             });
         }
 
-        getMigrationState(db, 'apply:state', function (err, currentState) {
+        getMigrationState(db, ownerMapInfo.digest, 'apply:state', function (err, currentState) {
             if (err) return closeConnection(close, 'apply', err, callback);
             state = currentState;
 
@@ -719,33 +819,37 @@ function apply(options, callback) {
                     discoverLegacyCollections(db, function (err, legacy) {
                         if (err) return finishApply(err);
 
-                var stats = {
-                    migratedThings: 0,
-                    migratedTags: 0,
-                    migratedSettings: 0,
-                    usersProcessed: 0
-                };
+                        var stats = {
+                            migratedThings: 0,
+                            migratedTags: 0,
+                            migratedSettings: 0,
+                            usersProcessed: 0
+                        };
+                        var prefixes = legacyPrefixes(legacy);
+                        try {
+                            ownerMaps.validatePrefixes(ownerMapInfo.map, prefixes);
+                        } catch (error) {
+                            return finishApply(error);
+                        }
 
-                var allPrefixes = {};
-                legacy.things.forEach(function (c) { allPrefixes[c.prefix] = true; });
-                legacy.tags.forEach(function (c) { allPrefixes[c.prefix] = true; });
-                legacy.settings.forEach(function (c) { allPrefixes[c.prefix] = true; });
+                        groupPrefixesByOwner(
+                            db, prefixes, ownerMapInfo.map, 'apply:resolve-owner',
+                            function (err, ownerGroups) {
+                                if (err) return finishApply(err);
+                                loadOwnerSources(db, ownerGroups, 'apply', function (err) {
+                                    if (err) return finishApply(err);
 
-                var prefixes = Object.keys(allPrefixes);
-
-                async.eachSeries(prefixes, function (prefix, nextUser) {
-                    resolveCanonicalOwner(db, prefix, function (err, canonicalId) {
-                        if (err) return nextUser(err);
-
-                        async.series([
+                                    async.eachSeries(ownerGroups, function (group, nextUser) {
+                                        var canonicalId = group.canonicalId;
+                                        async.series([
                             // Migrate Things
                             function (doneThings) {
-                                var legacyCollection = prefix + '_things';
-                                findDocuments(db, 'apply:things', prefix, legacyCollection, {}, function (err, docs) {
-                                    if (err) return doneThings(err);
+                                var docs = group.sources.things;
                                     if (!docs || docs.length === 0) return doneThings();
 
-                                    async.eachSeries(docs, function (doc, nextDoc) {
+                                    async.eachSeries(docs, function (entry, nextDoc) {
+                                        var doc = entry.document;
+                                        var prefix = entry.prefix;
                                         doc.ownerId = canonicalId;
                                         doc.public = !!doc.public;
                                         doc.shared = !!doc.shared;
@@ -774,17 +878,16 @@ function apply(options, callback) {
                                             });
                                         });
                                     }, doneThings);
-                                });
                             },
 
                             // Migrate Tags
                             function (doneTags) {
-                                var legacyCollection = prefix + '_tags';
-                                findDocuments(db, 'apply:tags', prefix, legacyCollection, {}, function (err, docs) {
-                                    if (err) return doneTags(err);
+                                var docs = group.sources.tags;
                                     if (!docs || docs.length === 0) return doneTags();
 
-                                    async.eachSeries(docs, function (tagDoc, nextTag) {
+                                    async.eachSeries(docs, function (entry, nextTag) {
+                                        var tagDoc = entry.document;
+                                        var prefix = entry.prefix;
                                         var filter = { ownerId: canonicalId, name: tagDoc.name };
                                         var updateDoc = {
                                             $set: {
@@ -818,16 +921,13 @@ function apply(options, callback) {
                                             });
                                         });
                                     }, doneTags);
-                                });
                             },
 
                             // Migrate Settings
                             function (doneSettings) {
-                                var legacyCollection = prefix + '_settings';
-                                collectionOperation(db, 'apply:settings', prefix, legacyCollection, 'findOne', [
-                                    { type: 'frontend' }
-                                ], function (err, setDoc) {
-                                    if (err) return doneSettings(err);
+                                var entry = group.sources.settings[0];
+                                var setDoc = entry && entry.document;
+                                var prefix = entry && entry.prefix || group.prefixes[0];
                                     if (!setDoc) return doneSettings();
 
                                     var docToSave = {
@@ -858,17 +958,18 @@ function apply(options, callback) {
                                             doneSettings();
                                         });
                                     });
-                                });
                             }
                         ], function (err) {
                             if (err) return nextUser(err);
                             stats.usersProcessed++;
                             nextUser();
                         });
-                    }, 'apply:resolve-owner');
-                }, function (err) {
-                    finishApply(err, stats);
-                });
+                                    }, function (err) {
+                                        finishApply(err, stats);
+                                    });
+                                });
+                            }
+                        );
                     }, 'apply:discovery');
                 });
             });
@@ -878,6 +979,12 @@ function apply(options, callback) {
 
 function verify(options, callback) {
     options = options || {};
+    var ownerMapInfo;
+    try {
+        ownerMapInfo = ownerMaps.load(options.ownerMapPath);
+    } catch (error) {
+        return callback(error);
+    }
     getDbConnection(options, 'verify', function (err, db, close) {
         if (err) return callback(err);
 
@@ -907,7 +1014,7 @@ function verify(options, callback) {
             });
         }
 
-        getMigrationState(db, 'verify:state', function (err, currentState) {
+        getMigrationState(db, ownerMapInfo.digest, 'verify:state', function (err, currentState) {
             if (err) return closeConnection(close, 'verify', err, callback);
             state = currentState || { phase: 'complete', startedAt: Infinity };
 
@@ -922,18 +1029,19 @@ function verify(options, callback) {
             discoverLegacyCollections(db, function (err, legacy) {
                 if (err) return finishVerify(err);
 
-            var allPrefixes = Object.create(null);
-            legacy.things.forEach(function (c) { allPrefixes[c.prefix] = true; });
-            legacy.tags.forEach(function (c) { allPrefixes[c.prefix] = true; });
-            legacy.settings.forEach(function (c) { allPrefixes[c.prefix] = true; });
-
-            var prefixes = Object.keys(allPrefixes);
+            var prefixes = legacyPrefixes(legacy);
+            try {
+                ownerMaps.validatePrefixes(ownerMapInfo.map, prefixes);
+            } catch (error) {
+                return finishVerify(error);
+            }
             var mismatches = [];
             var verifiedCount = 0;
             var sourceRecords = { things: [], tags: [], settings: [] };
             var targetRecords = { things: [], tags: [], settings: [] };
 
-            groupPrefixesByOwner(db, prefixes, 'verify:resolve-owner', function (err, ownerGroups) {
+            groupPrefixesByOwner(
+                db, prefixes, ownerMapInfo.map, 'verify:resolve-owner', function (err, ownerGroups) {
                 if (err) return finishVerify(err);
 
                 async.eachSeries(ownerGroups, function (group, nextOwner) {
@@ -1009,6 +1117,14 @@ function verify(options, callback) {
                                 db, 'verify:settings', group, '_settings',
                                 { type: 'frontend' }, function (err, sourceEntries) {
                                     if (err) return doneCheckSettings(err);
+                                    try {
+                                        sourceEntries = collapseSettingsEntries(sourceEntries);
+                                    } catch (error) {
+                                        return doneCheckSettings(migrationError(
+                                            'verify:settings', '<mapped>', '<legacy>',
+                                            'validate-alias-collision', error
+                                        ));
+                                    }
                                     findDocuments(
                                         db, 'verify:settings', group.canonicalId, 'settings',
                                         { ownerId: group.canonicalId }, function (err, targetDocuments) {

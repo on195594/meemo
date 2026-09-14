@@ -17,8 +17,8 @@ Use this checklist for v2.1 release candidates and later releases. Stop on any f
 ## Migration and deployment
 
 1. Bind the expected environment, database, users file, and account source explicitly; do not rely on migration defaults.
-2. While normal service remains available, run the user and v2 data migrations in `dry-run` mode.
-3. Resolve every identity collision, unmatched owner, and count mismatch; do not deploy through a failed gate.
+2. While normal service remains available, run the user and v2 data migrations in `dry-run` mode. If legacy collection prefixes do not identify their authoritative accounts, pass the same private `--owner-map PATH` JSON file (`prefix` to username) to data `dry-run`, `apply`, `verify`, and retirement preflight.
+3. Resolve every identity collision, unmatched owner, and count mismatch; do not deploy through a failed gate. Many-to-one mappings merge only distinct Thing/tag identities and canonically identical settings; duplicate identities or conflicting settings fail closed.
 4. Establish the release write freeze **before either final user-migration or v2 data-migration apply**: block external write traffic, stop the Meemo application and every worker/scheduler that can write MongoDB or `/app/data`, verify no writer remains, and record the UTC freeze start.
 5. Keep that freeze in force for every following migration, verification, deployment, and cutover step. Do not admit user writes or run a catch-up migration during this release path.
 6. Take the final matched MongoDB, Meemo data-volume, and exact previous-image backup under the freeze.
