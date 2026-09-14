@@ -2,6 +2,8 @@
 
 Use this runbook for Meemo v2 upgrades and rollback. MongoDB, `/app/data`, and the exact Meemo image artifact form one backup set: create, retain, checksum, and restore them together. Commands assume the repository's Docker Compose stack and no shell history containing credentials. They are operator instructions, not evidence that a backup or restore has run.
 
+Code review, pull-request approval, CI success, and release publication authorize code artifacts only. They never authorize a production write, migration, session purge, cutover, or retirement. Obtain and record separate production mutation authorization immediately before the write freeze and re-check that it covers the exact post-merge commit and immutable image digest being operated.
+
 ## Directory boundary
 
 On the current production host, use `/home/lin/meemo-repo` only as the Git repository and `/home/lin/meemo` only as the production operations directory. Run source checks and image builds from the repository; run production Compose commands from the operations directory. Store backups and readiness evidence outside both. The operations directory must not contain a Git checkout or copied build context.
@@ -48,8 +50,11 @@ docker run --rm --volumes-from "$container" --entrypoint sh "$image_id" \
     image-inspect.json image-repo-digests.json image-repository-digest.txt \
     docker-compose.yml >SHA256SUMS
 )
-chmod 600 "$BACKUP_DIR"/*
+chmod 500 "$BACKUP_DIR"
+chmod 400 "$BACKUP_DIR"/*
 ```
+
+Treat this checksummed, read-only directory as the immutable rollback set. Do not regenerate one member, amend `SHA256SUMS`, or reuse the directory for migration/readiness output; create a new set instead. Prefer storage-level immutability or approved write-once retention when available.
 
 `image-id.txt` records the running container's immutable local image ID. `meemo-image.tar` retains that exact image independently of registry availability, and `SHA256SUMS` binds it to the MongoDB and `/app/data` archives. Record configuration names separately, but never copy secret values into backup metadata.
 
@@ -224,9 +229,43 @@ A restore is not accepted until the isolated exercise succeeds. A backup that ha
 Before migrating legacy collections, inventory every candidate namespace and backup. Classify test, fixture, and rehearsal collections separately; never select a source only because its schema validates.
 
 1. Compare users, Things, tags, settings, time ranges, owner partitions, and representative content fingerprints across the live legacy database and pre-change backups.
-2. Fail closed when the selected source is materially smaller, newer, or otherwise inconsistent with another credible candidate or with the user-visible corpus.
-3. Record the selected source archive hash and expected aggregate counts in the migration evidence before `apply`.
-4. Restore the selected source into an isolated MongoDB instance, apply owner mapping there, and verify counts, attachment references, and current-account visibility.
-5. Preserve the current production database and attachment state as a hashed rollback set before replacing data.
+2. Independently create and review a private expected-source JSON artifact before selecting the migration input. It contains exactly `version`, `migration`, `database`, `ownerMapDigest`, and a sorted `namespaces` array; `database` is the explicitly selected MongoDB database name, and each namespace entry contains its exact `name`, migrated-document `count`, and SHA-256 `fingerprint` of canonical sorted EJSON. Settings facts cover `type: frontend`. Do not derive this authority artifact with the migration command.
+3. Make the reviewed artifact read-only. Run `--dry-run` only as a non-authoritative plan, compare its counts with the independent inventory, and reject test, fixture, sample, or demo namespaces:
 
-Migration `verify`, schema phase `complete`, and retirement preflight prove only that the supplied source was handled consistently. They do not prove that the supplied source was the authoritative production corpus. Final acceptance therefore requires a real authenticated check of representative historical notes and attachments.
+   ```bash
+   chmod 400 "$EXPECTED_SOURCE"
+   node scripts/migrate-data-to-v2.js --dry-run \
+     --mongo-url "$MONGODB_URL" --expect-database "$EXPECTED_DATABASE" \
+     --owner-map "$OWNER_MAP"
+   ```
+
+4. Under separate production mutation authorization and a verified application write freeze, consume that exact artifact for both operations:
+
+   ```bash
+   node scripts/migrate-data-to-v2.js --apply \
+     --mongo-url "$MONGODB_URL" --expect-database "$EXPECTED_DATABASE" \
+     --owner-map "$OWNER_MAP" --expected-source "$EXPECTED_SOURCE"
+   node scripts/migrate-data-to-v2.js --verify \
+     --mongo-url "$MONGODB_URL" --expect-database "$EXPECTED_DATABASE" \
+     --owner-map "$OWNER_MAP" --expected-source "$EXPECTED_SOURCE"
+   ```
+
+   Omit `--owner-map` only when no map is required. Every mode requires `--expect-database`; it must exactly match both MongoDB's connected database name and, for apply/verify, the expected-source `database`. Clearly non-production database names and namespace prefixes are rejected. The expected-source path must be a non-symlink, read-only regular file. In-memory objects, missing, writable, stale, database-divergent, namespace-divergent, owner-map-divergent, migration-state-divergent, or extra/operator-labelled fields fail closed before migration writes.
+5. Preserve the current production database, attachment state, Compose configuration, and exact prior image as the immutable hashed rollback set before replacing data.
+
+Standalone MongoDB cannot atomically update `things` and a materialized `tags` collection. Runtime tag reads therefore aggregate `things.tags`; ordinary add, edit/archive, delete, and import paths never depend on a cross-collection counter write. Run `thingService.cleanupTags` only under the external application freeze. It first acquires a durable MongoDB gate with zero active Thing writers, repairs derived Thing tag arrays, builds a uniquely indexed staging collection, and atomically renames it over `tags`. It does not mutate tags and then check for concurrent Things afterward. The gate remains frozen on success or failure and the repair is never scheduled automatically. A process crash with an unreleased active-writer count also blocks repair; investigate the interrupted mutation instead of clearing that count automatically. Keep the gate frozen through `verify-production-readiness.js`; call `things.releaseWriteFreeze` only after all checks and the separately authorized cutover decision.
+
+Before cutover, ensure the legacy users file is also mode 0600, revoke pre-migration sessions, and provision a mode-0600 JSON credentials file containing exactly `mongoUrl`, `username`, `password`, and one representative `thingId`. Run the readiness verifier without secret-bearing arguments:
+
+```bash
+umask 077
+node scripts/verify-production-readiness.js \
+  --users-file "$USERS_FILE" --owner-map "$OWNER_MAP" \
+  --expected-source "$EXPECTED_SOURCE" \
+  --credentials-file "$READBACK_CREDENTIALS" --origin "$APP_ORIGIN" \
+  --attachment-dir "$ATTACHMENT_DIR" \
+  --expect-environment "$DEPLOYMENT_ENV" --expect-database "$EXPECTED_DATABASE" \
+  >"$READINESS_EVIDENCE" 2>&1
+```
+
+The verifier fails on source binding, owner/schema/count invariants, nonzero sessions, inexact tags, unresolved attachments, or authenticated protected readback. Output is only generic `READINESS PASS` with non-sensitive counts or `READINESS FAIL`; process health alone is not business readiness.

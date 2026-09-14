@@ -151,7 +151,6 @@ function add(userId, content, attachments, callback) {
     var promise = Promise.resolve().then(async function () {
         var externalContent = await extractExternalContent(content);
         var tagObjects = extractTags(content);
-        for (var tag of tagObjects) await tags.update(userId, tag);
         var result = await things.add(userId, content, tagObjects, attachments, externalContent);
         if (!result) throw new Error('no result returned');
         return get(userId, result._id);
@@ -162,8 +161,6 @@ function add(userId, content, attachments, callback) {
 function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, callback) {
     var promise = Promise.resolve().then(async function () {
         var tagObjects = extractTags(content);
-        for (var tag of tagObjects) await tags.update(userId, tag);
-
         var externalContent;
         try {
             externalContent = await extractExternalContent(content);
@@ -184,30 +181,57 @@ function del(userId, thingId, callback) {
 }
 
 function getTags(userId, callback) {
-    return nodeify(tags.get(userId), callback);
+    return nodeify(things.getTagUsage(userId), callback);
 }
 
 function cleanupTags(callback) {
     var promise = Promise.resolve().then(async function () {
-        for (var userId of await things.getAllActiveUserIds()) {
-            try {
-                var result = await things.getAllLean(userId);
-                var activeTags = [];
-                (result || []).forEach(function (thing) {
-                    activeTags = activeTags.concat(extractTags(thing.content));
-                });
+        await things.acquireWriteFreeze();
 
-                var savedTags = await tags.get(userId);
-                for (var tag of savedTags || []) {
-                    if (activeTags.indexOf(tag.name) === -1) {
-                        debug('Cleanup tag', tag.name);
-                        await tags.del(userId, String(tag._id));
-                    }
-                }
-            } catch (error) {
-                console.error('Cleanup tags failed for user:', error);
+        var repairedAt = Date.now();
+        var saved = await tags.getUnifiedCollection().find({}).toArray();
+        var metadata = new Map();
+        saved.forEach(function (tag) {
+            metadata.set(JSON.stringify([tag.ownerId, tag.name]), tag);
+        });
+
+        var allThings = await things.getUnifiedCollection().find({}).toArray();
+        var usage = new Map();
+        for (var thing of allThings) {
+            if (typeof thing.ownerId !== 'string' || typeof thing.content !== 'string') {
+                throw new Error('Thing owner or content prevents exact tag reconstruction');
             }
+            var extracted = extractTags(thing.content);
+            if (JSON.stringify(thing.tags) !== JSON.stringify(extracted)) {
+                await things.getUnifiedCollection().updateOne(
+                    { _id: thing._id, ownerId: thing.ownerId }, { $set: { tags: extracted } }
+                );
+            }
+            extracted.forEach(function (name) {
+                var identity = JSON.stringify([thing.ownerId, name]);
+                var existing = metadata.get(identity);
+                var record = usage.get(identity) || {
+                    ownerId: thing.ownerId,
+                    name: name,
+                    usage: 0,
+                    createdAt: existing && existing.createdAt || repairedAt,
+                    modifiedAt: repairedAt
+                };
+                record.usage++;
+                usage.set(identity, record);
+            });
         }
+
+        var reconstructed = Array.from(usage.entries()).map(function (entry) {
+            var existing = metadata.get(entry[0]);
+            var record = entry[1];
+            if (existing && existing.usage === record.usage && existing.modifiedAt != null) {
+                record.modifiedAt = existing.modifiedAt;
+            }
+            return record;
+        });
+        debug('Reconstruct all tags under MongoDB write freeze');
+        await tags.replaceAll(reconstructed);
     });
     return nodeify(promise, callback);
 }

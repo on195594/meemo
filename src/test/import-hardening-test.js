@@ -494,7 +494,7 @@ describe('Import Safety and Consistency (RF-106)', function () {
             expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(0);
         });
 
-        it('exactly restores repeated pre-existing tags and removes repeated newly-created tags on failure', async function () {
+        it('does not mutate persisted tag projection when an import fails', async function () {
             var tagCollection = tags.getUnifiedCollection();
             await tags.update(testUserId, 'existing');
             await tagCollection.updateOne({ ownerId: testUserId, name: 'existing' }, {
@@ -533,7 +533,7 @@ describe('Import Safety and Consistency (RF-106)', function () {
             await tagCollection.deleteMany({ ownerId: testUserId });
         });
 
-        it('preserves concurrent tag fields and increments while rolling back only import usage', async function () {
+        it('leaves independent tag projection writes untouched during import rollback', async function () {
             var tagCollection = tags.getUnifiedCollection();
             await tagCollection.insertOne({
                 ownerId: testUserId,
@@ -555,8 +555,9 @@ describe('Import Safety and Consistency (RF-106)', function () {
                     }),
                     tagCollection.updateOne({ ownerId: testUserId, name: 'newtag' }, {
                         $inc: { usage: 2 },
-                        $set: { modifiedAt: 999999, marker: 'concurrent-new', concurrentField: 'keep-new' }
-                    })
+                        $set: { modifiedAt: 999999, marker: 'concurrent-new', concurrentField: 'keep-new' },
+                        $setOnInsert: { createdAt: 999999 }
+                    }, { upsert: true })
                 ]).then(function () { throw new Error('forced failure after concurrent tag writes'); });
             };
 

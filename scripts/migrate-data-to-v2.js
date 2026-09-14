@@ -9,12 +9,15 @@ var MongoClient = require('mongodb').MongoClient,
     EJSON = require('mongodb').BSON.EJSON,
     async = require('async'),
     crypto = require('crypto'),
+    fs = require('fs'),
+    path = require('path'),
     ownerMaps = require('./owner-map.js'),
     userMigration = require('./migrate-users-to-mongo.js'),
     config = require('../src/config.js'),
     users = require('../src/users.js');
 
 var MIGRATION_ID = 'schema-v2';
+var EXPECTED_SOURCE_VERSION = 2;
 var MIGRATION_PHASES = {
     pending: true,
     copying: true,
@@ -33,7 +36,7 @@ var APPLY_PHASES = {
 
 function migrationError(phase, user, collection, operation, error) {
     var detail = String(error && error.message ? error.message : error || 'unknown error');
-    detail = detail.replace(/mongodb(?:\+srv)?:\/\/[^\s]+/gi, '[redacted MongoDB URI]');
+    detail = detail.replace(/mongodb(?:\+srv)?:\/\/[^\s]+/gi, '[REDACTED]');
 
     var wrapped = new Error(
         'Migration failure: phase=' + phase +
@@ -84,12 +87,13 @@ function findDocuments(db, phase, user, collectionName, query, callback) {
     }, callback);
 }
 
-function newMigrationState(ownerMapDigest) {
+function newMigrationState(ownerMapDigest, sourceEvidenceDigest) {
     return {
         _id: MIGRATION_ID,
         sourceVersion: 1,
         targetVersion: 2,
         ownerMapDigest: ownerMapDigest,
+        sourceEvidenceDigest: sourceEvidenceDigest,
         phase: 'pending',
         startedAt: null,
         copiedAt: null,
@@ -98,7 +102,7 @@ function newMigrationState(ownerMapDigest) {
     };
 }
 
-function validateMigrationState(state, ownerMapDigest, phase, callback) {
+function validateMigrationState(state, ownerMapDigest, sourceEvidenceDigest, phase, callback) {
     if (state.sourceVersion !== 1 || state.targetVersion !== 2 || !MIGRATION_PHASES[state.phase]) {
         return callback(migrationError(
             phase, '<all>', 'system_migrations', 'validate',
@@ -111,18 +115,26 @@ function validateMigrationState(state, ownerMapDigest, phase, callback) {
             new Error('Owner map digest does not match the migration state')
         ));
     }
+    if (state.sourceEvidenceDigest !== sourceEvidenceDigest) {
+        return callback(migrationError(
+            phase, '<all>', 'system_migrations', 'validate-source-evidence',
+            new Error('Source evidence digest does not match the migration state')
+        ));
+    }
     callback(null, state);
 }
 
-function getMigrationState(db, ownerMapDigest, phase, callback, createIfMissing) {
+function getMigrationState(db, ownerMapDigest, sourceEvidenceDigest, phase, callback, createIfMissing) {
     collectionOperation(db, phase, '<all>', 'system_migrations', 'findOne', [
         { _id: MIGRATION_ID }
     ], function (err, state) {
         if (err) return callback(err);
-        if (state) return validateMigrationState(state, ownerMapDigest, phase, callback);
+        if (state) return validateMigrationState(
+            state, ownerMapDigest, sourceEvidenceDigest, phase, callback
+        );
         if (createIfMissing === false) return callback(null, null);
 
-        var initialState = newMigrationState(ownerMapDigest);
+        var initialState = newMigrationState(ownerMapDigest, sourceEvidenceDigest);
         collectionOperation(db, phase, '<all>', 'system_migrations', 'updateOne', [
             { _id: MIGRATION_ID }, { $setOnInsert: initialState }, { upsert: true }
         ], function (err) {
@@ -132,7 +144,9 @@ function getMigrationState(db, ownerMapDigest, phase, callback, createIfMissing)
                 { _id: MIGRATION_ID }
             ], function (err, storedState) {
                 if (err) return callback(err);
-                validateMigrationState(storedState || initialState, ownerMapDigest, phase, callback);
+                validateMigrationState(
+                    storedState || initialState, ownerMapDigest, sourceEvidenceDigest, phase, callback
+                );
             });
         });
     });
@@ -256,10 +270,10 @@ function compareCanonicalRecords(user, entity, id, fieldNames, source, target, m
 
 function sortedRecords(records) {
     return records.slice().sort(function (left, right) {
-        var leftIdentity = canonicalJson([left.user, left.id]);
-        var rightIdentity = canonicalJson([right.user, right.id]);
-        if (leftIdentity < rightIdentity) return -1;
-        if (leftIdentity > rightIdentity) return 1;
+        var leftRecord = canonicalJson(left);
+        var rightRecord = canonicalJson(right);
+        if (leftRecord < rightRecord) return -1;
+        if (leftRecord > rightRecord) return 1;
         return 0;
     });
 }
@@ -278,6 +292,128 @@ function buildManifest(records) {
         tagsHash: recordsHash(records.tags),
         settingsHash: recordsHash(records.settings)
     };
+}
+
+function exactKeys(value, expected) {
+    return !!value && typeof value === 'object' && !Array.isArray(value) &&
+        canonicalJson(Object.keys(value).sort()) === canonicalJson(expected.slice().sort());
+}
+
+function sourceSnapshot(legacy, groups) {
+    return ['things', 'tags', 'settings'].reduce(function (facts, type) {
+        legacy[type].forEach(function (collection) {
+            var documents = groups.reduce(function (all, group) {
+                return all.concat((group.inventory[type] || []).filter(function (entry) {
+                    return entry.prefix === collection.prefix;
+                }).map(function (entry) { return entry.document; }));
+            }, []);
+            facts.push({
+                name: collection.name,
+                count: documents.length,
+                fingerprint: recordsHash(documents)
+            });
+        });
+        return facts;
+    }, []).sort(function (left, right) {
+        return left.name < right.name ? -1 : (left.name > right.name ? 1 : 0);
+    });
+}
+
+function expectedSourceDigest(expectation) {
+    return recordsHash([expectation]);
+}
+
+function readExpectedSource(options) {
+    var expectation;
+    requireExpectedDatabase(options);
+    if (options.expectedSource) throw new Error('Reviewed expected-source artifact is invalid');
+    if (!options.expectedSourceFile) throw new Error('Reviewed expected-source artifact is required');
+    var descriptor;
+    try {
+        var expectationPath = path.resolve(options.expectedSourceFile);
+        descriptor = fs.openSync(
+            expectationPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW
+        );
+        var expectationStat = fs.fstatSync(descriptor);
+        if (!expectationStat.isFile() || (expectationStat.mode & 0o222) !== 0) {
+            throw new Error('not an immutable regular file');
+        }
+        expectation = JSON.parse(fs.readFileSync(descriptor, 'utf8'));
+    } catch (ignore) {
+        throw new Error('Reviewed expected-source artifact is missing or unreadable');
+    } finally {
+        if (descriptor !== undefined) fs.closeSync(descriptor);
+    }
+    if (!exactKeys(expectation, [
+        'version', 'migration', 'database', 'ownerMapDigest', 'namespaces'
+    ]) || expectation.version !== EXPECTED_SOURCE_VERSION ||
+            expectation.migration !== MIGRATION_ID ||
+            typeof expectation.database !== 'string' || !expectation.database ||
+            typeof expectation.ownerMapDigest !== 'string' ||
+            !Array.isArray(expectation.namespaces) || !expectation.namespaces.length) {
+        throw new Error('Reviewed expected-source artifact is invalid');
+    }
+    if (expectation.database !== options.expectedDatabase) {
+        throw new Error('Reviewed expected-source database does not match expected database');
+    }
+
+    var names = new Set();
+    expectation.namespaces.forEach(function (namespace) {
+        if (!exactKeys(namespace, ['name', 'count', 'fingerprint']) ||
+                typeof namespace.name !== 'string' || !namespace.name ||
+                !Number.isSafeInteger(namespace.count) || namespace.count < 0 ||
+                !/^[a-f0-9]{64}$/.test(namespace.fingerprint || '') ||
+                names.has(namespace.name)) {
+            throw new Error('Reviewed expected-source artifact is invalid');
+        }
+        names.add(namespace.name);
+    });
+    return expectation;
+}
+
+function validateExpectedSource(expectation, snapshot, ownerMapDigest) {
+    if (expectation.ownerMapDigest !== ownerMapDigest ||
+            canonicalJson(expectation.namespaces) !== canonicalJson(snapshot)) {
+        throw new Error('Reviewed expected-source facts do not match the current source');
+    }
+    return expectation;
+}
+
+function hasNonProductionIndicator(value) {
+    return value.toLowerCase().split(/[^a-z0-9]+/).some(function (part) {
+        return /^(?:test|fixture|sample|demo|rehearsal)\d*$/.test(part);
+    });
+}
+
+function requireExpectedDatabase(options) {
+    if (!options || typeof options.expectedDatabase !== 'string' ||
+            !options.expectedDatabase) {
+        throw new Error('Explicit expected database is required');
+    }
+    if (hasNonProductionIndicator(options.expectedDatabase)) {
+        throw new Error('Non-production database indicator is forbidden');
+    }
+}
+
+function validateDatabaseBinding(db, options) {
+    requireExpectedDatabase(options);
+    if (!db || typeof db.databaseName !== 'string' ||
+            db.databaseName !== options.expectedDatabase) {
+        throw new Error('Expected database does not match connected database');
+    }
+    if (hasNonProductionIndicator(db.databaseName)) {
+        throw new Error('Non-production database indicator is forbidden');
+    }
+}
+
+function rejectNonProductionNamespaces(legacy) {
+    ['things', 'tags', 'settings'].forEach(function (type) {
+        legacy[type].forEach(function (collection) {
+            if (hasNonProductionIndicator(collection.prefix)) {
+                throw new Error('Non-production namespace indicator is forbidden');
+            }
+        });
+    });
 }
 
 function formatMismatch(mismatch) {
@@ -398,6 +534,11 @@ function loadOwnerSources(db, groups, phase, callback) {
             }
         }, function (err, sources) {
             if (err) return nextGroup(err);
+            group.inventory = {
+                things: sources.things.slice(),
+                tags: sources.tags.slice(),
+                settings: sources.settings.slice()
+            };
             try {
                 sources.things = collapseIdenticalThingEntries(sources.things);
                 validateSourceIdentities(sources.tags, function (document) {
@@ -413,6 +554,48 @@ function loadOwnerSources(db, groups, phase, callback) {
             nextGroup();
         });
     }, callback);
+}
+
+function inspectSource(db, ownerMapInfo, phase, plannedOwners, callback) {
+    discoverLegacyCollections(db, function (error, legacy) {
+        if (error) return callback(error);
+        var prefixes = legacyPrefixes(legacy);
+        try {
+            rejectNonProductionNamespaces(legacy);
+            ownerMaps.validatePrefixes(ownerMapInfo.map, prefixes);
+        } catch (validationError) {
+            return callback(validationError);
+        }
+        groupPrefixesByOwner(
+            db, prefixes, ownerMapInfo.map, phase + ':resolve-owner', plannedOwners,
+            function (groupError, groups) {
+                if (groupError) return callback(groupError);
+                loadOwnerSources(db, groups, phase, function (sourceError) {
+                    if (sourceError) return callback(sourceError);
+                    callback(null, {
+                        legacy: legacy,
+                        prefixes: prefixes,
+                        groups: groups,
+                        snapshot: sourceSnapshot(legacy, groups)
+                    });
+                });
+            }
+        );
+    }, phase + ':discovery');
+}
+
+function checkSourceAuthority(db, ownerMapInfo, expectation, phase, callback) {
+    inspectSource(db, ownerMapInfo, phase, null, function (error, source) {
+        if (error) return callback(error);
+        try {
+            validateExpectedSource(expectation, source.snapshot, ownerMapInfo.digest);
+        } catch (validationError) {
+            return callback(migrationError(
+                phase, '<all>', '<legacy>', 'validate-source-evidence', validationError
+            ));
+        }
+        callback(null, source);
+    });
 }
 
 function indexCanonicalDocuments(entries, getIdentity, entity, mismatches) {
@@ -506,6 +689,10 @@ function parseArgs(args) {
             options.usersFile = args[++i];
         } else if (arg === '--users-manifest' && args[i + 1]) {
             options.usersManifestFile = args[++i];
+        } else if (arg === '--expected-source' && args[i + 1]) {
+            options.expectedSourceFile = args[++i];
+        } else if (arg === '--expect-database' && args[i + 1]) {
+            options.expectedDatabase = args[++i];
         } else if (arg === '--help' || arg === '-h') {
             options.mode = 'help';
         } else throw new Error('Unknown or incomplete argument: ' + arg);
@@ -517,12 +704,31 @@ function parseArgs(args) {
     if (options.usersFile && options.mode !== 'dry-run') {
         throw new Error('--users-file and --users-manifest are valid only with --dry-run');
     }
+    if (options.expectedSourceFile && options.mode !== 'apply' && options.mode !== 'verify') {
+        throw new Error('--expected-source is valid only with --apply or --verify');
+    }
+    if ((options.mode === 'apply' || options.mode === 'verify') && !options.expectedSourceFile) {
+        throw new Error('--expected-source is required for apply and verify');
+    }
+    if (options.mode === 'dry-run' || options.mode === 'apply' || options.mode === 'verify') {
+        requireExpectedDatabase(options);
+    }
 
     return options;
 }
 
 function getDbConnection(options, phase, callback) {
+    try {
+        requireExpectedDatabase(options);
+    } catch (error) {
+        return callback(error);
+    }
     if (options && options.db) {
+        try {
+            validateDatabaseBinding(options.db, options);
+        } catch (error) {
+            return callback(error);
+        }
         return callback(null, options.db, function close() {
             if (!options.close) return Promise.resolve();
             if (options.close.length === 0) return Promise.resolve().then(options.close);
@@ -533,11 +739,22 @@ function getDbConnection(options, phase, callback) {
     }
 
     var mongoUrl = (options && options.mongoUrl) || process.env.MONGODB_URL || config.databaseUrl || 'mongodb://127.0.0.1:27017/meemo';
+    var client;
+    var db;
+    try {
+        client = new MongoClient(mongoUrl);
+        db = client.db();
+        validateDatabaseBinding(db, options);
+    } catch (error) {
+        if (!client) return callback(error);
+        return closeConnection(function () { return client.close(); }, phase, error, callback);
+    }
     mongoOperation(phase, '<all>', '<database>', 'connect', function () {
-        return MongoClient.connect(mongoUrl);
-    }, function (err, client) {
-        if (err) return callback(err);
-        var db = client.db();
+        return client.connect();
+    }, function (err) {
+        if (err) {
+            return closeConnection(function () { return client.close(); }, phase, err, callback);
+        }
         callback(null, db, function close() {
             return client.close();
         });
@@ -732,6 +949,7 @@ function dryRun(options, callback) {
             var userMap = {};
             var prefixes = legacyPrefixes(legacy);
             try {
+                rejectNonProductionNamespaces(legacy);
                 ownerMaps.validatePrefixes(ownerMapInfo.map, prefixes);
             } catch (error) {
                 return closeConnection(close, 'dry-run', error, callback);
@@ -830,11 +1048,46 @@ function dryRun(options, callback) {
     });
 }
 
+function verifySourceAuthority(options, callback) {
+    options = options || {};
+    var ownerMapInfo;
+    var expectation;
+    try {
+        ownerMapInfo = ownerMaps.load(options.ownerMapPath);
+        expectation = readExpectedSource(options);
+    } catch (error) {
+        return callback(error);
+    }
+    getDbConnection(options, 'source-authority', function (error, db, close) {
+        if (error) return callback(error);
+        checkSourceAuthority(db, ownerMapInfo, expectation, 'source-authority', function (error) {
+            if (error) return closeConnection(close, 'source-authority', error, callback);
+            getMigrationState(
+                db, ownerMapInfo.digest, expectedSourceDigest(expectation),
+                'source-authority:state', function (stateError, state) {
+                    if (!stateError && (!state || state.phase !== 'complete')) {
+                        stateError = migrationError(
+                            'source-authority:state', '<all>', 'system_migrations', 'validate',
+                            new Error('Completed source-bound migration evidence is required')
+                        );
+                    }
+                    closeConnection(close, 'source-authority', stateError, function (closeError) {
+                        if (closeError) return callback(closeError);
+                        callback(null);
+                    });
+                }, false
+            );
+        });
+    });
+}
+
 function apply(options, callback) {
     options = options || {};
     var ownerMapInfo;
+    var expectedSource;
     try {
         ownerMapInfo = ownerMaps.load(options.ownerMapPath);
+        expectedSource = readExpectedSource(options);
     } catch (error) {
         return callback(error);
     }
@@ -860,7 +1113,10 @@ function apply(options, callback) {
             });
         }
 
-        getMigrationState(db, ownerMapInfo.digest, 'apply:state', function (err, currentState) {
+        function startApply() {
+        getMigrationState(
+            db, ownerMapInfo.digest, expectedSourceDigest(expectedSource),
+            'apply:state', function (err, currentState) {
             if (err) return closeConnection(close, 'apply', err, callback);
             state = currentState;
 
@@ -911,6 +1167,17 @@ function apply(options, callback) {
                                 if (err) return finishApply(err);
                                 loadOwnerSources(db, ownerGroups, 'apply', function (err) {
                                     if (err) return finishApply(err);
+                                    try {
+                                        validateExpectedSource(
+                                            expectedSource, sourceSnapshot(legacy, ownerGroups),
+                                            ownerMapInfo.digest
+                                        );
+                                    } catch (validationError) {
+                                        return finishApply(migrationError(
+                                            'apply', '<all>', '<legacy>',
+                                            'validate-source-evidence', validationError
+                                        ));
+                                    }
 
                                     async.eachSeries(ownerGroups, function (group, nextUser) {
                                         var canonicalId = group.canonicalId;
@@ -1047,14 +1314,22 @@ function apply(options, callback) {
                 });
             });
         });
+        }
+
+        checkSourceAuthority(db, ownerMapInfo, expectedSource, 'apply:authority', function (error) {
+            if (error) return closeConnection(close, 'apply', error, callback);
+            startApply();
+        });
     });
 }
 
 function verify(options, callback) {
     options = options || {};
     var ownerMapInfo;
+    var expectedSource;
     try {
         ownerMapInfo = ownerMaps.load(options.ownerMapPath);
+        expectedSource = readExpectedSource(options);
     } catch (error) {
         return callback(error);
     }
@@ -1087,9 +1362,18 @@ function verify(options, callback) {
             });
         }
 
-        getMigrationState(db, ownerMapInfo.digest, 'verify:state', function (err, currentState) {
+        function startVerify() {
+        getMigrationState(
+            db, ownerMapInfo.digest, expectedSourceDigest(expectedSource),
+            'verify:state', function (err, currentState) {
             if (err) return closeConnection(close, 'verify', err, callback);
-            state = currentState || { phase: 'complete', startedAt: Infinity };
+            if (!currentState) {
+                return closeConnection(close, 'verify', migrationError(
+                    'verify:state', '<all>', 'system_migrations', 'validate',
+                    new Error('Verification requires durable source-bound migration state')
+                ), callback);
+            }
+            state = currentState;
 
             if (state.phase !== 'copied' && state.phase !== 'verified' &&
                     state.phase !== 'cutover' && state.phase !== 'complete') {
@@ -1278,14 +1562,26 @@ function verify(options, callback) {
             });
             }, 'verify:discovery');
         }, false);
+        }
+
+        checkSourceAuthority(db, ownerMapInfo, expectedSource, 'verify:authority', function (error) {
+            if (error) return closeConnection(close, 'verify', error, callback);
+            startVerify();
+        });
     });
 }
 
 function main() {
-    var options = parseArgs();
+    var options;
+    try {
+        options = parseArgs();
+    } catch (error) {
+        console.error('MIGRATION_ARGUMENT_ERROR');
+        process.exit(1);
+    }
 
     if (!options.mode || options.mode === 'help') {
-        console.log('Usage: node scripts/migrate-data-to-v2.js [--dry-run | --apply | --verify] [--mongo-url <url>] [--owner-map <file>] [--users-file <file> --users-manifest <file>]');
+        console.log('Usage: node scripts/migrate-data-to-v2.js [--dry-run | --apply --expected-source <file> | --verify --expected-source <file>] --expect-database <name> [--mongo-url <url>] [--owner-map <file>] [--users-file <file> --users-manifest <file>]');
         process.exit(options.mode === 'help' ? 0 : 1);
     }
 
@@ -1293,7 +1589,7 @@ function main() {
         console.log('Running dry-run data migration plan...');
         dryRun(options, function (err, report) {
             if (err) {
-                console.error('Dry-run failed:', err.message || err);
+                console.error('DATA_MIGRATION_DRY_RUN_FAILED');
                 process.exit(1);
             }
             console.log('Dry-run plan summary:');
@@ -1307,7 +1603,7 @@ function main() {
         console.log('Applying data migration to unified collections...');
         apply(options, function (err, stats) {
             if (err) {
-                console.error('Migration apply failed:', err.message || err);
+                console.error('DATA_MIGRATION_APPLY_FAILED');
                 process.exit(1);
             }
             console.log('Migration completed successfully:');
@@ -1321,7 +1617,7 @@ function main() {
         console.log('Verifying data migration fidelity between legacy and unified collections...');
         verify(options, function (err, result) {
             if (err) {
-                console.error('Verification failed:', err.message || err);
+                console.error('DATA_MIGRATION_VERIFICATION_FAILED');
                 process.exit(1);
             }
             console.log(JSON.stringify(result.manifest, null, 2));
@@ -1337,6 +1633,8 @@ module.exports = {
     dryRun: dryRun,
     apply: apply,
     verify: verify,
+    verifySourceAuthority: verifySourceAuthority,
+    readExpectedSource: readExpectedSource,
     discoverLegacyCollections: discoverLegacyCollections,
     resolveCanonicalOwner: resolveCanonicalOwner
 };

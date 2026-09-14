@@ -56,7 +56,6 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `MAX_ATTACHMENT_SIZE` | `10485760` (10MB) | `10485760` | Maximum attachment upload size in bytes |
 | `MAX_IMPORT_SIZE` | `52428800` (50MB) | `52428800` | Maximum import archive size in bytes |
 | `ENABLE_WORKERS` | `true` | `true` | Enable background cleanup workers |
-| `TAG_CLEANUP_INTERVAL_MS` | `60000` | `60000` | Tag cleanup worker interval in milliseconds |
 | `SHUTDOWN_TIMEOUT_MS` | `15000` | `15000` | Graceful shutdown timeout in milliseconds |
 | `MONGO_MAX_POOL_SIZE` | `50` | `50` | Maximum MongoDB connection pool size |
 | `MONGO_MIN_POOL_SIZE` | `1` | `1` | Minimum MongoDB connection pool size |
@@ -88,6 +87,8 @@ npm test
 
 To run only the Node.js process, provide MongoDB separately and use `npm start`.
 
+Runtime tag lists are derived from each owner's `things.tags` arrays, so add, edit/archive, delete, and import do not depend on cross-collection updates. The persisted `tags` collection is a maintenance projection because standalone MongoDB cannot atomically update it with `things`. Invoke `thingService.cleanupTags` only during an external write freeze: it atomically acquires a durable MongoDB Thing-write gate, repairs Thing tag arrays, swaps in a fully staged tag projection, and leaves the gate frozen for readiness checks. Release it with `things.releaseWriteFreeze` only after the separate cutover decision; a failed repair remains fail-closed and is never scheduled automatically.
+
 ## Repository and production directories
 
 Keep source code and production state in separate directories. On the current host:
@@ -109,7 +110,7 @@ Build and test from the repository. Operate the deployed containers from the pro
 | `src/database/` | MongoDB persistence (things, tags, settings, users, and sessions) |
 | `src/users.js` | Account repository abstraction and password handling |
 | `types/` | TypeScript domain definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`) |
-| `scripts/` | Historical v1-to-v2 migration tools, read-only retirement preflight, benchmark, and attachment GC |
+| `scripts/` | Historical v1-to-v2 migration tools, read-only retirement/business-readiness verifiers, benchmark, and attachment GC |
 | `src/test/` | Backend and contract tests run by Mocha |
 | `web/` | Vue 3 + Vite + TypeScript application and Vitest behavior tests; route query owns note filters |
 | `docs/` | Architecture, security, backup/restore, release, and refactoring documentation |

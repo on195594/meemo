@@ -498,9 +498,9 @@ legacy collections (<user>_things, <user>_tags, <user>_settings)
 迁移命令建议：
 
 ```text
-node scripts/migrate-data-to-v2.js --dry-run
-node scripts/migrate-data-to-v2.js --apply
-node scripts/migrate-data-to-v2.js --verify
+node scripts/migrate-data-to-v2.js --dry-run --expect-database "$EXPECTED_DATABASE"
+node scripts/migrate-data-to-v2.js --apply --expect-database "$EXPECTED_DATABASE" --expected-source "$EXPECTED_SOURCE"
+node scripts/migrate-data-to-v2.js --verify --expect-database "$EXPECTED_DATABASE" --expected-source "$EXPECTED_SOURCE"
 ```
 
 索引至少包括：

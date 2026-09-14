@@ -14,6 +14,7 @@ var thingService = require('../services/thing-service.js');
 var tags = require('../database/tags.js');
 var settings = require('../database/settings.js');
 var migrator = require('../../scripts/migrate-data-to-v2.js');
+var sourceExpectations = require('./migration-expected-source.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
 
@@ -398,6 +399,8 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         var legacyOwner1 = 'legacyuser_alpha';
         var legacyOwner2 = 'legacyuser_beta';
         var protectedThingId;
+        var expectedSource;
+        var expectedSourceFile;
 
         before(function () {
             // Seed legacy per-user collections
@@ -420,6 +423,16 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             var tags2 = [
                 { _id: new ObjectId(), name: 'beta', usage: 3 }
             ];
+            var source = {};
+            source[legacyOwner1 + '_things'] = things1;
+            source[legacyOwner1 + '_tags'] = tags1;
+            source[legacyOwner1 + '_settings'] = settings1;
+            source[legacyOwner2 + '_things'] = things2;
+            source[legacyOwner2 + '_tags'] = tags2;
+            expectedSource = sourceExpectations.expectedSource(
+                source, null, db.databaseName
+            );
+            expectedSourceFile = sourceExpectations.writeArtifact(expectedSource);
 
             return Promise.all([
                 db.collection(legacyOwner1 + '_things').insertMany(things1),
@@ -430,24 +443,34 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             ]);
         });
 
-        it('--dry-run discovers legacy collections without writing to unified collections', function (done) {
-            migrator.dryRun({ db: db }, function (err, report) {
-                if (err) return done(err);
-                expect(report.totalLegacyUsers).to.be.greaterThan(1);
-                expect(report.totalThingsToMigrate).to.equal(3);
-                expect(report.totalTagsToMigrate).to.equal(3);
-                expect(report.totalSettingsToMigrate).to.equal(1);
+        after(function () {
+            sourceExpectations.removeArtifact(expectedSourceFile);
+        });
 
-                // Confirm unified collections have not received these notes yet
-                db.collection('things').countDocuments({ ownerId: legacyOwner1 }).then(function (count) {
-                    expect(count).to.equal(0);
-                    done();
-                }).catch(done);
+        it('--dry-run discovers legacy collections without writing to unified collections', async function () {
+            var report = await new Promise(function (resolve, reject) {
+                migrator.dryRun({
+                    db: db, expectedDatabase: db.databaseName
+                }, function (error, result) {
+                    if (error) return reject(error);
+                    resolve(result);
+                });
             });
+            expect(report).not.to.have.property('sourceManifest');
+            expect(report).not.to.have.property('expectedSource');
+            expect(report.totalLegacyUsers).to.be.greaterThan(1);
+            expect(report.totalThingsToMigrate).to.equal(3);
+            expect(report.totalTagsToMigrate).to.equal(3);
+            expect(report.totalSettingsToMigrate).to.equal(1);
+            expect(await db.collection('things').countDocuments({ ownerId: legacyOwner1 })).to.equal(0);
         });
 
         it('--apply records copied state and migrates legacy collections idempotently', function (done) {
-            migrator.apply({ db: db }, function (err, stats) {
+            migrator.apply({
+                db: db,
+                expectedDatabase: db.databaseName,
+                expectedSourceFile: expectedSourceFile
+            }, function (err, stats) {
                 if (err) return done(err);
                 expect(stats.migratedThings).to.equal(3);
                 expect(stats.migratedTags).to.equal(3);
@@ -456,6 +479,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 db.collection('system_migrations').findOne({ _id: 'schema-v2' }).then(function (state) {
                     expect(state.sourceVersion).to.equal(1);
                     expect(state.targetVersion).to.equal(2);
+                    expect(state.sourceEvidenceDigest).to.equal(sourceExpectations.digest(expectedSource));
                     expect(state.phase).to.equal('copied');
                     expect(state.startedAt).to.be.a('number');
                     expect(state.copiedAt).to.be.a('number');
@@ -486,7 +510,11 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                     { _id: 'schema-v2' },
                     { $set: { phase: phase } }
                 ).then(function () {
-                    migrator.verify({ db: db }, function (err, result) {
+                    migrator.verify({
+                        db: db,
+                        expectedDatabase: db.databaseName,
+                        expectedSourceFile: expectedSourceFile
+                    }, function (err, result) {
                         expect(err).to.be.ok();
                         expect(err.message).to.contain('phase=verify:state');
                         expect(err.message).to.contain('Cannot verify migration from phase ' + phase);
@@ -505,7 +533,11 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
 
         it('--verify marks copied migration failed on fidelity errors', function (done) {
             db.collection('things').deleteOne({ ownerId: legacyOwner2 }).then(function () {
-                migrator.verify({ db: db }, function (err, result) {
+                migrator.verify({
+                    db: db,
+                    expectedDatabase: db.databaseName,
+                    expectedSourceFile: expectedSourceFile
+                }, function (err, result) {
                     expect(err).to.be.ok();
                     expect(err.message).to.contain('Verification failed');
                     expect(result).to.be(undefined);
@@ -532,10 +564,18 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                         $set: { value: { title: 'Edited after migration start' }, modifiedAt: editedAt }
                     })
                 ]).then(function () {
-                    migrator.apply({ db: db }, function (err) {
+                    migrator.apply({
+                        db: db,
+                        expectedDatabase: db.databaseName,
+                        expectedSourceFile: expectedSourceFile
+                    }, function (err) {
                         if (err) return done(err);
 
-                        migrator.verify({ db: db }, function (err, result) {
+                        migrator.verify({
+                            db: db,
+                            expectedDatabase: db.databaseName,
+                            expectedSourceFile: expectedSourceFile
+                        }, function (err, result) {
                             if (err) return done(err);
                             expect(result.success).to.be(true);
 
@@ -566,7 +606,11 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 expect(before.phase).to.equal('verified');
                 expect(before.verifiedAt).to.be.a('number');
 
-                migrator.verify({ db: db }, function (err, result) {
+                migrator.verify({
+                    db: db,
+                    expectedDatabase: db.databaseName,
+                    expectedSourceFile: expectedSourceFile
+                }, function (err, result) {
                     if (err) return done(err);
                     expect(result.success).to.be(true);
 
@@ -591,7 +635,11 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                         { _id: 'schema-v2' },
                         { $set: { phase: phase } }
                     ).then(function () {
-                        migrator.verify({ db: db }, function (err, result) {
+                        migrator.verify({
+                            db: db,
+                            expectedDatabase: db.databaseName,
+                            expectedSourceFile: expectedSourceFile
+                        }, function (err, result) {
                             if (err) return done(err);
                             expect(result.success).to.be(true);
 
@@ -609,7 +657,11 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         });
 
         it('refuses --apply after migration state is complete', function (done) {
-            migrator.apply({ db: db }, function (err, stats) {
+            migrator.apply({
+                db: db,
+                expectedDatabase: db.databaseName,
+                expectedSourceFile: expectedSourceFile
+            }, function (err, stats) {
                 expect(err).to.be.ok();
                 expect(err.message).to.contain('phase=apply:state');
                 expect(err.message).to.contain('already complete');
@@ -620,7 +672,11 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
 
         it('--verify detects tampering without changing complete phase', function (done) {
             db.collection('things').deleteOne({ ownerId: legacyOwner2 }).then(function () {
-                migrator.verify({ db: db }, function (err, result) {
+                migrator.verify({
+                    db: db,
+                    expectedDatabase: db.databaseName,
+                    expectedSourceFile: expectedSourceFile
+                }, function (err, result) {
                     expect(err).to.be.ok();
                     expect(err.message).to.contain('Verification failed');
                     expect(result).to.be(undefined);
@@ -634,7 +690,10 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
 
         it('supports standalone mongoUrl execution without shared db', function (done) {
             // Test that running standalone dryRun with mongoUrl works cleanly
-            migrator.dryRun({ mongoUrl: config.databaseUrl }, function (err, report) {
+            migrator.dryRun({
+                mongoUrl: config.databaseUrl,
+                expectedDatabase: db.databaseName
+            }, function (err, report) {
                 if (err) return done(err);
                 expect(report.totalLegacyUsers).to.be.greaterThan(0);
                 // Verify our test suite's db connection remains open and functional

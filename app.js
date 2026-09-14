@@ -6,7 +6,6 @@ const PORT = process.env.VITE_DEV_PORT || process.env.PORT || 3000;
 const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
 
 var createApp = require('./src/http/app.js'),
-    thingService = require('./src/services/thing-service.js'),
     lifecycle = require('./src/lifecycle.js'),
     things = require('./src/database/things.js'),
     tags = require('./src/database/tags.js'),
@@ -35,9 +34,6 @@ function startServer(options, callback) {
             workerManager: workerManager,
             timeoutMs: options.shutdownTimeoutMs
         });
-        var cleanupIntervalMs = options.tagCleanupIntervalMs || parseInt(process.env.TAG_CLEANUP_INTERVAL_MS, 10) || (1000 * 60);
-        workerManager.register('cleanupTags', thingService.cleanupTags, cleanupIntervalMs);
-
         var connection = await databaseManager.connect(options);
         await Promise.all([
             things.ensureIndexes(),
