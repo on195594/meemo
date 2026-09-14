@@ -10,6 +10,7 @@ var MongoClient = require('mongodb').MongoClient,
     async = require('async'),
     crypto = require('crypto'),
     ownerMaps = require('./owner-map.js'),
+    userMigration = require('./migrate-users-to-mongo.js'),
     config = require('../src/config.js'),
     users = require('../src/users.js');
 
@@ -462,8 +463,8 @@ function compareOwnerDocuments(options) {
     });
 }
 
-function parseArgs() {
-    var args = process.argv.slice(2);
+function parseArgs(args) {
+    args = args || process.argv.slice(2);
     var options = {
         mode: null,
         mongoUrl: process.env.MONGODB_URL || config.databaseUrl || 'mongodb://127.0.0.1:27017/meemo'
@@ -478,9 +479,20 @@ function parseArgs() {
             options.mongoUrl = args[++i];
         } else if (arg === '--owner-map' && args[i + 1]) {
             options.ownerMapPath = args[++i];
+        } else if (arg === '--users-file' && args[i + 1]) {
+            options.usersFile = args[++i];
+        } else if (arg === '--users-manifest' && args[i + 1]) {
+            options.usersManifestFile = args[++i];
         } else if (arg === '--help' || arg === '-h') {
             options.mode = 'help';
         } else throw new Error('Unknown or incomplete argument: ' + arg);
+    }
+
+    if (!!options.usersFile !== !!options.usersManifestFile) {
+        throw new Error('--users-file and --users-manifest are required together');
+    }
+    if (options.usersFile && options.mode !== 'dry-run') {
+        throw new Error('--users-file and --users-manifest are valid only with --dry-run');
     }
 
     return options;
@@ -605,10 +617,10 @@ function discoverLegacyCollections(db, callback, phase) {
     });
 }
 
-function resolveCanonicalOwner(db, prefix, callback, phase, ownerMap) {
+function resolveCanonicalOwner(db, prefix, callback, phase, ownerMap, plannedOwners) {
     phase = phase || 'resolve-owner';
     if (ownerMap && ownerMaps.has(ownerMap, prefix)) {
-        return resolveMappedOwner(db, prefix, ownerMap[prefix], callback, phase);
+        return resolveMappedOwner(db, prefix, ownerMap[prefix], callback, phase, plannedOwners);
     }
     if (users && typeof users.resolveUser === 'function') {
         users.resolveUser(prefix, function (err, u) {
@@ -625,11 +637,11 @@ function resolveCanonicalOwner(db, prefix, callback, phase, ownerMap) {
     }
 }
 
-function resolveMappedOwner(db, prefix, username, callback, phase) {
-    lookupInMongoUsers(db, username, callback, phase, true, prefix);
+function resolveMappedOwner(db, prefix, username, callback, phase, plannedOwners) {
+    lookupInMongoUsers(db, username, callback, phase, true, prefix, plannedOwners);
 }
 
-function lookupInMongoUsers(db, prefix, callback, phase, required, errorOwner) {
+function lookupInMongoUsers(db, prefix, callback, phase, required, errorOwner, plannedOwners) {
     var query = {
         $or: [
             { usernameNorm: prefix.toLowerCase() },
@@ -643,6 +655,16 @@ function lookupInMongoUsers(db, prefix, callback, phase, required, errorOwner) {
 
     collectionOperation(db, phase, errorOwner || prefix, 'users', 'findOne', [query], function (err, doc) {
         if (err) return callback(err);
+        if (doc && plannedOwners && plannedOwners[prefix.toLowerCase()] &&
+                String(doc._id) !== plannedOwners[prefix.toLowerCase()]) {
+            return callback(migrationError(
+                phase, errorOwner || '<mapped>', 'users', 'resolve-mapped-owner',
+                new Error('Mapped owner does not match reviewed users manifest')
+            ));
+        }
+        if (!doc && required && plannedOwners && plannedOwners[prefix.toLowerCase()]) {
+            return callback(null, plannedOwners[prefix.toLowerCase()], prefix);
+        }
         if (!doc && required) {
             return callback(migrationError(
                 phase, errorOwner || '<mapped>', 'users', 'resolve-mapped-owner',
@@ -657,8 +679,22 @@ function lookupInMongoUsers(db, prefix, callback, phase, required, errorOwner) {
 function dryRun(options, callback) {
     options = options || {};
     var ownerMapInfo;
+    var plannedOwners = null;
     try {
         ownerMapInfo = ownerMaps.load(options.ownerMapPath);
+        if (options.usersManifestFile) {
+            if (!options.usersFile || !options.mongoUrl) {
+                throw new Error('--users-file, --users-manifest, and --mongo-url are required together');
+            }
+            plannedOwners = {};
+            userMigration.loadReviewedRun({
+                usersFile: options.usersFile,
+                manifestFile: options.usersManifestFile,
+                mongoUrl: options.mongoUrl
+            }).expectedRecords.forEach(function (record) {
+                plannedOwners[record.usernameNorm] = String(record._id);
+            });
+        }
     } catch (error) {
         return callback(error);
     }
@@ -720,7 +756,7 @@ function dryRun(options, callback) {
                         userMap[prefix] = entry;
                         nextPrefix();
                     });
-                }, 'dry-run', ownerMapInfo.map);
+                }, 'dry-run:resolve-owner', ownerMapInfo.map, plannedOwners);
             }, function (err) {
                 if (err) {
                     return closeConnection(close, 'dry-run', err, callback);
@@ -1207,7 +1243,7 @@ function main() {
     var options = parseArgs();
 
     if (!options.mode || options.mode === 'help') {
-        console.log('Usage: node scripts/migrate-data-to-v2.js [--dry-run | --apply | --verify] [--mongo-url <url>]');
+        console.log('Usage: node scripts/migrate-data-to-v2.js [--dry-run | --apply | --verify] [--mongo-url <url>] [--owner-map <file>] [--users-file <file> --users-manifest <file>]');
         process.exit(options.mode === 'help' ? 0 : 1);
     }
 
@@ -1255,6 +1291,7 @@ function main() {
 }
 
 module.exports = {
+    parseArgs: parseArgs,
     dryRun: dryRun,
     apply: apply,
     verify: verify,

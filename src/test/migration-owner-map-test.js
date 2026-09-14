@@ -12,6 +12,7 @@ var expect = require('expect.js'),
     config = require('../config.js'),
     users = require('../users.js'),
     ownerMaps = require('../../scripts/owner-map.js'),
+    userMigrator = require('../../scripts/migrate-users-to-mongo.js'),
     migrator = require('../../scripts/migrate-data-to-v2.js');
 
 var OWNER_ID = '000000000000000000007101';
@@ -142,6 +143,71 @@ describe('Migration owner maps', function () {
             migrator.verify({ db: db, ownerMapPath: ownerMapFile }, done);
         });
         expect(verified.success).to.be(true);
+    });
+
+    it('uses a reviewed users manifest for dry-run before users are applied', async function () {
+        var usersFile = path.join(os.tmpdir(), 'meemo-owner-users-' + process.pid + '.json');
+        var manifestFile = path.join(os.tmpdir(), 'meemo-owner-users-manifest-' + process.pid + '.json');
+        writeMap('{"alpha":"canonical-owner"}');
+        fs.writeFileSync(usersFile, JSON.stringify({
+            owner: { username: 'canonical-owner', passwordHash: 'hash' }
+        }));
+        await db.collection('users').deleteMany({});
+        await db.collection('alpha_things').insertOne(thing(ALPHA_THING_ID, 'alpha'));
+
+        try {
+            await callbackPromise(function (done) {
+                userMigrator.dryRun({
+                    usersFile: usersFile,
+                    manifestFile: manifestFile,
+                    mongoUrl: config.databaseUrl
+                }, done);
+            });
+            var report = await callbackPromise(function (done) {
+                migrator.dryRun({
+                    db: db,
+                    mongoUrl: config.databaseUrl,
+                    ownerMapPath: ownerMapFile,
+                    usersFile: usersFile,
+                    usersManifestFile: manifestFile
+                }, done);
+            });
+            expect(report.totalLegacyUsers).to.be(1);
+            expect(report.totalThingsToMigrate).to.be(1);
+            expect(await db.collection('users').countDocuments({})).to.be(0);
+
+            await db.collection('users').insertOne({
+                _id: new ObjectId('000000000000000000007199'),
+                username: 'canonical-owner',
+                usernameNorm: 'canonical-owner'
+            });
+            var conflict = await outcome(function (done) {
+                migrator.dryRun({
+                    db: db,
+                    mongoUrl: config.databaseUrl,
+                    ownerMapPath: ownerMapFile,
+                    usersFile: usersFile,
+                    usersManifestFile: manifestFile
+                }, done);
+            });
+            expect(conflict.error).to.be.ok();
+            expect(conflict.error.message).to.contain('does not match reviewed users manifest');
+        } finally {
+            fs.rmSync(usersFile, { force: true });
+            fs.rmSync(manifestFile, { force: true });
+        }
+    });
+
+    it('rejects incomplete or write-mode users manifest arguments', function () {
+        expect(function () {
+            migrator.parseArgs(['--dry-run', '--users-file', '/tmp/users.json']);
+        }).to.throwError(/required together/);
+        expect(function () {
+            migrator.parseArgs([
+                '--apply', '--users-file', '/tmp/users.json',
+                '--users-manifest', '/tmp/users-manifest.json'
+            ]);
+        }).to.throwError(/valid only with --dry-run/);
     });
 
     it('rejects conflicting mapped settings before unified writes', async function () {
