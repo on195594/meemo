@@ -3,6 +3,7 @@
 'use strict';
 
 var assert = require('assert'),
+    crypto = require('crypto'),
     ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
     nodeify = require('../promise.js');
@@ -125,12 +126,40 @@ function del(userId, tagId, callback) {
     return nodeify(promise, callback);
 }
 
+function replaceAll(documents, callback) {
+    assert(Array.isArray(documents));
+
+    var promise = Promise.resolve().then(async function () {
+        if (!config.db) throw new Error('MongoDB database is not connected');
+        var temporaryName = '_tags_repair_' + crypto.randomUUID().replace(/-/g, '');
+        var temporary = config.db.collection(temporaryName);
+        try {
+            await temporary.createIndex({ ownerId: 1, name: 1 }, { unique: true });
+            if (documents.length) await temporary.insertMany(documents);
+            await temporary.rename('tags', { dropTarget: true });
+            collectionDatabase = config.db;
+            indexesCreated = true;
+        } catch (error) {
+            try {
+                await temporary.drop();
+            } catch (cleanupError) {
+                if (!cleanupError || cleanupError.code !== 26) {
+                    error.message += '; temporary tag collection cleanup failed';
+                }
+            }
+            throw error;
+        }
+    });
+    return nodeify(promise, callback);
+}
+
 module.exports = {
     get: get,
     del: del,
     update: update,
     updateWithState: updateWithState,
     restoreUpdate: restoreUpdate,
+    replaceAll: replaceAll,
     ensureIndexes: ensureIndexes,
     getUnifiedCollection: getUnifiedCollection,
     resetCache: resetCache

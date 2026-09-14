@@ -13,11 +13,16 @@ var expect = require('expect.js'),
     users = require('../users.js'),
     ownerMaps = require('../../scripts/owner-map.js'),
     userMigrator = require('../../scripts/migrate-users-to-mongo.js'),
-    migrator = require('../../scripts/migrate-data-to-v2.js');
+    migrator = require('../../scripts/migrate-data-to-v2.js'),
+    sourceExpectations = require('./migration-expected-source.js');
 
 var OWNER_ID = '000000000000000000007101';
 var ALPHA_THING_ID = new ObjectId('000000000000000000007102');
 var BETA_THING_ID = new ObjectId('000000000000000000007103');
+var ALPHA_TAG_ID = new ObjectId('000000000000000000007104');
+var BETA_TAG_ID = new ObjectId('000000000000000000007105');
+var ALPHA_SETTINGS_ID = new ObjectId('000000000000000000007106');
+var BETA_SETTINGS_ID = new ObjectId('000000000000000000007107');
 
 function callbackPromise(invoke) {
     return new Promise(function (resolve, reject) {
@@ -58,6 +63,13 @@ describe('Migration owner maps', function () {
     var db;
     var originalRepository;
     var ownerMapFile;
+    var sourceArtifacts = [];
+
+    function writeExpectedSource(expectation) {
+        var artifact = sourceExpectations.writeArtifact(expectation);
+        sourceArtifacts.push(artifact);
+        return artifact;
+    }
 
     before(async function () {
         client = await MongoClient.connect(config.databaseUrl);
@@ -93,6 +105,7 @@ describe('Migration owner maps', function () {
     after(async function () {
         users.setRepository(originalRepository);
         fs.rmSync(ownerMapFile, { force: true });
+        sourceArtifacts.forEach(sourceExpectations.removeArtifact);
         await client.close();
     });
 
@@ -103,24 +116,37 @@ describe('Migration owner maps', function () {
 
     function seedDistinct(settingsValues) {
         settingsValues = settingsValues || [{ title: 'same' }, { title: 'same' }];
-        return Promise.all([
-            db.collection('alpha_things').insertOne(thing(ALPHA_THING_ID, 'alpha')),
-            db.collection('beta_things').insertOne(thing(BETA_THING_ID, 'beta')),
-            db.collection('alpha_tags').insertOne({ name: 'alpha', usage: 1, createdAt: 100 }),
-            db.collection('beta_tags').insertOne({ name: 'beta', usage: 2, createdAt: 200 }),
-            db.collection('alpha_settings').insertOne({ type: 'frontend', value: settingsValues[0] }),
-            db.collection('beta_settings').insertOne({ type: 'frontend', value: settingsValues[1] })
-        ]);
+        var source = {
+            alpha_things: [thing(ALPHA_THING_ID, 'alpha')],
+            beta_things: [thing(BETA_THING_ID, 'beta')],
+            alpha_tags: [{ _id: ALPHA_TAG_ID, name: 'alpha', usage: 1, createdAt: 100 }],
+            beta_tags: [{ _id: BETA_TAG_ID, name: 'beta', usage: 2, createdAt: 200 }],
+            alpha_settings: [{
+                _id: ALPHA_SETTINGS_ID, type: 'frontend', value: settingsValues[0]
+            }],
+            beta_settings: [{
+                _id: BETA_SETTINGS_ID, type: 'frontend', value: settingsValues[1]
+            }]
+        };
+        return Promise.all(Object.keys(source).map(function (name) {
+            return db.collection(name).insertMany(source[name]);
+        })).then(function () { return source; });
     }
 
     it('merges two prefixes into one owner and collapses identical settings', async function () {
         var raw = '{\n  "alpha": "canonical-owner",\n  "beta": "canonical-owner"\n}\n';
         var ownerMap = writeMap(raw);
-        await seedDistinct();
+        var source = await seedDistinct();
 
         var report = await callbackPromise(function (done) {
-            migrator.dryRun({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.dryRun({
+                db: db, expectedDatabase: db.databaseName, ownerMapPath: ownerMapFile
+            }, done);
         });
+        var expectedSource = sourceExpectations.expectedSource(
+            source, ownerMap.digest, db.databaseName
+        );
+        var expectedSourceFile = writeExpectedSource(expectedSource);
         expect(report.ownerMap).to.eql({
             count: 2,
             digest: crypto.createHash('sha256').update(Buffer.from(raw)).digest('hex')
@@ -129,7 +155,10 @@ describe('Migration owner maps', function () {
         expect(JSON.stringify(report.ownerMap)).not.to.contain('canonical-owner');
 
         await callbackPromise(function (done) {
-            migrator.apply({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.apply({
+                db: db, expectedDatabase: db.databaseName,
+                ownerMapPath: ownerMapFile, expectedSourceFile: expectedSourceFile
+            }, done);
         });
 
         expect(await db.collection('things').countDocuments({ ownerId: OWNER_ID })).to.be(2);
@@ -140,29 +169,47 @@ describe('Migration owner maps', function () {
         expect(state.ownerMapDigest).to.be(ownerMap.digest);
 
         var verified = await callbackPromise(function (done) {
-            migrator.verify({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.verify({
+                db: db, expectedDatabase: db.databaseName,
+                ownerMapPath: ownerMapFile, expectedSourceFile: expectedSourceFile
+            }, done);
         });
         expect(verified.success).to.be(true);
     });
 
     it('collapses identical mapped thing identities and rejects conflicts during dry-run', async function () {
-        writeMap('{"alpha":"canonical-owner","beta":"canonical-owner"}');
-        await Promise.all([
-            db.collection('alpha_things').insertOne(thing(ALPHA_THING_ID, 'same')),
-            db.collection('beta_things').insertOne(thing(ALPHA_THING_ID, 'same'))
-        ]);
+        var ownerMap = writeMap('{"alpha":"canonical-owner","beta":"canonical-owner"}');
+        var source = {
+            alpha_things: [thing(ALPHA_THING_ID, 'same')],
+            beta_things: [thing(ALPHA_THING_ID, 'same')]
+        };
+        await Promise.all(Object.keys(source).map(function (name) {
+            return db.collection(name).insertMany(source[name]);
+        }));
 
         var report = await callbackPromise(function (done) {
-            migrator.dryRun({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.dryRun({
+                db: db, expectedDatabase: db.databaseName, ownerMapPath: ownerMapFile
+            }, done);
         });
+        var expectedSource = sourceExpectations.expectedSource(
+            source, ownerMap.digest, db.databaseName
+        );
+        var expectedSourceFile = writeExpectedSource(expectedSource);
         expect(report.totalThingsToMigrate).to.be(1);
 
         await callbackPromise(function (done) {
-            migrator.apply({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.apply({
+                db: db, expectedDatabase: db.databaseName,
+                ownerMapPath: ownerMapFile, expectedSourceFile: expectedSourceFile
+            }, done);
         });
         expect(await db.collection('things').countDocuments({ ownerId: OWNER_ID })).to.be(1);
         var verified = await callbackPromise(function (done) {
-            migrator.verify({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.verify({
+                db: db, expectedDatabase: db.databaseName,
+                ownerMapPath: ownerMapFile, expectedSourceFile: expectedSourceFile
+            }, done);
         });
         expect(verified.success).to.be(true);
 
@@ -173,7 +220,9 @@ describe('Migration owner maps', function () {
         );
 
         var result = await outcome(function (done) {
-            migrator.dryRun({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.dryRun({
+                db: db, expectedDatabase: db.databaseName, ownerMapPath: ownerMapFile
+            }, done);
         });
 
         expect(result.error).to.be.an(Error);
@@ -202,6 +251,7 @@ describe('Migration owner maps', function () {
             var report = await callbackPromise(function (done) {
                 migrator.dryRun({
                     db: db,
+                    expectedDatabase: db.databaseName,
                     mongoUrl: config.databaseUrl,
                     ownerMapPath: ownerMapFile,
                     usersFile: usersFile,
@@ -220,6 +270,7 @@ describe('Migration owner maps', function () {
             var conflict = await outcome(function (done) {
                 migrator.dryRun({
                     db: db,
+                    expectedDatabase: db.databaseName,
                     mongoUrl: config.databaseUrl,
                     ownerMapPath: ownerMapFile,
                     usersFile: usersFile,
@@ -236,11 +287,15 @@ describe('Migration owner maps', function () {
 
     it('rejects incomplete or write-mode users manifest arguments', function () {
         expect(function () {
-            migrator.parseArgs(['--dry-run', '--users-file', '/tmp/users.json']);
+            migrator.parseArgs([
+                '--dry-run', '--expect-database', 'meemo-main',
+                '--users-file', '/tmp/users.json'
+            ]);
         }).to.throwError(/required together/);
         expect(function () {
             migrator.parseArgs([
-                '--apply', '--users-file', '/tmp/users.json',
+                '--apply', '--expect-database', 'meemo-main',
+                '--users-file', '/tmp/users.json',
                 '--users-manifest', '/tmp/users-manifest.json'
             ]);
         }).to.throwError(/valid only with --dry-run/);
@@ -251,7 +306,9 @@ describe('Migration owner maps', function () {
         await seedDistinct([{ title: 'alpha' }, { title: 'beta' }]);
 
         var result = await outcome(function (done) {
-            migrator.apply({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.dryRun({
+                db: db, expectedDatabase: db.databaseName, ownerMapPath: ownerMapFile
+            }, done);
         });
         expect(result.error).to.be.ok();
         expect(result.error.message).to.contain('settings values conflict');
@@ -266,7 +323,9 @@ describe('Migration owner maps', function () {
         await db.collection('alpha_things').insertOne(thing(ALPHA_THING_ID, 'alpha'));
 
         var result = await outcome(function (done) {
-            migrator.dryRun({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.dryRun({
+                db: db, expectedDatabase: db.databaseName, ownerMapPath: ownerMapFile
+            }, done);
         });
         expect(result.error).to.be.ok();
         expect(result.error.message).to.contain('unknown legacy prefix');
@@ -276,17 +335,35 @@ describe('Migration owner maps', function () {
 
     it('rejects replay and verification when raw owner-map bytes change', async function () {
         var first = writeMap('{"alpha":"canonical-owner"}');
-        await db.collection('alpha_things').insertOne(thing(ALPHA_THING_ID, 'alpha'));
+        var source = { alpha_things: [thing(ALPHA_THING_ID, 'alpha')] };
+        await db.collection('alpha_things').insertMany(source.alpha_things);
+        var expectedSource = sourceExpectations.expectedSource(
+            source, first.digest, db.databaseName
+        );
+        var expectedSourceFile = writeExpectedSource(expectedSource);
         await callbackPromise(function (done) {
-            migrator.apply({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.apply({
+                db: db, expectedDatabase: db.databaseName,
+                ownerMapPath: ownerMapFile, expectedSourceFile: expectedSourceFile
+            }, done);
         });
 
         var changed = writeMap('{ "alpha": "canonical-owner" }\n');
+        var changedExpectation = sourceExpectations.expectedSource(
+            source, changed.digest, db.databaseName
+        );
+        var changedExpectationFile = writeExpectedSource(changedExpectation);
         var replay = await outcome(function (done) {
-            migrator.apply({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.apply({
+                db: db, expectedDatabase: db.databaseName,
+                ownerMapPath: ownerMapFile, expectedSourceFile: changedExpectationFile
+            }, done);
         });
         var verification = await outcome(function (done) {
-            migrator.verify({ db: db, ownerMapPath: ownerMapFile }, done);
+            migrator.verify({
+                db: db, expectedDatabase: db.databaseName,
+                ownerMapPath: ownerMapFile, expectedSourceFile: changedExpectationFile
+            }, done);
         });
 
         expect(replay.error).to.be.ok();

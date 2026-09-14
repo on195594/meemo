@@ -7,7 +7,6 @@ var assert = require('assert'),
     path = require('path'),
     nodeify = require('../promise.js'),
     storage = require('../storage/local-storage.js'),
-    tags = require('../database/tags.js'),
     tar = require('tar-fs'),
     thingService = require('./thing-service.js'),
     things = require('../database/things.js');
@@ -158,7 +157,7 @@ function importData(userId, data, callback) {
     var promise = Promise.resolve().then(async function () {
         var schemaError = validateThingsData(data);
         if (schemaError) throw new Error(schemaError);
-        var state = { thingIds: [], tagUpdates: [] };
+        var state = { thingIds: [] };
 
         try {
             await insertImportedData(userId, data, state);
@@ -173,8 +172,6 @@ function importData(userId, data, callback) {
 async function insertImportedData(userId, data, state) {
     for (var thing of data.things) {
         var tagObjects = thingService.extractTags(thing.content);
-        for (var tag of tagObjects) state.tagUpdates.push(await tags.updateWithState(userId, tag));
-
         var createdAt = thing.createdAt;
         if (typeof createdAt === 'string') createdAt = (new Date(createdAt)).getTime();
         if (typeof createdAt !== 'number' || isNaN(createdAt)) createdAt = Date.now();
@@ -199,13 +196,6 @@ async function rollbackImportedData(userId, state) {
             await things.del(userId, String(state.thingIds[i]));
         } catch (error) {
             failures.push({ operation: 'remove imported thing', target: String(state.thingIds[i]), error: error });
-        }
-    }
-    for (var j = state.tagUpdates.length - 1; j >= 0; j--) {
-        try {
-            await tags.restoreUpdate(userId, state.tagUpdates[j]);
-        } catch (error) {
-            failures.push({ operation: 'restore tag', target: state.tagUpdates[j].name, error: error });
         }
     }
     return failures;
@@ -304,7 +294,7 @@ function importArchive(userId, filePath, callback) {
     var promise = Promise.resolve().then(async function () {
         var tempExtractDir = await files.mkdtemp(path.join(os.tmpdir(), 'meemo-import-'));
         var copiedFiles = [];
-        var state = { thingIds: [], tagUpdates: [] };
+        var state = { thingIds: [] };
         var result;
         var primaryError;
 

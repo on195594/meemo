@@ -15,7 +15,7 @@ Meemo is a small browser application served by Express and backed by MongoDB and
 9. `src/users.js` abstracts account storage across MongoDB, legacy file, and temporary fallback implementations via `UserRepository`; MongoDB is the production target.
 10. `web/` is compiled by Vite into the generated, ignored `public/` directory, serving as the modern Vue 3 Single Page Application with client-side routing.
 
-The runtime reads and writes only the unified `things`, `tags`, and `settings` collections. Dynamic `<user>_*` collection discovery exists only in migration and read-only retirement tooling; it is not part of request handling.
+The runtime reads and writes only unified collections. `things` is the online source for tag identity and usage: `/api/tags` aggregates the owner-partitioned `things.tags` arrays, while the persisted `tags` collection is a migration/readiness projection. Because the supported standalone MongoDB deployment cannot transactionally update both collections, ordinary Thing mutations use only atomic Thing writes guarded by a durable MongoDB maintenance gate. Exact full tag reconstruction stages and atomically renames a replacement collection while that gate is frozen; it is explicit, leaves writes frozen for readiness, and is never a worker. Dynamic `<user>_*` collection discovery exists only in migration and read-only retirement tooling; it is not part of request handling.
 
 Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, persistence in `src/database/`, and attachment filesystem access in `src/storage/`. HTTP routes must call services instead of database or filesystem APIs directly.
 
@@ -55,7 +55,7 @@ When changing an endpoint, update its route handler, the OpenAPI specification, 
 Meemo keeps v1-to-v2 migration tools for upgrades and rollback evidence; they are historical tooling, not runtime architecture:
 
 - `scripts/migrate-users-to-mongo.js`: Migrates legacy file-based accounts to MongoDB `users` with `--dry-run`, `--apply`, and `--verify`.
-- `scripts/migrate-data-to-v2.js`: Migrates dynamic legacy `<user>_*` collections into unified `things`, `tags`, and `settings` collections partitioned by `ownerId` with `--dry-run`, `--apply`, and `--verify`.
+- `scripts/migrate-data-to-v2.js`: Migrates dynamic legacy `<user>_*` collections into unified `things`, `tags`, and `settings` collections partitioned by `ownerId` with `--dry-run`, `--apply`, and `--verify`; every mode requires an exact expected database name, and apply/verify bind it into the independently reviewed source artifact.
 - `scripts/preflight-legacy-retirement.js`: Performs a read-only, fail-closed check of environment/database binding, user identity mapping, migration state, and legacy collection ownership before operators retire compatibility data.
 - `scripts/gc-attachments.js`: Identifies and removes unreferenced orphan attachments from filesystem storage.
 

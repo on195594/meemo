@@ -209,8 +209,8 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
                 });
         });
 
-        it('persists ownerId on tags update', function (done) {
-            // Note creation automatically updates tag usage
+        it('returns ownerId on tags derived from Things', function (done) {
+            // Note creation makes its tags immediately visible from the Thing source.
             aliceAgent
                 .get('/api/tags')
                 .expect(200)
