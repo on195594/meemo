@@ -548,7 +548,20 @@ async function inspectData(db, collectionPrefix, legacyCollections, owners, auth
         group.entries.forEach(function (entry) {
             var key = canonicalJson(entry.identity.value);
             if (sourceIdentities.has(key)) {
-                addDataMismatch(mismatches, entry, 'identity');
+                if (group.type !== 'things') {
+                    addDataMismatch(mismatches, entry, 'identity');
+                    return;
+                }
+                var existing = sourceIdentities.get(key);
+                var existingFields = canonicalDataFields(
+                    existing.type, existing.document, true, migration && migration.startedAt
+                );
+                var duplicateFields = canonicalDataFields(
+                    entry.type, entry.document, true, migration && migration.startedAt
+                );
+                if (canonicalJson(existingFields) !== canonicalJson(duplicateFields)) {
+                    addDataMismatch(mismatches, entry, 'identity');
+                }
                 return;
             }
             sourceIdentities.set(key, entry);

@@ -228,6 +228,47 @@ describe('Legacy retirement preflight (VR-204)', function () {
         expect(JSON.stringify(extra)).not.to.contain('ghost');
     });
 
+    it('collapses identical mapped thing aliases and rejects conflicting ones', async function () {
+        var owner = await db.collection('vr204_users').findOne({ usernameNorm: 'alice' });
+        var thing = await db.collection('vr204_alice_things').findOne({ _id: THING_ID });
+        await db.collection('vr204_alias_things').insertOne(Object.assign({}, thing));
+        var map = writeOwnerMap('{"alias":"alice"}');
+        await db.collection('vr204_system_migrations').updateOne(
+            { _id: 'schema-v2' }, { $set: { ownerMapDigest: map.digest } }
+        );
+
+        var identical = await preflight.run(options({ ownerMapPath: ownerMapFile }));
+        expect(identical.safe).to.be(true);
+        expect(identical.checks.data.sourceCount).to.be(3);
+
+        await db.collection('vr204_alias_things').updateOne(
+            { _id: THING_ID }, { $set: { content: 'conflict' } }
+        );
+        var conflicting = await preflight.run(options({ ownerMapPath: ownerMapFile }));
+        expect(conflicting.safe).to.be(false);
+        expect(conflicting.dataMismatches.some(function (mismatch) {
+            return mismatch.entity === 'things' && mismatch.field === 'identity' &&
+                mismatch.ownerId === String(owner._id);
+        })).to.be(true);
+    });
+
+    it('rejects identical mapped tag aliases', async function () {
+        var owner = await db.collection('vr204_users').findOne({ usernameNorm: 'alice' });
+        var tag = await db.collection('vr204_alice_tags').findOne({ name: 'work' });
+        await db.collection('vr204_alias_tags').insertOne(Object.assign({}, tag));
+        var map = writeOwnerMap('{"alias":"alice"}');
+        await db.collection('vr204_system_migrations').updateOne(
+            { _id: 'schema-v2' }, { $set: { ownerMapDigest: map.digest } }
+        );
+
+        var report = await preflight.run(options({ ownerMapPath: ownerMapFile }));
+        expect(report.safe).to.be(false);
+        expect(report.dataMismatches.some(function (mismatch) {
+            return mismatch.entity === 'tags' && mismatch.field === 'identity' &&
+                mismatch.ownerId === String(owner._id);
+        })).to.be(true);
+    });
+
     [
         {
             name: 'missing unified thing',
