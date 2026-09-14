@@ -2,6 +2,10 @@
 
 Use this runbook for Meemo v2 upgrades and rollback. MongoDB, `/app/data`, and the exact Meemo image artifact form one backup set: create, retain, checksum, and restore them together. Commands assume the repository's Docker Compose stack and no shell history containing credentials. They are operator instructions, not evidence that a backup or restore has run.
 
+## Directory boundary
+
+On the current production host, use `/home/lin/meemo-repo` only as the Git repository and `/home/lin/meemo` only as the production operations directory. Run source checks and image builds from the repository; run production Compose commands from the operations directory. Store backups and readiness evidence outside both. The operations directory must not contain a Git checkout or copied build context.
+
 ## Compatibility
 
 - Record the application image ID and repository digest, commit SHA, Compose file, non-secret configuration names, MongoDB image version, and UTC timestamp.
@@ -214,3 +218,15 @@ test "$app_ready" = true
 Before reopening writes, verify login, representative Things/tags/settings, attachments, public shares, export, restart persistence, and the running image ID. Keep writes frozen if any check fails. Preserve logs and failed-deployment evidence, and do not retry a failed migration against production data until its cause is understood.
 
 A restore is not accepted until the isolated exercise succeeds. A backup that has not been restored with its retained image is unverified.
+
+## Migration source selection
+
+Before migrating legacy collections, inventory every candidate namespace and backup. Classify test, fixture, and rehearsal collections separately; never select a source only because its schema validates.
+
+1. Compare users, Things, tags, settings, time ranges, owner partitions, and representative content fingerprints across the live legacy database and pre-change backups.
+2. Fail closed when the selected source is materially smaller, newer, or otherwise inconsistent with another credible candidate or with the user-visible corpus.
+3. Record the selected source archive hash and expected aggregate counts in the migration evidence before `apply`.
+4. Restore the selected source into an isolated MongoDB instance, apply owner mapping there, and verify counts, attachment references, and current-account visibility.
+5. Preserve the current production database and attachment state as a hashed rollback set before replacing data.
+
+Migration `verify`, schema phase `complete`, and retirement preflight prove only that the supplied source was handled consistently. They do not prove that the supplied source was the authoritative production corpus. Final acceptance therefore requires a real authenticated check of representative historical notes and attachments.

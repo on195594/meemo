@@ -88,6 +88,15 @@ npm test
 
 To run only the Node.js process, provide MongoDB separately and use `npm start`.
 
+## Repository and production directories
+
+Keep source code and production state in separate directories. On the current host:
+
+- `/home/lin/meemo-repo` is the only Meemo Git repository and the only place where source, tests, and project documentation are edited.
+- `/home/lin/meemo` is the production operations directory. It contains only the active Compose configuration, local account source, attachment storage, and a short operator README; it is not a source checkout or image build context.
+
+Build and test from the repository. Operate the deployed containers from the production directory. Keep backups and migration evidence outside both directories, and never copy credentials, account data, attachments, database files, or recovery artifacts into the repository.
+
 ## Project structure
 
 | Path | Contents |
