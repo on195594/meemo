@@ -22,7 +22,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `public/`: generated frontend output; never edit or commit it.
 - `docs/ARCHITECTURE.md`: component boundaries, API contracts, and runtime flow.
 - `docs/BACKUP_RESTORE.md`: production backup, disaster recovery, and verification runbooks.
-- `docs/BRANCH_PROTECTION.md`: master branch protection and required check policies.
+- `docs/BRANCH_PROTECTION.md`: reference master branch protection and check policies (disabled for single-maintainer development).
 - `docs/DEPENDENCY_SECURITY.md`: production dependency security audit and vulnerability remediation map.
 - `docs/RELEASE_CHECKLIST.md`: release candidate validation, deployment, and rollback checklist.
 - `docs/openapi.yaml`: authoritative OpenAPI 3.0 specification.
@@ -38,6 +38,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 6. Never weaken authentication, authorization, input validation, session handling, or error handling for convenience.
 7. Do not log or commit passwords, password hashes, session secrets, local account data, attachments, or imported notes.
 8. Preserve unrelated user changes. Do not delete ignored or untracked files unless explicitly asked.
+9. Single-maintainer workflow: As a personal project maintained by an individual, branch protection on `master` is removed to maximize efficiency. Direct commits and pushes to `master` are preferred after passing the narrowest validation checks, without requiring pull requests.
 
 ## Generated and local-only files
 
