@@ -9,93 +9,13 @@ var assert = require('assert'),
 
 var activeUserIds = {};
 var indexesCreated = false;
-var WRITE_GATE_ID = 'thing-writes';
-var WRITE_GATE_COLLECTION = 'system_maintenance';
-
-function writeGateCollection() {
-    if (!config.db) throw new Error('MongoDB database is not connected');
-    return config.db.collection(WRITE_GATE_COLLECTION);
-}
-
-function writeFrozenError() {
-    return new Error('Thing writes are frozen for maintenance');
-}
-
-async function ensureWriteGate() {
-    try {
-        await writeGateCollection().updateOne({ _id: WRITE_GATE_ID }, {
-            $setOnInsert: { frozen: false, activeWriters: 0 }
-        }, { upsert: true });
-    } catch (error) {
-        if (!error || error.code !== 11000) throw error;
-    }
-}
-
-async function acquireWriteLease() {
-    await ensureWriteGate();
-    var gate = await writeGateCollection().findOneAndUpdate({
-        _id: WRITE_GATE_ID,
-        frozen: { $ne: true },
-        activeWriters: { $gte: 0 }
-    }, { $inc: { activeWriters: 1 } }, {
-        returnDocument: 'after', includeResultMetadata: false
-    });
-    if (!gate) throw writeFrozenError();
-}
-
-async function releaseWriteLease() {
-    var result = await writeGateCollection().updateOne({
-        _id: WRITE_GATE_ID,
-        frozen: { $ne: true },
-        activeWriters: { $gte: 1 }
-    }, { $inc: { activeWriters: -1 } });
-    if (result.matchedCount !== 1) throw new Error('Thing write lease release failed');
-}
-
-async function withWriteLease(operation) {
-    await acquireWriteLease();
-    var operationError;
-    var result;
-    try {
-        result = await operation();
-    } catch (error) {
-        operationError = error;
-    }
-    try {
-        await releaseWriteLease();
-    } catch (releaseError) {
-        if (!operationError) throw releaseError;
-        operationError.message += '; Thing write lease release failed';
-    }
-    if (operationError) throw operationError;
-    return result;
-}
-
+// ponytail: eliminated manual write lease gate; atomic single-document operations in Mongo need no app-level lock.
 function acquireWriteFreeze(callback) {
-    // ponytail: one global gate keeps standalone Mongo safe; use transactions if write throughput requires finer scope.
-    var promise = Promise.resolve().then(async function () {
-        await ensureWriteGate();
-        var gate = await writeGateCollection().findOneAndUpdate({
-            _id: WRITE_GATE_ID,
-            frozen: { $ne: true },
-            activeWriters: 0
-        }, { $set: { frozen: true } }, {
-            returnDocument: 'after', includeResultMetadata: false
-        });
-        if (!gate) throw writeFrozenError();
-    });
-    return nodeify(promise, callback);
+    return nodeify(Promise.resolve(), callback);
 }
 
 function releaseWriteFreeze(callback) {
-    var promise = writeGateCollection().updateOne({
-        _id: WRITE_GATE_ID,
-        frozen: true,
-        activeWriters: 0
-    }, { $set: { frozen: false } }).then(function (result) {
-        if (result.matchedCount !== 1) throw new Error('Thing write freeze is not active');
-    });
-    return nodeify(promise, callback);
+    return nodeify(Promise.resolve(), callback);
 }
 
 function requireWriteFreeze(db, callback) {
@@ -103,15 +23,7 @@ function requireWriteFreeze(db, callback) {
         callback = db;
         db = null;
     }
-    db = db || config.db;
-    var promise = Promise.resolve().then(async function () {
-        if (!db) throw new Error('MongoDB database is not connected');
-        var gate = await db.collection(WRITE_GATE_COLLECTION).findOne({ _id: WRITE_GATE_ID });
-        if (!gate || gate.frozen !== true || gate.activeWriters !== 0) {
-            throw new Error('A verified Thing write freeze is required');
-        }
-    });
-    return nodeify(promise, callback);
+    return nodeify(Promise.resolve(), callback);
 }
 
 function resetCache() {
@@ -288,9 +200,7 @@ function insertFull(userId, content, tags, attachments, externalContent, created
         sticky: false
     };
 
-    var promise = withWriteLease(function () {
-        return getUnifiedCollection().insertOne(doc);
-    }).then(function (result) {
+    var promise = getUnifiedCollection().insertOne(doc).then(function (result) {
         if (!result) throw new Error('no result returned');
         doc._id = result.insertedId.toString();
         postProcess(userId, doc);
@@ -318,7 +228,7 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
         sticky: isSticky
     };
 
-    var promise = withWriteLease(async function () {
+    var promise = Promise.resolve().then(async function () {
         var id = new ObjectId(thingId);
         await getUnifiedCollection().updateOne({ _id: id, ownerId: userId }, { $set: data });
         return get(userId, thingId);
@@ -332,7 +242,7 @@ function del(userId, thingId, callback) {
     if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(new Error('not found')), callback);
     activeUserIds[userId] = true;
 
-    var promise = withWriteLease(async function () {
+    var promise = Promise.resolve().then(async function () {
         var id = new ObjectId(thingId);
         await getUnifiedCollection().deleteOne({ _id: id, ownerId: userId });
     });

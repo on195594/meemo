@@ -196,8 +196,6 @@ function getTags(userId, callback) {
 
 function cleanupTags(callback) {
     var promise = Promise.resolve().then(async function () {
-        await things.acquireWriteFreeze();
-
         var repairedAt = Date.now();
         var saved = await tags.getUnifiedCollection().find({}).toArray();
         var metadata = new Map();

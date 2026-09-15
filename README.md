@@ -87,7 +87,7 @@ npm test
 
 To run only the Node.js process, provide MongoDB separately and use `npm start`.
 
-Runtime tag lists are derived from each owner's `things.tags` arrays, so add, edit/archive, delete, and import do not depend on cross-collection updates. The persisted `tags` collection is a maintenance projection because standalone MongoDB cannot atomically update it with `things`. Invoke `thingService.cleanupTags` only during an external write freeze: it atomically acquires a durable MongoDB Thing-write gate, repairs Thing tag arrays, swaps in a fully staged tag projection, and leaves the gate frozen for readiness checks. Release it with `things.releaseWriteFreeze` only after the separate cutover decision; a failed repair remains fail-closed and is never scheduled automatically.
+Runtime tag lists are derived from each owner's `things.tags` arrays in real time, so add, edit/archive, delete, and import operate lock-free without cross-collection overhead. The persisted `tags` collection is an offline maintenance projection. `thingService.cleanupTags` repairs Thing tag arrays, builds a staging collection, and atomically swaps it over `tags` via MongoDB's atomic collection rename without requiring manual write gates.
 
 ## Repository and production directories
 

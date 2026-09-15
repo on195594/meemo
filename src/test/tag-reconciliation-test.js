@@ -72,7 +72,7 @@ describe('Tag integrity', function () {
         expect(await thingService.getTags('owner-a')).to.eql([]);
     });
 
-    it('reconstructs persisted tags atomically and repairs Thing tag arrays under a durable freeze', async function () {
+    it('reconstructs persisted tags atomically and repairs Thing tag arrays without manual locks', async function () {
         await Promise.all([
             things.insertFull('owner-a', '#keep #duplicate #duplicate', [], [], [], 1, 1),
             things.insertFull('owner-a', '#keep #missing', [], [], [], 2, 2),
@@ -87,7 +87,6 @@ describe('Tag integrity', function () {
         ]);
 
         await thingService.cleanupTags();
-        await things.requireWriteFreeze(db);
 
         var ownerA = await db.collection('tags').find({ ownerId: 'owner-a' })
             .sort({ name: 1 }).toArray();
@@ -108,20 +107,14 @@ describe('Tag integrity', function () {
         expect((await db.collection('things').findOne({
             ownerId: 'owner-a', content: '#keep #duplicate #duplicate'
         })).tags).to.eql(['keep', 'duplicate', 'duplicate']);
-
-        await things.releaseWriteFreeze();
     });
 
-    it('blocks Thing mutation before replacing tags instead of detecting it afterward', async function () {
+    it('allows concurrent Thing mutations during tag reconstruction without manual lock errors', async function () {
         await things.insertFull('owner-a', '#before', [], [], [], 1, 1);
         var original = tags.replaceAll;
-        var writeError;
+        var duringWriteResult;
         tags.replaceAll = async function (documents) {
-            try {
-                await things.insertFull('owner-a', '#during', [], [], [], 2, 2);
-            } catch (error) {
-                writeError = error;
-            }
+            duringWriteResult = await things.insertFull('owner-a', '#during', [], [], [], 2, 2);
             return original(documents);
         };
         try {
@@ -130,12 +123,8 @@ describe('Tag integrity', function () {
             tags.replaceAll = original;
         }
 
-        expect(writeError).to.be.ok();
-        expect(writeError.message).to.contain('writes are frozen');
-        expect(await db.collection('things').countDocuments({ content: '#during' })).to.equal(0);
-        expect((await db.collection('tags').find({ ownerId: 'owner-a' }).toArray()).map(function (tag) {
-            return { name: tag.name, usage: tag.usage };
-        })).to.eql([{ name: 'before', usage: 1 }]);
-        await things.releaseWriteFreeze();
+        expect(duringWriteResult).to.be.ok();
+        expect(await db.collection('things').countDocuments({ content: '#during' })).to.equal(1);
+        expect(await db.collection('system_maintenance').countDocuments({})).to.equal(0);
     });
 });
