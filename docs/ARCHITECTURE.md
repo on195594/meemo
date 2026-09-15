@@ -25,7 +25,7 @@ Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, pers
 | --- | --- |
 | Notes, tags, settings, sessions | MongoDB (unified collections: `things`, `tags`, `settings`, `sessions`) |
 | Attachments | `ATTACHMENT_DIR` partitioned by stable `userId` |
-| Accounts | MongoDB `users` collection; legacy `USERS_FILE` and fallback repositories remain explicit migration/rollback compatibility modes |
+| Accounts | MongoDB `users` collection; legacy `USERS_FILE` and fallback repositories are deprecated compatibility modes preserved for offline test and verification |
 
 Meemo supports username/password authentication only. Passwords are stored as bcrypt hashes, and successful login creates a server-side session backed by MongoDB with a stable user ID.
 

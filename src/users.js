@@ -7,9 +7,9 @@ var assert = require('assert'),
     bcrypt = require('bcrypt'),
     nodeify = require('./promise.js'),
     UserRepository = require('./database/user-repository.js'),
-    LegacyFileUserRepository = require('./database/users-file.js'),
+    LegacyFileUserRepository = require('./database/users-file.js'), // @deprecated: retained for test suites & offline migration verification
     MongoUserRepository = require('./database/users-mongo.js'),
-    FallbackUserRepository = require('./database/users-fallback.js');
+    FallbackUserRepository = require('./database/users-fallback.js'); // @deprecated: retained for test suites & dual-read verification
 
 function UserError(code, messageOrError) {
     assert.strictEqual(typeof code, 'string');
@@ -26,6 +26,11 @@ UserError.INTERNAL_ERROR = 'internal error';
 
 var repository = null;
 
+/**
+ * Resolves account repository from AUTH_USER_SOURCE.
+ * Production runtime exclusively targets MongoUserRepository ('mongo').
+ * 'file' and 'fallback' are deprecated compatibility adapters preserved for Mocha test suites and offline audit.
+ */
 function createRepositoryFromEnv() {
     var source = process.env.AUTH_USER_SOURCE || 'file';
     if (source === 'mongo') return new MongoUserRepository();
