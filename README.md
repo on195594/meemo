@@ -48,8 +48,8 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `MONGODB_URL` | `mongodb://127.0.0.1:27017/meemo` | `mongodb://mongodb:27017/meemo` | MongoDB connection URL |
 | `APP_ORIGIN` | `http://localhost` | `http://localhost:3000` | Public origin used in RSS links |
 | `ATTACHMENT_DIR` | `./storage` | `/app/data/storage` | Attachment directory |
-| `USERS_FILE` | `./.users.json` | `/app/data/.users.json` | Account data file (legacy file source) |
-| `AUTH_USER_SOURCE` | `file` | `mongo` | Account repository: `mongo` (production default), or deprecated `file`/`fallback` |
+| `USERS_FILE` | `./.users.json` | — | Account data file (deprecated legacy file source; offline tests/migration only) |
+| `AUTH_USER_SOURCE` | `file` | `mongo` | Account repository: `mongo` (required in production), or deprecated `file`/`fallback` for offline tests |
 | `SESSION_SECRET` | Random on startup | Value of host `SESSION_SECRET` | Session signing secret |
 | `REGISTRATION_MODE` | `open` | `first-user` | Registration policy: `open`, `first-user`, or `disabled` |
 | `URL_ENRICHMENT_ENABLED` | `false` | `false` | Outbound URL metadata fetch (disabled by default for SSRF safety) |

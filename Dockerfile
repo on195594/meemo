@@ -43,7 +43,7 @@ ENV PORT=3000 \
     APP_ORIGIN=http://localhost:3000 \
     MONGODB_URL=mongodb://mongodb:27017/meemo \
     ATTACHMENT_DIR=/app/data/storage \
-    USERS_FILE=/app/data/.users.json \
+    AUTH_USER_SOURCE=mongo \
     NODE_ENV=production
 
 EXPOSE 3000

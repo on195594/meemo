@@ -678,4 +678,18 @@ describe('Legacy retirement preflight (VR-204)', function () {
         expect(report.status).to.be('SAFE_TO_RETIRE');
         expect(writes).to.be(0);
     });
+
+    it('fails preflight when legacy tokens collection is present', async function () {
+        await db.collection('vr204_tokens').insertOne({ token: 'legacy-token-secret' });
+        try {
+            var report = await preflight.run(options());
+            expect(report.status).to.be('UNSAFE_TO_RETIRE');
+            expect(report.safe).to.be(false);
+            expect(report.checks.forbiddenCollections.safe).to.be(false);
+            expect(report.checks.forbiddenCollections.found).to.contain('vr204_tokens');
+            expect(report.checks.forbiddenCollections.count).to.be(1);
+        } finally {
+            await db.collection('vr204_tokens').drop();
+        }
+    });
 });

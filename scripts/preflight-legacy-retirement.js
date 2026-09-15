@@ -362,6 +362,25 @@ async function inspectLegacyCollections(db, collectionPrefix) {
     return legacy;
 }
 
+async function inspectForbiddenLegacyCollections(db, collectionPrefix) {
+    var prefix = collectionPrefix || '';
+    var pattern = /^((.*_)?tokens)$/;
+    var collections = await db.listCollections().toArray();
+    var forbidden = [];
+
+    for (var index = 0; index < collections.length; index++) {
+        var name = collections[index].name;
+        if (prefix && name.indexOf(prefix) !== 0) continue;
+        var unprefixed = prefix ? name.slice(prefix.length) : name;
+        if (!pattern.test(unprefixed)) continue;
+        forbidden.push({
+            name: name,
+            count: await db.collection(name).countDocuments({})
+        });
+    }
+    return forbidden;
+}
+
 function inspectOwners(legacyCollections, mongoIndex, fileMappings, ownerMap, usernameToId) {
     var prefixes = [];
     var authoritativeOwners = Object.create(null);
@@ -663,6 +682,7 @@ async function run(options) {
             fileResult.users, mongoUsers, usersMigrationEvidence
         );
         var legacyCollections = await inspectLegacyCollections(db, options.collectionPrefix);
+        var forbiddenCollections = await inspectForbiddenLegacyCollections(db, options.collectionPrefix);
         var legacyPrefixes = legacyCollections.reduce(function (prefixes, entry) {
             if (prefixes.indexOf(entry.prefix) === -1) prefixes.push(entry.prefix);
             return prefixes;
@@ -718,6 +738,11 @@ async function run(options) {
                 targetDigest: data.targetDigest,
                 safe: data.safe
             },
+            forbiddenCollections: {
+                found: forbiddenCollections.map(function (entry) { return entry.name; }),
+                count: forbiddenCollections.length,
+                safe: forbiddenCollections.length === 0
+            },
             migration: {
                 phase: migration && migration.phase || null,
                 sourceVersion: migration && migration.sourceVersion,
@@ -748,6 +773,7 @@ async function run(options) {
             safe: safe,
             checks: checks,
             legacyCollections: legacyCollections,
+            forbiddenCollections: forbiddenCollections,
             fileUserMappings: identities.mappings,
             identityCollisions: identities.collisions,
             unmatchedFileUsers: identities.unmatched,

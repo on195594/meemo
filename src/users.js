@@ -32,10 +32,18 @@ var repository = null;
  * 'file' and 'fallback' are deprecated compatibility adapters preserved for Mocha test suites and offline audit.
  */
 function createRepositoryFromEnv() {
-    var source = process.env.AUTH_USER_SOURCE || 'file';
+    var source = process.env.AUTH_USER_SOURCE;
+    var isProduction = process.env.NODE_ENV === 'production';
+    if (!source) {
+        source = isProduction ? 'mongo' : 'file';
+    }
+    if (isProduction && source !== 'mongo') {
+        throw new Error('FATAL: AUTH_USER_SOURCE must be mongo when NODE_ENV=production');
+    }
     if (source === 'mongo') return new MongoUserRepository();
     if (source === 'fallback') return new FallbackUserRepository(new MongoUserRepository(), new LegacyFileUserRepository());
-    return new LegacyFileUserRepository();
+    if (source === 'file') return new LegacyFileUserRepository();
+    throw new Error('Unsupported AUTH_USER_SOURCE: ' + source);
 }
 
 function getRepository() {

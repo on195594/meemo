@@ -15,6 +15,12 @@ var express = require('express'),
 function createApp(options) {
     options = options || {};
 
+    var isProduction = options.isProduction !== undefined ? options.isProduction : (process.env.NODE_ENV === 'production');
+    var authUserSource = options.authUserSource || process.env.AUTH_USER_SOURCE || (isProduction ? 'mongo' : 'file');
+    if (isProduction && authUserSource !== 'mongo') {
+        throw new Error('FATAL: AUTH_USER_SOURCE must be mongo when NODE_ENV=production');
+    }
+
     if (options.db) config.db = options.db;
 
     var app = express();
