@@ -16,11 +16,14 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `src/database/`: MongoDB access for things, tags, settings, users, and sessions.
 - `src/users.js`: account repository abstraction and bcrypt password handling.
 - `types/`: domain TypeScript definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`).
+- `scripts/`: historical v1-to-v2 migration tools, retirement preflight, business-readiness verifier, benchmark, and attachment GC.
 - `src/test/`: Mocha server tests.
 - `web/`: modern Vue 3 + Vite + TypeScript browser application.
 - `public/`: generated frontend output; never edit or commit it.
 - `docs/ARCHITECTURE.md`: component boundaries, API contracts, and runtime flow.
 - `docs/BACKUP_RESTORE.md`: production backup, disaster recovery, and verification runbooks.
+- `docs/BRANCH_PROTECTION.md`: master branch protection and required check policies.
+- `docs/DEPENDENCY_SECURITY.md`: production dependency security audit and vulnerability remediation map.
 - `docs/RELEASE_CHECKLIST.md`: release candidate validation, deployment, and rollback checklist.
 - `docs/openapi.yaml`: authoritative OpenAPI 3.0 specification.
 - `Dockerfile`, `docker-compose.yml`: deployment and packaging.
@@ -49,12 +52,14 @@ Do not commit or hand-edit:
 
 ```sh
 npm ci                         # install locked dependencies
+npm --prefix web ci            # install locked web dependencies
 npm run build                  # compile web/ into public/
 npm test                       # run tests using a temporary MongoDB container
 ./localdevelopment             # run the app with a development MongoDB container
 npm start                      # run only Node; MongoDB must already be available
 npm run api:generate           # generate TypeScript types from docs/openapi.yaml
 npm --prefix web run typecheck # typecheck Vue 3 frontend
+npm --prefix web test          # run frontend behavior tests with Vitest
 docker compose up --build -d
 ```
 
@@ -65,7 +70,7 @@ docker compose up --build -d
 Run the narrowest checks that cover the change:
 
 - Documentation or metadata only: `git diff --check` and verify relative Markdown links.
-- Frontend changes: `npm run build` and `npm --prefix web run typecheck`.
+- Frontend changes: `npm run build`, `npm --prefix web run typecheck`, and `npm --prefix web test`.
 - API contract changes: `npm run api:generate` and verify `types/generated/api-types.ts` is in sync.
 - Server, authentication, persistence, import/export, or API changes: `npm test`.
 - Docker or deployment changes: `docker build .`; use the Compose health/login flow when behavior spans services.
