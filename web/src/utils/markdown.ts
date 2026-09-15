@@ -99,16 +99,20 @@ export function renderMarkdown(content: string): string {
 export function highlightKeyword(html: string, keyword: string): string {
   if (!keyword) return html;
   // Collect individual terms: "#tag word" → ["tag", "word"]
-  // Also strip wikilink brackets and support multi-delimiter (whitespace, commas, Chinese punctuation)
-  const terms = keyword
-    .trim()
-    .split(/[\s,，、；;]+/)
-    .map((w) => {
-      let term = w.startsWith('#') ? w.slice(1) : w;
-      if (term.startsWith('[[') && term.endsWith(']]') && term.length > 4) {
-        term = term.slice(2, -2);
+  // Also extract [[target]] or [[target|label]] and support multi-delimiter
+  const tokens = keyword.trim().match(/\[\[[^\]\n]+\]\]|[^\s,，、；;]+/g) || [];
+  const terms = tokens
+    .map((t) => {
+      let term = t.trim();
+      if (term.startsWith('[[') && term.endsWith(']]')) {
+        term = term.slice(2, -2).trim();
+        if (term.includes('|')) {
+          term = term.split('|')[0].trim();
+        }
+      } else if (term.startsWith('#')) {
+        term = term.slice(1).trim();
       }
-      return term.trim();
+      return term;
     })
     .filter(Boolean);
   if (!terms.length) return html;

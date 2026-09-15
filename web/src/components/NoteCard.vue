@@ -309,6 +309,8 @@ function cancelEdit() {
 }
 
 function handleBodyClick(event: MouseEvent) {
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+
   const target = (event.target as HTMLElement)?.closest('a');
   if (!target) return;
 

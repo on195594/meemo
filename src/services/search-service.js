@@ -9,10 +9,14 @@ function buildSearchFilter(filterStr) {
     var trimmed = filterStr.trim();
     if (!trimmed) return null;
 
-    var words = trimmed.split(/[\s,，、；;]+/).map(function (w) {
-        var word = w.trim();
-        if (word.startsWith('[[') && word.endsWith(']]') && word.length > 4) {
+    var tokens = trimmed.match(/\[\[[^\]\n]+\]\]|[^\s,，、；;]+/g) || [];
+    var words = tokens.map(function (token) {
+        var word = token.trim();
+        if (word.startsWith('[[') && word.endsWith(']]')) {
             word = word.slice(2, -2).trim();
+            if (word.indexOf('|') !== -1) {
+                word = word.split('|')[0].trim();
+            }
         }
         return word;
     }).filter(Boolean);

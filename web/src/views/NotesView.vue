@@ -256,7 +256,7 @@ function handleTagClick(tag: string) {
 }
 
 function handleWikilinkClick(target: string) {
-  router.replace({ query: { ...route.query, tag: undefined, q: target } });
+  router.push({ query: { ...route.query, tag: undefined, q: target } });
 }
 
 function clearTagFilter() {

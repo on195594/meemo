@@ -73,6 +73,13 @@ describe('highlightKeyword', () => {
     expect(highlighted).toContain('<mark>docker</mark>');
   });
 
+  it('highlights multi-word wikilinks and extracts target from aliased wikilinks', () => {
+    const html = '<p>Check <a class="wikilink" href="/?q=Architecture%20Design">Architecture Design</a> and API Guide</p>';
+    const highlighted = highlightKeyword(html, '[[Architecture Design]] [[API Guide|API 手册]]');
+    expect(highlighted).toContain('<mark>Architecture Design</mark>');
+    expect(highlighted).toContain('<mark>API Guide</mark>');
+  });
+
   it('does not corrupt HTML attributes during highlighting', () => {
     const html = '<a class="wikilink" href="/?q=test" data-wikilink="test">test</a>';
     const highlighted = highlightKeyword(html, 'test');

@@ -45,4 +45,15 @@ describe('Search query policy', function () {
             ]
         });
     });
+
+    it('preserves multi-word wikilink phrases and extracts target from aliased wikilinks', function () {
+        var filter = search.buildSearchFilter('[[Hello World]] #dev, [[Target Note|Custom Label]]');
+        expect(filter).to.eql({
+            $and: [
+                { $or: [{ content: { $regex: 'Hello World', $options: 'i' } }, { tags: 'hello world' }] },
+                { tags: 'dev' },
+                { $or: [{ content: { $regex: 'Target Note', $options: 'i' } }, { tags: 'target note' }] }
+            ]
+        });
+    });
 });

@@ -66,6 +66,25 @@ describe('NoteCard behavior', () => {
     expect(wrapper.emitted('wikilinkClick')).toEqual([['Target Note']]);
   });
 
+  it('preserves native open in new tab when clicked with modifier keys', () => {
+    const wrapper = mount(NoteCard, {
+      props: {
+        thing: note({ content: 'See [[Target Note]] for details' }),
+      },
+    });
+
+    const link = wrapper.find('.markdown-body a.wikilink');
+    const ctrlClick = new MouseEvent('click', { ctrlKey: true, bubbles: true, cancelable: true });
+    link.element.dispatchEvent(ctrlClick);
+    expect(wrapper.emitted('wikilinkClick')).toBeUndefined();
+    expect(ctrlClick.defaultPrevented).toBe(false);
+
+    const middleClick = new MouseEvent('click', { button: 1, bubbles: true, cancelable: true });
+    link.element.dispatchEvent(middleClick);
+    expect(wrapper.emitted('wikilinkClick')).toBeUndefined();
+    expect(middleClick.defaultPrevented).toBe(false);
+  });
+
   it.each([
     ['Pin to top', 'toggleSticky'],
     ['Make public', 'togglePublic'],

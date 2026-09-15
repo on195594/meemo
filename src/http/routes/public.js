@@ -87,7 +87,7 @@ async function getRSS(req, res) {
             url: webServer + '/blog/TODO',
             author: data.user.displayName + '( ' + data.user.username + ' )',
             date: new Date(thing.createdAt),
-            description: markdown.render(thing.richContent)
+            description: markdown.render(thing.richContent, { baseUrl: webServer })
         });
     });
 
@@ -158,12 +158,7 @@ function wikilinks(md) {
             var target = parts[0].trim();
             var label = (parts.length > 1 ? parts.slice(1).join('|') : parts[0]).trim() || target;
             var token = state.push('wikilink', 'a', 0);
-            token.attrs = [
-                ['class', 'wikilink'],
-                ['href', '/?q=' + encodeURIComponent(target)],
-                ['data-wikilink', target]
-            ];
-            token.content = label;
+            token.meta = { target: target, label: label };
         }
         state.pos = matchEnd + 2;
         return true;
@@ -171,7 +166,12 @@ function wikilinks(md) {
 
     md.renderer.rules.wikilink = function (tokens, idx, options, env, self) {
         var token = tokens[idx];
-        return '<a' + self.renderAttrs(token) + '>' + md.utils.escapeHtml(token.content) + '</a>';
+        var target = token.meta ? token.meta.target : '';
+        var label = token.meta ? token.meta.label : target;
+        var baseUrl = (env && env.baseUrl) ? env.baseUrl : (process.env.APP_ORIGIN || '');
+        var prefix = baseUrl ? baseUrl.replace(/\/+$/, '') : '';
+        var href = prefix + '/?q=' + encodeURIComponent(target);
+        return '<a class="wikilink" href="' + md.utils.escapeHtml(href) + '" data-wikilink="' + md.utils.escapeHtml(target) + '">' + md.utils.escapeHtml(label) + '</a>';
     };
 }
 
