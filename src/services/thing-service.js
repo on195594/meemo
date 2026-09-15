@@ -179,9 +179,8 @@ function put(userId, thingId, content, attachments, isPublic, isShared, isArchiv
             externalContent = [];
         }
 
-        await things.put(userId, thingId, content, tagObjects, attachments, externalContent,
+        return things.put(userId, thingId, content, tagObjects, attachments, externalContent,
             isPublic, isShared, isArchived, isSticky);
-        return get(userId, thingId);
     });
     return nodeify(promise, callback);
 }
@@ -203,42 +202,44 @@ function cleanupTags(callback) {
             metadata.set(JSON.stringify([tag.ownerId, tag.name]), tag);
         });
 
-        var allThings = await things.getUnifiedCollection().find({}).toArray();
-        var usage = new Map();
+        var thingsCol = things.getUnifiedCollection();
+        var allThings = await thingsCol.find({}).toArray();
         for (var thing of allThings) {
             if (typeof thing.ownerId !== 'string' || typeof thing.content !== 'string') {
                 throw new Error('Thing owner or content prevents exact tag reconstruction');
             }
             var extracted = extractTags(thing.content);
             if (JSON.stringify(thing.tags) !== JSON.stringify(extracted)) {
-                await things.getUnifiedCollection().updateOne(
-                    { _id: thing._id, ownerId: thing.ownerId }, { $set: { tags: extracted } }
+                // CAS: update only if content has not changed concurrently
+                await thingsCol.updateOne(
+                    { _id: thing._id, ownerId: thing.ownerId, content: thing.content },
+                    { $set: { tags: extracted } }
                 );
             }
-            extracted.forEach(function (name) {
-                var identity = JSON.stringify([thing.ownerId, name]);
-                var existing = metadata.get(identity);
-                var record = usage.get(identity) || {
-                    ownerId: thing.ownerId,
-                    name: name,
-                    usage: 0,
-                    createdAt: existing && existing.createdAt || repairedAt,
-                    modifiedAt: repairedAt
-                };
-                record.usage++;
-                usage.set(identity, record);
-            });
         }
 
-        var reconstructed = Array.from(usage.entries()).map(function (entry) {
-            var existing = metadata.get(entry[0]);
-            var record = entry[1];
+        var aggregated = await thingsCol.aggregate([
+            { $unwind: '$tags' },
+            { $group: { _id: { ownerId: '$ownerId', name: '$tags' }, usage: { $sum: 1 } } },
+            { $sort: { '_id.ownerId': 1, '_id.name': 1 } }
+        ]).toArray();
+
+        var reconstructed = aggregated.map(function (item) {
+            var identity = JSON.stringify([item._id.ownerId, item._id.name]);
+            var existing = metadata.get(identity);
+            var record = {
+                ownerId: item._id.ownerId,
+                name: item._id.name,
+                usage: item.usage,
+                createdAt: existing && existing.createdAt || repairedAt,
+                modifiedAt: repairedAt
+            };
             if (existing && existing.usage === record.usage && existing.modifiedAt != null) {
                 record.modifiedAt = existing.modifiedAt;
             }
             return record;
         });
-        debug('Reconstruct all tags under MongoDB write freeze');
+        debug('Reconstruct all tags projection atomically via rename');
         await tags.replaceAll(reconstructed);
     });
     return nodeify(promise, callback);

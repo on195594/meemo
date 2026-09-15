@@ -8,7 +8,9 @@
 /* global afterEach:false */
 
 var expect = require('expect.js'),
-    MongoClient = require('mongodb').MongoClient,
+    mongodb = require('mongodb'),
+    MongoClient = mongodb.MongoClient,
+    ObjectId = mongodb.ObjectId,
     config = require('../config.js'),
     tags = require('../database/tags.js'),
     things = require('../database/things.js'),
@@ -109,22 +111,124 @@ describe('Tag integrity', function () {
         })).tags).to.eql(['keep', 'duplicate', 'duplicate']);
     });
 
-    it('allows concurrent Thing mutations during tag reconstruction without manual lock errors', async function () {
-        await things.insertFull('owner-a', '#before', [], [], [], 1, 1);
-        var original = tags.replaceAll;
-        var duringWriteResult;
-        tags.replaceAll = async function (documents) {
-            duringWriteResult = await things.insertFull('owner-a', '#during', [], [], [], 2, 2);
-            return original(documents);
+    it('does not overwrite concurrent note edits during tag reconstruction', async function () {
+        var created = await things.insertFull('owner-a', '#old', [], [], [], 1, 1);
+        var originalFind = mongodb.Collection.prototype.find;
+        var injected = false;
+
+        mongodb.Collection.prototype.find = function () {
+            var cursor = originalFind.apply(this, arguments);
+            if (this.collectionName === 'things' && !injected) {
+                var realToArray = cursor.toArray.bind(cursor);
+                cursor.toArray = async function () {
+                    var res = await realToArray();
+                    if (!injected) {
+                        injected = true;
+                        await things.put('owner-a', created._id, '#new', ['new'], [], [], false, false, false, false);
+                    }
+                    return res;
+                };
+            }
+            return cursor;
         };
+
         try {
             await thingService.cleanupTags();
         } finally {
-            tags.replaceAll = original;
+            mongodb.Collection.prototype.find = originalFind;
         }
 
-        expect(duringWriteResult).to.be.ok();
-        expect(await db.collection('things').countDocuments({ content: '#during' })).to.equal(1);
-        expect(await db.collection('system_maintenance').countDocuments({})).to.equal(0);
+        var currentDoc = await db.collection('things').findOne({ _id: new ObjectId(created._id) });
+        expect(currentDoc.content).to.equal('#new');
+        expect(currentDoc.tags).to.eql(['new']);
+
+        var onlineTags = await thingService.getTags('owner-a');
+        expect(onlineTags).to.eql([{ ownerId: 'owner-a', name: 'new', usage: 1 }]);
+
+        var persistedTags = await db.collection('tags').find({ ownerId: 'owner-a' }).toArray();
+        expect(persistedTags.map(function (t) { return { name: t.name, usage: t.usage }; })).to.eql([
+            { name: 'new', usage: 1 }
+        ]);
+    });
+
+    it('captures concurrent note additions in reconstructed tags projection', async function () {
+        await things.insertFull('owner-a', '#before', ['before'], [], [], 1, 1);
+
+        var originalFind = mongodb.Collection.prototype.find;
+        var injected = false;
+
+        mongodb.Collection.prototype.find = function () {
+            var cursor = originalFind.apply(this, arguments);
+            if (this.collectionName === 'things' && !injected) {
+                var realToArray = cursor.toArray.bind(cursor);
+                cursor.toArray = async function () {
+                    var res = await realToArray();
+                    if (!injected) {
+                        injected = true;
+                        await things.insertFull('owner-a', '#during', ['during'], [], [], 2, 2);
+                    }
+                    return res;
+                };
+            }
+            return cursor;
+        };
+
+        try {
+            await thingService.cleanupTags();
+        } finally {
+            mongodb.Collection.prototype.find = originalFind;
+        }
+
+        var persistedTags = await db.collection('tags').find({ ownerId: 'owner-a' }).sort({ name: 1 }).toArray();
+        expect(persistedTags.map(function (t) { return { name: t.name, usage: t.usage }; })).to.eql([
+            { name: 'before', usage: 1 },
+            { name: 'during', usage: 1 }
+        ]);
+    });
+
+    it('enforces maintenance write freeze when active and fails closed when unverified', async function () {
+        var verifyError;
+        try {
+            await things.requireWriteFreeze(db);
+        } catch (error) {
+            verifyError = error;
+        }
+        expect(verifyError).to.be.ok();
+        expect(verifyError.message).to.contain('verified Thing write freeze is required');
+
+        await things.acquireWriteFreeze();
+        await things.requireWriteFreeze(db);
+
+        var writeError;
+        try {
+            await things.insertFull('owner-a', '#blocked', [], [], [], 1, 1);
+        } catch (error) {
+            writeError = error;
+        }
+        expect(writeError).to.be.ok();
+        expect(writeError.message).to.contain('writes are frozen for maintenance');
+
+        await things.releaseWriteFreeze();
+
+        var allowed = await things.insertFull('owner-a', '#allowed', ['allowed'], [], [], 1, 1);
+        expect(allowed).to.be.ok();
+    });
+
+    it('linearizes put and del operations atomically and throws not found on absent deletion', async function () {
+        var created = await things.insertFull('owner-a', '#initial', ['initial'], [], [], 1, 1);
+        var updated = await things.put('owner-a', created._id, '#updated', ['updated'], [], [], false, false, false, false);
+        expect(updated.content).to.equal('#updated');
+        expect(updated.tags).to.eql(['updated']);
+
+        await things.del('owner-a', created._id);
+
+        var delError;
+        try {
+            await things.del('owner-a', created._id);
+        } catch (error) {
+            delError = error;
+        }
+        expect(delError).to.be.ok();
+        expect(delError.message).to.equal('not found');
     });
 });

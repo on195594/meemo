@@ -9,13 +9,47 @@ var assert = require('assert'),
 
 var activeUserIds = {};
 var indexesCreated = false;
-// ponytail: eliminated manual write lease gate; atomic single-document operations in Mongo need no app-level lock.
+var WRITE_GATE_ID = 'thing-writes';
+var WRITE_GATE_COLLECTION = 'system_maintenance';
+
+function writeGateCollection() {
+    if (!config.db) throw new Error('MongoDB database is not connected');
+    return config.db.collection(WRITE_GATE_COLLECTION);
+}
+
+function writeFrozenError() {
+    return new Error('Thing writes are frozen for maintenance');
+}
+
+async function checkNotFrozen() {
+    if (!config.db) return;
+    var gate = await writeGateCollection().findOne({ _id: WRITE_GATE_ID });
+    if (gate && gate.frozen === true) {
+        throw writeFrozenError();
+    }
+}
+
+// ponytail: check maintenance gate without active-writer lease counters; no lock contention or crash deadlocks.
 function acquireWriteFreeze(callback) {
-    return nodeify(Promise.resolve(), callback);
+    var promise = Promise.resolve().then(async function () {
+        await writeGateCollection().updateOne(
+            { _id: WRITE_GATE_ID },
+            { $set: { frozen: true, frozenAt: Date.now() } },
+            { upsert: true }
+        );
+    });
+    return nodeify(promise, callback);
 }
 
 function releaseWriteFreeze(callback) {
-    return nodeify(Promise.resolve(), callback);
+    var promise = Promise.resolve().then(async function () {
+        var result = await writeGateCollection().updateOne(
+            { _id: WRITE_GATE_ID, frozen: true },
+            { $set: { frozen: false, releasedAt: Date.now() } }
+        );
+        if (result.matchedCount !== 1) throw new Error('Thing write freeze is not active');
+    });
+    return nodeify(promise, callback);
 }
 
 function requireWriteFreeze(db, callback) {
@@ -23,7 +57,15 @@ function requireWriteFreeze(db, callback) {
         callback = db;
         db = null;
     }
-    return nodeify(Promise.resolve(), callback);
+    db = db || config.db;
+    var promise = Promise.resolve().then(async function () {
+        if (!db) throw new Error('MongoDB database is not connected');
+        var gate = await db.collection(WRITE_GATE_COLLECTION).findOne({ _id: WRITE_GATE_ID });
+        if (!gate || gate.frozen !== true) {
+            throw new Error('A verified Thing write freeze is required');
+        }
+    });
+    return nodeify(promise, callback);
 }
 
 function resetCache() {
@@ -200,7 +242,9 @@ function insertFull(userId, content, tags, attachments, externalContent, created
         sticky: false
     };
 
-    var promise = getUnifiedCollection().insertOne(doc).then(function (result) {
+    var promise = Promise.resolve().then(async function () {
+        await checkNotFrozen();
+        var result = await getUnifiedCollection().insertOne(doc);
         if (!result) throw new Error('no result returned');
         doc._id = result.insertedId.toString();
         postProcess(userId, doc);
@@ -229,9 +273,16 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
     };
 
     var promise = Promise.resolve().then(async function () {
+        await checkNotFrozen();
         var id = new ObjectId(thingId);
-        await getUnifiedCollection().updateOne({ _id: id, ownerId: userId }, { $set: data });
-        return get(userId, thingId);
+        var result = await getUnifiedCollection().findOneAndUpdate(
+            { _id: id, ownerId: userId },
+            { $set: data },
+            { returnDocument: 'after', includeResultMetadata: false }
+        );
+        if (!result) throw new Error('not found');
+        postProcess(userId, result);
+        return result;
     });
     return nodeify(promise, callback);
 }
@@ -243,8 +294,10 @@ function del(userId, thingId, callback) {
     activeUserIds[userId] = true;
 
     var promise = Promise.resolve().then(async function () {
+        await checkNotFrozen();
         var id = new ObjectId(thingId);
-        await getUnifiedCollection().deleteOne({ _id: id, ownerId: userId });
+        var result = await getUnifiedCollection().deleteOne({ _id: id, ownerId: userId });
+        if (result.deletedCount === 0) throw new Error('not found');
     });
     return nodeify(promise, callback);
 }
