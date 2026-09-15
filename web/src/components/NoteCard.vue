@@ -86,7 +86,7 @@
 
     <!-- Normal View: Markdown Content -->
     <template v-if="!isEditing">
-      <div class="card-body markdown-body" v-html="renderedBody"></div>
+      <div class="card-body markdown-body" v-html="renderedBody" @click="handleBodyClick"></div>
 
       <!-- Attachments Display -->
       <div v-if="thing.attachments && thing.attachments.length > 0" class="card-attachments">
@@ -224,6 +224,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: 'tagClick', tag: string): void;
+  (e: 'wikilinkClick', target: string): void;
   (e: 'toggleSticky', thing: Thing): void;
   (e: 'togglePublic', thing: Thing): void;
   (e: 'toggleArchive', thing: Thing): void;
@@ -305,6 +306,29 @@ function startEdit() {
 function cancelEdit() {
   isEditing.value = false;
   editError.value = null;
+}
+
+function handleBodyClick(event: MouseEvent) {
+  const target = (event.target as HTMLElement)?.closest('a');
+  if (!target) return;
+
+  if (target.classList.contains('wikilink') || target.dataset.wikilink) {
+    event.preventDefault();
+    const query = target.dataset.wikilink || target.textContent?.trim() || '';
+    if (query) {
+      emit('wikilinkClick', query);
+    }
+    return;
+  }
+
+  const href = target.getAttribute('href') || '';
+  if (href.startsWith('#search?#')) {
+    event.preventDefault();
+    const tag = href.replace('#search?#', '').trim();
+    if (tag) {
+      emit('tagClick', tag);
+    }
+  }
 }
 
 function handleEditKeyDown(e: KeyboardEvent) {
@@ -501,6 +525,27 @@ async function confirmDelete() {
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
+}
+
+.card-body :deep(.wikilink) {
+  display: inline;
+  color: #4f46e5;
+  background-color: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.card-body :deep(.wikilink):hover {
+  background-color: #e0e7ff;
+  border-color: #a5b4fc;
+  color: #3730a3;
+  text-decoration: underline;
 }
 
 .card-body :deep(img) {

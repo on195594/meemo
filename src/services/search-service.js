@@ -9,7 +9,13 @@ function buildSearchFilter(filterStr) {
     var trimmed = filterStr.trim();
     if (!trimmed) return null;
 
-    var words = trimmed.split(/\s+/).filter(Boolean);
+    var words = trimmed.split(/[\s,，、；;]+/).map(function (w) {
+        var word = w.trim();
+        if (word.startsWith('[[') && word.endsWith(']]') && word.length > 4) {
+            word = word.slice(2, -2).trim();
+        }
+        return word;
+    }).filter(Boolean);
     if (!words.length) return null;
 
     var wordConditions = words.map(function (word) {

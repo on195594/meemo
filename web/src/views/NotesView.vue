@@ -90,6 +90,7 @@
               @toggle-public="handleTogglePublic"
               @toggle-archive="handleToggleArchive"
               @tag-click="handleTagClick"
+              @wikilink-click="handleWikilinkClick"
             />
 
             <!-- Infinite Scroll / Load More Footer -->
@@ -252,6 +253,10 @@ function handleViewSwitch(archived: boolean) {
 
 function handleTagClick(tag: string) {
   router.replace({ query: { ...route.query, q: undefined, tag } });
+}
+
+function handleWikilinkClick(target: string) {
+  router.replace({ query: { ...route.query, tag: undefined, q: target } });
 }
 
 function clearTagFilter() {

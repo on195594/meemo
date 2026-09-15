@@ -145,9 +145,40 @@ function colorizeIt(md) {
     };
 }
 
+function wikilinks(md) {
+    md.inline.ruler.before('link', 'wikilink', function (state, silent) {
+        if (state.src.charCodeAt(state.pos) !== 0x5b || state.src.charCodeAt(state.pos + 1) !== 0x5b) return false;
+        var start = state.pos + 2;
+        var matchEnd = state.src.indexOf(']]', start);
+        if (matchEnd === -1) return false;
+        var inner = state.src.slice(start, matchEnd);
+        if (inner.indexOf('\n') !== -1 || !inner.trim()) return false;
+        if (!silent) {
+            var parts = inner.split('|');
+            var target = parts[0].trim();
+            var label = (parts.length > 1 ? parts.slice(1).join('|') : parts[0]).trim() || target;
+            var token = state.push('wikilink', 'a', 0);
+            token.attrs = [
+                ['class', 'wikilink'],
+                ['href', '/?q=' + encodeURIComponent(target)],
+                ['data-wikilink', target]
+            ];
+            token.content = label;
+        }
+        state.pos = matchEnd + 2;
+        return true;
+    });
+
+    md.renderer.rules.wikilink = function (tokens, idx, options, env, self) {
+        var token = tokens[idx];
+        return '<a' + self.renderAttrs(token) + '>' + md.utils.escapeHtml(token.content) + '</a>';
+    };
+}
+
 var markdown = require('markdown-it')({ breaks: true, html: true, linkify: true })
     .use(require('markdown-it-emoji').full)
     .use(colorizeIt)
+    .use(wikilinks)
     .use(require('markdown-it-checkbox'))
     .use(markdownTargetBlank);
 

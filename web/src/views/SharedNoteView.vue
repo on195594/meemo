@@ -4,19 +4,24 @@
     <div v-else-if="error" class="error-banner">{{ error }}</div>
 
     <main v-else-if="thing" class="shared-note-content">
-      <NoteCard :thing="thing" :can-edit="false" />
+      <NoteCard :thing="thing" :can-edit="false" @wikilink-click="handleWikilinkClick" />
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { api, type Thing } from '../api/client';
 import NoteCard from '../components/NoteCard.vue';
 
 const route = useRoute();
+const router = useRouter();
 const thingId = String(route.params.thingId);
+
+function handleWikilinkClick(target: string) {
+  router.push({ path: '/', query: { q: target } });
+}
 
 const thing = ref<Thing | null>(null);
 const loading = ref(true);

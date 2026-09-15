@@ -59,6 +59,10 @@
                 <td><code>#project</code>, <code>#meeting</code> (auto-linked)</td>
               </tr>
               <tr>
+                <td>WikiLinks (Internal Links)</td>
+                <td><code>[[Note Title]]</code>, <code>[[Target|Custom Label]]</code></td>
+              </tr>
+              <tr>
                 <td>Lists</td>
                 <td><code>- Item</code>, <code>1. Numbered</code>, <code>- [ ] Task</code></td>
               </tr>

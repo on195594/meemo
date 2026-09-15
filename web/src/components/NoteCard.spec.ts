@@ -51,6 +51,21 @@ describe('NoteCard behavior', () => {
     expect(wrapper.emitted('tagClick')).toEqual([['work']]);
   });
 
+  it('emits wikilinkClick when a wikilink anchor inside markdown is clicked', async () => {
+    const wrapper = mount(NoteCard, {
+      props: {
+        thing: note({ content: 'See [[Target Note]] for details' }),
+      },
+    });
+
+    const link = wrapper.find('.markdown-body a.wikilink');
+    expect(link.exists()).toBe(true);
+    expect(link.text()).toBe('Target Note');
+
+    await link.trigger('click');
+    expect(wrapper.emitted('wikilinkClick')).toEqual([['Target Note']]);
+  });
+
   it.each([
     ['Pin to top', 'toggleSticky'],
     ['Make public', 'togglePublic'],

@@ -14,6 +14,7 @@
           :key="thing._id"
           :thing="thing"
           :can-edit="false"
+          @wikilink-click="handleWikilinkClick"
         />
       </div>
       <div v-else class="empty-state">
@@ -25,12 +26,17 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { api, type Thing, type PublicUserProfile } from '../api/client';
 import NoteCard from '../components/NoteCard.vue';
 
 const route = useRoute();
+const router = useRouter();
 const userId = String(route.params.userId);
+
+function handleWikilinkClick(target: string) {
+  router.push({ path: '/', query: { q: target } });
+}
 
 const profile = ref<PublicUserProfile | null>(null);
 const things = ref<Thing[]>([]);

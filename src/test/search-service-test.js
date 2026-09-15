@@ -24,4 +24,25 @@ describe('Search query policy', function () {
         expect(search.buildQuery({ filter: '  ', archived: true, sticky: false })).to.eql({ archived: true });
     });
 
+    it('splits query by multi-delimiters including Chinese punctuation', function () {
+        var filter = search.buildSearchFilter('文档，架构；#Dev、计划');
+        expect(filter).to.eql({
+            $and: [
+                { $or: [{ content: { $regex: '文档', $options: 'i' } }, { tags: '文档' }] },
+                { $or: [{ content: { $regex: '架构', $options: 'i' } }, { tags: '架构' }] },
+                { tags: 'dev' },
+                { $or: [{ content: { $regex: '计划', $options: 'i' } }, { tags: '计划' }] }
+            ]
+        });
+    });
+
+    it('strips [[wikilink]] brackets in search filter', function () {
+        var filter = search.buildSearchFilter('[[Architecture]]');
+        expect(filter).to.eql({
+            $or: [
+                { content: { $regex: 'Architecture', $options: 'i' } },
+                { tags: 'architecture' }
+            ]
+        });
+    });
 });
