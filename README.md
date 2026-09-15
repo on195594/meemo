@@ -126,6 +126,7 @@ Do not commit generated `public/`, `node_modules/`, account files, attachments, 
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Master branch protection](docs/BRANCH_PROTECTION.md)
+- [Dependency security](docs/DEPENDENCY_SECURITY.md)
 - [Security policy](SECURITY.md)
 
 ## License
