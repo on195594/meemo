@@ -30,6 +30,8 @@ describe('renderMarkdown', () => {
     expect(renderMarkdown('Empty [[]] brackets')).not.toContain('class="wikilink"');
     expect(renderMarkdown('Spaces [[   ]] only')).not.toContain('class="wikilink"');
     expect(renderMarkdown('Newline [[\nmultiline\n]]')).not.toContain('class="wikilink"');
+    expect(renderMarkdown('Empty target [[|Custom Label]]')).not.toContain('class="wikilink"');
+    expect(renderMarkdown('Whitespace target [[   | Custom ]]')).not.toContain('class="wikilink"');
   });
 
   it('does not parse inline code blocks as WikiLinks', () => {

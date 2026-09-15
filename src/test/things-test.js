@@ -289,6 +289,30 @@ describe('Things', function () {
                 done();
             });
         });
+
+        it('preserves WikiLink spans without rewriting attachment names or tags inside brackets', function (done) {
+            var fileName = 'diagram.png';
+            var thing = {
+                _id: '507f1f77bcf86cd799439011',
+                tags: ['work'],
+                externalContent: [],
+                attachments: [{
+                    fileName: fileName,
+                    identifier: 'ident-diagram.png',
+                    type: logic.TYPE_IMAGE
+                }],
+                content: 'See [[diagram.png]] and [[Note #work]] alongside [' + fileName + '] and #work'
+            };
+
+            logic.facelift(USER_ID, thing, function (error, result) {
+                expect(error).to.equal(null);
+                expect(result).to.contain('[[diagram.png]]');
+                expect(result).to.contain('[[Note #work]]');
+                expect(result).to.contain('![/api/files/' + USER_ID + '/' + thing._id + '/ident-diagram.png]');
+                expect(result).to.contain('[#work](#search?#work)');
+                done();
+            });
+        });
     });
 
     describe('buildSearchFilter', function () {

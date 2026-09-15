@@ -58,9 +58,11 @@ function wikilinkRule(state: any, silent: boolean): boolean {
   const inner = state.src.slice(start, matchEnd);
   if (inner.includes('\n') || !inner.trim()) return false;
 
+  const parts = inner.split('|');
+  const target = parts[0].trim();
+  if (!target) return false;
+
   if (!silent) {
-    const parts = inner.split('|');
-    const target = parts[0].trim();
     const label = (parts.length > 1 ? parts.slice(1).join('|') : parts[0]).trim() || target;
 
     const token = state.push('wikilink', 'a', 0);

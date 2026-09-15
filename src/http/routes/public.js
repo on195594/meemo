@@ -153,9 +153,11 @@ function wikilinks(md) {
         if (matchEnd === -1) return false;
         var inner = state.src.slice(start, matchEnd);
         if (inner.indexOf('\n') !== -1 || !inner.trim()) return false;
+        var parts = inner.split('|');
+        var target = parts[0].trim();
+        if (!target) return false;
+
         if (!silent) {
-            var parts = inner.split('|');
-            var target = parts[0].trim();
             var label = (parts.length > 1 ? parts.slice(1).join('|') : parts[0]).trim() || target;
             var token = state.push('wikilink', 'a', 0);
             token.meta = { target: target, label: label };

@@ -56,6 +56,12 @@ function facelift(userId, thing, callback) {
         var attachments = thing.attachments || [];
         thing.externalContent = externalContent;
 
+        var wikilinks = [];
+        data = data.replace(/\[\[[^\]\n]+\]\]/g, function (match) {
+            wikilinks.push(match);
+            return '@@WIKILINK_PLACEHOLDER_' + (wikilinks.length - 1) + '@@';
+        });
+
         tagObjects.forEach(function (tag) {
             data = data.replace(new RegExp('#' + tag + '(#|\\s|$)', 'gmi'), '[#' + tag + '](#search?#' + tag + ')$1').trim();
         });
@@ -83,6 +89,10 @@ function facelift(userId, thing, callback) {
             } else {
                 data = data.replace(new RegExp('\\[' + escapedName + '\\]', 'gmi'), '[' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
             }
+        });
+
+        data = data.replace(/@@WIKILINK_PLACEHOLDER_(\d+)@@/g, function (match, index) {
+            return wikilinks[Number(index)] || match;
         });
         return data;
     });
