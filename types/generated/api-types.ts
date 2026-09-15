@@ -193,7 +193,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Full-text search query string */
+                    /** @description Search query string supporting text keywords, */
                     filter?: components["parameters"]["FilterQuery"];
                     /** @description Filter by sticky flag */
                     sticky?: components["parameters"]["StickyQuery"];
@@ -688,7 +688,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Full-text search query string */
+                    /** @description Search query string supporting text keywords, */
                     filter?: components["parameters"]["FilterQuery"];
                     /** @description Number of records to skip */
                     skip?: components["parameters"]["SkipQuery"];
@@ -1373,7 +1373,7 @@ export interface components {
         UserIdPath: string;
         /** @description Opaque storage UUID / filename */
         FileIdentifierPath: string;
-        /** @description Full-text search query string */
+        /** @description Search query string supporting text keywords, */
         FilterQuery: string;
         /** @description Filter by sticky flag */
         StickyQuery: boolean;

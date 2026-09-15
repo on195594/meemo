@@ -7,7 +7,6 @@ var assert = require('assert'),
     config = require('../config.js'),
     nodeify = require('../promise.js');
 
-var activeUserIds = {};
 var indexesCreated = false;
 var WRITE_GATE_ID = 'thing-writes';
 var WRITE_GATE_COLLECTION = 'system_maintenance';
@@ -69,7 +68,6 @@ function requireWriteFreeze(db, callback) {
 }
 
 function resetCache() {
-    activeUserIds = {};
     indexesCreated = false;
 }
 
@@ -98,29 +96,6 @@ function ensureIndexes(callback) {
     return nodeify(promise, callback);
 }
 
-function getAllActiveUserIds(callback) {
-    var promise = Promise.resolve().then(async function () {
-        var seen = {};
-        Object.keys(activeUserIds).forEach(function (id) {
-            seen[id] = true;
-        });
-
-        if (config.db) {
-            try {
-                var dbUserIds = await getUnifiedCollection().distinct('ownerId');
-                (dbUserIds || []).forEach(function (id) {
-                    if (id) seen[id] = true;
-                });
-            } catch (err) {
-                // DB not connected or indexing error
-            }
-        }
-
-        return Object.keys(seen);
-    });
-    return nodeify(promise, callback);
-}
-
 function postProcess(userId, thing) {
     if (!thing) return;
     thing._id = String(thing._id);
@@ -134,7 +109,6 @@ function postProcess(userId, thing) {
 function getAll(userId, query, skip, limit, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof query, 'object');
-    activeUserIds[userId] = true;
 
     var ownerCondition = { ownerId: userId };
     var unifiedQuery = Object.keys(query).length ? { $and: [ownerCondition, query] } : ownerCondition;
@@ -151,7 +125,6 @@ function getAll(userId, query, skip, limit, callback) {
 
 function getAllLean(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
-    activeUserIds[userId] = true;
 
     var promise = getUnifiedCollection().find({ ownerId: userId })
         .sort({ modifiedAt: -1, _id: -1 })
@@ -164,7 +137,6 @@ function getAllLean(userId, callback) {
 
 function getTagUsage(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
-    activeUserIds[userId] = true;
 
     var promise = getUnifiedCollection().aggregate([
         { $match: { ownerId: userId } },
@@ -185,7 +157,6 @@ function get(userId, thingId, callback) {
 
     var promise = Promise.resolve().then(async function () {
         if (!ObjectId.isValid(thingId)) throw new Error('not found');
-        activeUserIds[userId] = true;
         var id = new ObjectId(thingId);
         var result = await getUnifiedCollection().findOne({ _id: id, ownerId: userId });
         if (!result) throw new Error('not found');
@@ -226,7 +197,6 @@ function insertFull(userId, content, tags, attachments, externalContent, created
     assert(Array.isArray(tags));
     assert(Array.isArray(attachments));
     assert(Array.isArray(externalContent));
-    activeUserIds[userId] = true;
 
     var doc = {
         ownerId: userId,
@@ -257,7 +227,6 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
     if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(new Error('not found')), callback);
-    activeUserIds[userId] = true;
 
     var data = {
         ownerId: userId,
@@ -291,7 +260,6 @@ function del(userId, thingId, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
     if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(new Error('not found')), callback);
-    activeUserIds[userId] = true;
 
     var promise = Promise.resolve().then(async function () {
         await checkNotFrozen();
@@ -303,7 +271,6 @@ function del(userId, thingId, callback) {
 }
 
 module.exports = {
-    getAllActiveUserIds: getAllActiveUserIds,
     getAll: getAll,
     getAllLean: getAllLean,
     getTagUsage: getTagUsage,
