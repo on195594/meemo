@@ -71,6 +71,7 @@ describe('Read-only thing presentation (VR-203)', function () {
             expect(result.shared).to.be(true);
             expect(result.archived).to.be(true);
             expect(result.sticky).to.be(true);
+            expect(result.color).to.equal('default');
         });
         expect(enrichmentCalls).to.equal(0);
 
@@ -80,5 +81,30 @@ describe('Read-only thing presentation (VR-203)', function () {
         expect(stored.shared).to.be(true);
         expect(stored.archived).to.be(true);
         expect(stored.sticky).to.be(true);
+        expect(Object.prototype.hasOwnProperty.call(stored, 'color')).to.be(false);
+    });
+
+    it('fails loudly without rewriting an unsupported stored color', async function () {
+        var invalidId = new ObjectId();
+        await db.collection('things').insertOne({
+            _id: invalidId,
+            ownerId: ownerId,
+            content: 'Invalid stored color',
+            tags: [],
+            attachments: [],
+            createdAt: 2,
+            modifiedAt: 2,
+            color: 'red'
+        });
+
+        var error;
+        try {
+            await service.get(ownerId, String(invalidId));
+        } catch (readError) {
+            error = readError;
+        }
+        expect(error).to.be.ok();
+        expect(error.code).to.equal('ERR_INVALID_NOTE_COLOR');
+        expect((await db.collection('things').findOne({ _id: invalidId })).color).to.equal('red');
     });
 });

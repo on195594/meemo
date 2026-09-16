@@ -121,6 +121,20 @@ describe('useNotes behavior', () => {
     expect(store.things.value).toEqual([updated]);
   });
 
+  it('reorders the visible list after a color update changes modifiedAt', async () => {
+    const first = note('first', { modifiedAt: 3 });
+    const second = note('second', { modifiedAt: 2, color: 'default' });
+    apiMock.list.mockResolvedValue({ things: [first, second] });
+    apiMock.update.mockResolvedValue({ thing: { ...second, color: 'mint', modifiedAt: 4 } });
+    const store = useNotes();
+    await store.fetchNotes();
+
+    await store.updateNote('second', { color: 'mint' });
+
+    expect(apiMock.update).toHaveBeenCalledWith('second', expect.objectContaining({ color: 'mint' }));
+    expect(store.things.value.map((thing) => thing._id)).toEqual(['second', 'first']);
+  });
+
   it('moves sticky notes first and removes archived notes from the active view', async () => {
     const first = note('first', { modifiedAt: 3 });
     const second = note('second', { modifiedAt: 2 });

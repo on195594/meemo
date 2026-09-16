@@ -200,12 +200,10 @@ export function useNotes() {
         const index = things.value.findIndex((t) => t._id === id);
         if (index !== -1) {
           things.value.splice(index, 1, updated);
-          if (updates.sticky !== undefined) {
-            things.value.sort((a, b) => {
-              if (a.sticky !== b.sticky) return a.sticky ? -1 : 1;
-              return (b.modifiedAt || 0) - (a.modifiedAt || 0);
-            });
-          }
+          things.value.sort((a, b) => {
+            if (a.sticky !== b.sticky) return a.sticky ? -1 : 1;
+            return (b.modifiedAt || 0) - (a.modifiedAt || 0);
+          });
         }
       }
       await fetchTags();

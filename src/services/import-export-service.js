@@ -6,6 +6,7 @@ var assert = require('assert'),
     os = require('os'),
     path = require('path'),
     nodeify = require('../promise.js'),
+    noteColors = require('../note-colors.js'),
     storage = require('../storage/local-storage.js'),
     tar = require('tar-fs'),
     thingService = require('./thing-service.js'),
@@ -32,6 +33,9 @@ function validateThingsData(data) {
         }
         if (thing.modifiedAt !== undefined && typeof thing.modifiedAt !== 'number' && typeof thing.modifiedAt !== 'string') {
             return 'Thing at index ' + i + ' has invalid modifiedAt';
+        }
+        if (thing.color !== undefined && !noteColors.isValidNoteColor(thing.color)) {
+            return 'Thing at index ' + i + ' has invalid color';
         }
         if (thing.attachments === undefined) continue;
         if (!Array.isArray(thing.attachments)) return 'Thing at index ' + i + ' attachments must be an array';
@@ -181,7 +185,7 @@ async function insertImportedData(userId, data, state) {
         if (typeof modifiedAt === 'string') modifiedAt = (new Date(modifiedAt)).getTime();
         if (typeof modifiedAt !== 'number' || isNaN(modifiedAt)) modifiedAt = createdAt;
 
-        var color = typeof thing.color === 'string' ? thing.color : 'default';
+        var color = thing.color === undefined ? 'default' : thing.color;
         var result = await things.insertFull(userId, thing.content, tagObjects,
             Array.isArray(thing.attachments) ? thing.attachments : [],
             Array.isArray(thing.externalContent) ? thing.externalContent : [], createdAt, modifiedAt, color);

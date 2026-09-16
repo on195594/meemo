@@ -5,7 +5,8 @@
 var assert = require('assert'),
     ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
-    nodeify = require('../promise.js');
+    nodeify = require('../promise.js'),
+    noteColors = require('../note-colors.js');
 
 var indexesCreated = false;
 var WRITE_GATE_ID = 'thing-writes';
@@ -104,7 +105,7 @@ function postProcess(userId, thing) {
     thing.shared = !!thing.shared;
     thing.archived = !!thing.archived;
     thing.sticky = !!thing.sticky;
-    thing.color = thing.color || 'default';
+    thing.color = noteColors.normalizeNoteColor(thing.color);
 }
 
 function getAll(userId, query, skip, limit, callback) {
@@ -205,7 +206,10 @@ function insertFull(userId, content, tags, attachments, externalContent, created
         callback = color;
         color = 'default';
     }
-    color = typeof color === 'string' ? color : 'default';
+    if (color === undefined) color = 'default';
+    if (!noteColors.isValidNoteColor(color)) {
+        return nodeify(Promise.reject(noteColors.invalidNoteColorError()), callback);
+    }
 
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof content, 'string');
@@ -247,6 +251,9 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
     if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(new Error('not found')), callback);
+    if (color !== undefined && !noteColors.isValidNoteColor(color)) {
+        return nodeify(Promise.reject(noteColors.invalidNoteColorError()), callback);
+    }
 
     var data = {
         ownerId: userId,

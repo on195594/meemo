@@ -34,6 +34,15 @@ describe('HTTP modules and validation (RF-302)', function () {
         }).to.throwError();
     });
 
+    it('accepts supported note colors and rejects unknown colors', function () {
+        var schema = require('../http/routes/things.js').schemas.create;
+
+        expect(schema.parse({ content: 'colored note', color: 'coral' }).color).to.equal('coral');
+        expect(function () {
+            schema.parse({ content: 'bad color', color: 'red' });
+        }).to.throwError();
+    });
+
     it('maps authentication and not-found failures to stable error codes', function (done) {
         request(app)
             .get('/api/things')

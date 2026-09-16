@@ -93,9 +93,10 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         var createdThingId;
 
         it('inserts new thing into unified things collection with ownerId', async function () {
-            var doc = await things.addFull(testUserId, 'Unified note test content #unified', ['unified'], [], [], Date.now(), Date.now());
+            var doc = await things.addFull(testUserId, 'Unified note test content #unified', ['unified'], [], [], Date.now(), Date.now(), 'mint');
             expect(doc).to.be.ok();
             expect(doc.ownerId).to.equal(testUserId);
+            expect(doc.color).to.equal('mint');
             createdThingId = doc._id;
 
             // Directly verify in MongoDB 'things' collection
@@ -103,6 +104,28 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             expect(mongoDoc).to.be.ok();
             expect(mongoDoc.ownerId).to.equal(testUserId);
             expect(mongoDoc.content).to.equal('Unified note test content #unified');
+            expect(mongoDoc.color).to.equal('mint');
+        });
+
+        it('rejects unsupported colors in direct database writes', async function () {
+            var insertError;
+            try {
+                await things.insertFull(testUserId, 'Invalid color', [], [], [], 1, 1, 'red');
+            } catch (error) {
+                insertError = error;
+            }
+            expect(insertError).to.be.ok();
+            expect(insertError.code).to.equal('ERR_INVALID_NOTE_COLOR');
+
+            var putError;
+            try {
+                await things.put(testUserId, createdThingId, 'Invalid color update', [], [], [],
+                    false, false, false, false, 'red');
+            } catch (error) {
+                putError = error;
+            }
+            expect(putError).to.be.ok();
+            expect(putError.code).to.equal('ERR_INVALID_NOTE_COLOR');
         });
 
         it('queries things filtered by ownerId using the runtime search filter', function (done) {
@@ -122,9 +145,10 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         });
 
         it('updates and deletes note in unified collection', function (done) {
-            things.put(testUserId, createdThingId, 'Updated unified content', ['unified'], [], [], false, false, false, false, function (err, updated) {
+            things.put(testUserId, createdThingId, 'Updated unified content', ['unified'], [], [], false, false, false, false, 'sage', function (err, updated) {
                 if (err) return done(err);
                 expect(updated.content).to.equal('Updated unified content');
+                expect(updated.color).to.equal('sage');
 
                 things.del(testUserId, createdThingId, function (err) {
                     if (err) return done(err);

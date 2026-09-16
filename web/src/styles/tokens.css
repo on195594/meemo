@@ -1,9 +1,11 @@
 /**
  * Material Design 3 (M3) & Google Keep Design System Tokens for Meemo
- * Conforming to WCAG AA strict contrast standards.
+ * Designed toward WCAG AA contrast targets.
  */
 
 :root {
+  color-scheme: light;
+
   /* ==========================================================================
      1. Google Keep 12-Color Palette (Light Mode - Recalibrated for High Contrast)
      ========================================================================== */
@@ -124,11 +126,26 @@
     --md-sys-color-error-container:        #93000a;
     --md-sys-color-on-error:               #690005;
   }
+
+  .notes-view,
+  .public-stream-view,
+  .shared-note-view {
+    color-scheme: dark;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
     --md-sys-motion-duration-short: 0ms;
     --md-sys-motion-duration-medium: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -153,6 +153,11 @@ components:
           type: string
           enum: [image, unknown]
 
+    NoteColor:
+      type: string
+      enum: [default, coral, peach, sand, mint, sage, fog, storm, dusk, blossom, clay, chalk]
+      example: default
+
     Thing:
       type: object
       required:
@@ -187,7 +192,7 @@ components:
           example: 1694000000000
         modifiedAt:
           type: integer
-          description: Unix timestamp in milliseconds
+          description: Unix timestamp in milliseconds of the latest complete note update
           example: 1694000000000
         tags:
           type: array
@@ -216,10 +221,9 @@ components:
           type: boolean
           example: false
         color:
-          type: string
-          enum: [default, coral, peach, sand, mint, sage, fog, storm, dusk, blossom, clay, chalk]
+          allOf:
+            - $ref: '#/components/schemas/NoteColor'
           default: default
-          example: default
 
     Tag:
       type: object
@@ -296,10 +300,9 @@ components:
               - $ref: '#/components/schemas/AttachmentDescriptor'
           default: []
         color:
-          type: string
-          enum: [default, coral, peach, sand, mint, sage, fog, storm, dusk, blossom, clay, chalk]
+          allOf:
+            - $ref: '#/components/schemas/NoteColor'
           default: default
-          example: default
 
     UpdateThingRequest:
       type: object
@@ -330,8 +333,8 @@ components:
           type: boolean
           default: false
         color:
-          type: string
-          enum: [default, coral, peach, sand, mint, sage, fog, storm, dusk, blossom, clay, chalk]
+          allOf:
+            - $ref: '#/components/schemas/NoteColor'
           example: coral
 
     SaveSettingsRequest:

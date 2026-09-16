@@ -1161,6 +1161,11 @@ export interface components {
             /** @enum {string} */
             type: "image" | "unknown";
         };
+        /**
+         * @example default
+         * @enum {string}
+         */
+        NoteColor: "default" | "coral" | "peach" | "sand" | "mint" | "sage" | "fog" | "storm" | "dusk" | "blossom" | "clay" | "chalk";
         Thing: {
             /** @example 64f8a12b3c4d5e6f7a8b9c0d */
             _id: string;
@@ -1176,7 +1181,7 @@ export interface components {
              */
             createdAt: number;
             /**
-             * @description Unix timestamp in milliseconds
+             * @description Unix timestamp in milliseconds of the latest complete note update
              * @example 1694000000000
              */
             modifiedAt: number;
@@ -1197,12 +1202,8 @@ export interface components {
             archived: boolean;
             /** @example false */
             sticky: boolean;
-            /**
-             * @default default
-             * @example default
-             * @enum {string}
-             */
-            color?: "default" | "coral" | "peach" | "sand" | "mint" | "sage" | "fog" | "storm" | "dusk" | "blossom" | "clay" | "chalk";
+            /** @default default */
+            color?: components["schemas"]["NoteColor"];
         };
         Tag: {
             /** @example meeting */
@@ -1234,12 +1235,8 @@ export interface components {
             content: string;
             /** @default [] */
             attachments?: (string | components["schemas"]["AttachmentDescriptor"])[];
-            /**
-             * @default default
-             * @example default
-             * @enum {string}
-             */
-            color?: "default" | "coral" | "peach" | "sand" | "mint" | "sage" | "fog" | "storm" | "dusk" | "blossom" | "clay" | "chalk";
+            /** @default default */
+            color?: components["schemas"]["NoteColor"];
         };
         UpdateThingRequest: {
             /** @example Updated note with */
@@ -1254,11 +1251,8 @@ export interface components {
             archived?: boolean;
             /** @default false */
             sticky?: boolean;
-            /**
-             * @example coral
-             * @enum {string}
-             */
-            color?: "default" | "coral" | "peach" | "sand" | "mint" | "sage" | "fog" | "storm" | "dusk" | "blossom" | "clay" | "chalk";
+            /** @example coral */
+            color?: components["schemas"]["NoteColor"];
         };
         SaveSettingsRequest: {
             /**

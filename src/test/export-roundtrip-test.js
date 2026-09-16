@@ -110,7 +110,8 @@ describe('Export and Import Round-Trip Safety Net (RF-107)', function () {
                     .post('/api/things')
                     .send({
                         content: '# Project Roadmap\n\nSprint planning for Q3. #roadmap #planning',
-                        attachments: note1Attachment
+                        attachments: note1Attachment,
+                        color: 'mint'
                     })
                     .expect(201)
                     .end(function (err, res) {
@@ -194,6 +195,9 @@ describe('Export and Import Round-Trip Safety Net (RF-107)', function () {
                 expect(hasRoadmap).to.be(true);
                 expect(hasDocs).to.be(true);
                 expect(hasUnicode).to.be(true);
+                expect(notes.find(function (note) {
+                    return note.content.indexOf('# Project Roadmap') !== -1;
+                }).color).to.equal('mint');
 
                 // Verify tags were correctly extracted and indexed
                 importerAgent

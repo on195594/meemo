@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="composerRef"
     class="note-composer-card"
     :class="{ focused: isFocused || content.trim().length > 0 || attachments.length > 0, dragging: isDragging }"
     :style="{ backgroundColor: 'var(--note-color-' + selectedColor + ')' }"
@@ -59,26 +60,29 @@
     <div v-show="isFocused || content.trim().length > 0 || attachments.length > 0" class="composer-actions">
       <div class="left-actions">
         <!-- Color Picker Popover Button -->
-        <div class="composer-color-wrapper">
+        <div ref="colorPickerWrapperRef" class="composer-color-wrapper">
           <button
+            ref="colorTriggerRef"
             type="button"
             class="btn-icon"
             :class="{ active: showColorPicker }"
             title="Note color"
+            aria-label="Note color"
             aria-haspopup="true"
             :aria-expanded="showColorPicker"
-            @click="showColorPicker = !showColorPicker"
+            @click="toggleColorPicker"
           >
             🎨
           </button>
           <div
             v-if="showColorPicker"
+            ref="colorPaletteRef"
             class="color-palette-popover"
-            role="radiogroup"
+            role="group"
             aria-label="Note color"
           >
             <button
-              v-for="c in NOTE_COLORS"
+              v-for="(c, index) in NOTE_COLORS"
               :key="c.key"
               type="button"
               class="color-swatch-btn"
@@ -86,9 +90,10 @@
               :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
               :title="c.name"
               :aria-label="c.name"
-              role="radio"
-              :aria-checked="selectedColor === c.key"
-              @click="selectedColor = c.key; showColorPicker = false"
+              :aria-pressed="selectedColor === c.key"
+              :tabindex="focusedColorIndex === index ? 0 : -1"
+              @click="selectColor(c.key)"
+              @keydown="handleColorKeydown($event, index)"
             ></button>
           </div>
         </div>
@@ -140,8 +145,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, nextTick, onUnmounted } from 'vue';
 import { api, type AttachmentDescriptor, type NoteColor } from '../api/client';
+import { NOTE_COLORS } from '../constants/noteColors';
 
 const props = defineProps<{
   onSave: (content: string, attachments?: AttachmentDescriptor[], color?: NoteColor) => Promise<{ success: boolean; error?: string }>;
@@ -151,23 +157,13 @@ const emit = defineEmits<{
   (e: 'created'): void;
 }>();
 
-const NOTE_COLORS: { key: NoteColor; name: string }[] = [
-  { key: 'default', name: 'Default' },
-  { key: 'coral', name: 'Coral' },
-  { key: 'peach', name: 'Peach' },
-  { key: 'sand', name: 'Sand' },
-  { key: 'mint', name: 'Mint' },
-  { key: 'sage', name: 'Sage' },
-  { key: 'fog', name: 'Fog' },
-  { key: 'storm', name: 'Storm' },
-  { key: 'dusk', name: 'Dusk' },
-  { key: 'blossom', name: 'Blossom' },
-  { key: 'clay', name: 'Clay' },
-  { key: 'chalk', name: 'Chalk' },
-];
-
 const selectedColor = ref<NoteColor>('default');
 const showColorPicker = ref(false);
+const focusedColorIndex = ref(0);
+const composerRef = ref<HTMLElement | null>(null);
+const colorPickerWrapperRef = ref<HTMLElement | null>(null);
+const colorTriggerRef = ref<HTMLButtonElement | null>(null);
+const colorPaletteRef = ref<HTMLElement | null>(null);
 
 const content = ref('');
 const attachments = ref<AttachmentDescriptor[]>([]);
@@ -191,11 +187,77 @@ function isImageAttachment(att: AttachmentDescriptor): boolean {
 
 function handleBlur() {
   setTimeout(() => {
-    if (!content.value.trim() && attachments.value.length === 0) {
+    if (!content.value.trim() && attachments.value.length === 0 && !showColorPicker.value) {
       isFocused.value = false;
     }
   }, 200);
 }
+
+function focusColor(index: number) {
+  focusedColorIndex.value = index;
+  nextTick(() => {
+    colorPaletteRef.value?.querySelectorAll<HTMLButtonElement>('.color-swatch-btn')[index]?.focus();
+  });
+}
+
+function closeColorPicker(returnFocus = false) {
+  showColorPicker.value = false;
+  document.removeEventListener('pointerdown', handleOutsideColorPicker);
+  if (returnFocus) nextTick(() => colorTriggerRef.value?.focus());
+}
+
+function toggleColorPicker() {
+  if (showColorPicker.value) {
+    closeColorPicker();
+    return;
+  }
+  showColorPicker.value = true;
+  document.addEventListener('pointerdown', handleOutsideColorPicker);
+  const selected = NOTE_COLORS.findIndex((color) => color.key === selectedColor.value);
+  focusColor(selected < 0 ? 0 : selected);
+}
+
+function selectColor(color: NoteColor) {
+  selectedColor.value = color;
+  closeColorPicker(true);
+}
+
+function handleColorKeydown(event: KeyboardEvent, index: number) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeColorPicker(true);
+    return;
+  }
+
+  const columnCount = 4;
+  const offsets: Record<string, number> = {
+    ArrowLeft: -1,
+    ArrowRight: 1,
+    ArrowUp: -columnCount,
+    ArrowDown: columnCount,
+  };
+  if (offsets[event.key] === undefined && event.key !== 'Home' && event.key !== 'End') return;
+
+  event.preventDefault();
+  let nextIndex;
+  if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = NOTE_COLORS.length - 1;
+  else nextIndex = (index + offsets[event.key] + NOTE_COLORS.length) % NOTE_COLORS.length;
+  selectedColor.value = NOTE_COLORS[nextIndex].key;
+  focusColor(nextIndex);
+}
+
+function handleOutsideColorPicker(event: PointerEvent) {
+  const target = event.target as Node;
+  if (showColorPicker.value && !colorPickerWrapperRef.value?.contains(target)) {
+    closeColorPicker();
+    if (!composerRef.value?.contains(target) && !content.value.trim() && attachments.value.length === 0) {
+      isFocused.value = false;
+    }
+  }
+}
+
+onUnmounted(() => document.removeEventListener('pointerdown', handleOutsideColorPicker));
 
 function handleKeyDown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -366,11 +428,12 @@ defineExpose({
   font-family: inherit;
   font-size: 0.95rem;
   line-height: 1.5;
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface);
+  background: transparent;
 }
 
 .composer-textarea::placeholder {
-  color: #a0aec0;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .upload-progress-box {
@@ -382,20 +445,20 @@ defineExpose({
 
 .progress-bar {
   height: 6px;
-  background-color: #edf2f7;
+  background-color: var(--md-sys-color-surface-container-high);
   border-radius: 3px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background-color: #3182ce;
-  transition: width 0.2s ease;
+  background-color: var(--md-sys-color-primary);
+  transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
 .progress-text {
   font-size: 0.75rem;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .composer-attachments {
@@ -404,38 +467,38 @@ defineExpose({
   gap: 0.4rem;
   margin-top: 0.5rem;
   padding-top: 0.4rem;
-  border-top: 1px dashed #edf2f7;
+  border-top: 1px dashed var(--md-sys-color-outline-variant);
 }
 
 .attachment-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  background-color: #edf2f7;
-  border: 1px solid #cbd5e0;
+  background-color: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 12px;
   padding: 0.15rem 0.5rem;
   font-size: 0.8rem;
-  color: #4a5568;
+  color: var(--md-sys-color-on-surface);
 }
 
 .chip-remove {
   background: none;
   border: none;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
   font-size: 0.9rem;
   line-height: 1;
 }
 
 .chip-remove:hover {
-  color: #e53e3e;
+  color: var(--md-sys-color-error);
 }
 
 .composer-error {
-  background-color: #fff5f5;
-  color: #c53030;
-  border: 1px solid #fed7d7;
+  background-color: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-error);
+  border: 1px solid var(--md-sys-color-error);
   border-radius: 4px;
   padding: 0.4rem 0.6rem;
   font-size: 0.85rem;
@@ -448,7 +511,7 @@ defineExpose({
   align-items: center;
   margin-top: 0.75rem;
   padding-top: 0.5rem;
-  border-top: 1px solid #edf2f7;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .left-actions {
@@ -490,7 +553,7 @@ defineExpose({
 }
 
 .btn-icon:hover:not(:disabled) {
-  background-color: rgba(60, 64, 67, 0.08);
+  background-color: var(--md-sys-color-surface-container-high);
 }
 
 .btn-icon.active {
@@ -514,19 +577,22 @@ defineExpose({
   box-shadow: var(--md-sys-elevation-2);
   padding: 8px;
   display: grid;
-  grid-template-columns: repeat(6, 24px);
-  gap: 6px;
+  grid-template-columns: repeat(4, 40px);
+  gap: 4px;
   z-index: 50;
 }
 
 .color-swatch-btn {
-  width: 24px;
-  height: 24px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  border: 1px solid var(--note-border-color);
+  border: 8px solid transparent;
+  background-clip: content-box;
   cursor: pointer;
   padding: 0;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  box-shadow: inset 0 0 0 1px var(--note-border-color);
+  transition: transform var(--md-sys-motion-duration-short) ease,
+              border-color var(--md-sys-motion-duration-short) ease;
 }
 
 .color-swatch-btn:hover,
@@ -536,7 +602,7 @@ defineExpose({
 }
 
 .color-swatch-btn.active {
-  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
 }
 
 .hidden-file-input {
@@ -549,7 +615,7 @@ defineExpose({
 }
 
 .shortcut-hint kbd {
-  background: rgba(60, 64, 67, 0.08);
+  background: var(--md-sys-color-surface-container-high);
   border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
   border-radius: var(--md-sys-shape-corner-xs, 4px);
   padding: 0.1rem 0.35rem;
@@ -593,7 +659,7 @@ defineExpose({
 }
 
 .btn-composer.secondary:hover:not(:disabled) {
-  background-color: rgba(60, 64, 67, 0.08);
+  background-color: var(--md-sys-color-surface-container-high);
 }
 
 .btn-composer:disabled {

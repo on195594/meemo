@@ -31,26 +31,30 @@
       <!-- Action Buttons (when editable and not in edit mode) -->
       <div v-if="canEdit && !isEditing" class="card-actions">
         <!-- Color Picker Popover -->
-        <div class="color-picker-wrapper">
+        <div ref="colorPickerWrapperRef" class="color-picker-wrapper">
           <button
+            ref="colorTriggerRef"
             type="button"
             class="action-btn color-btn"
             :class="{ active: showColorPicker }"
             title="Note color"
+            aria-label="Note color"
             aria-haspopup="true"
             :aria-expanded="showColorPicker"
-            @click="showColorPicker = !showColorPicker"
+            :disabled="isColorSaving"
+            @click="toggleColorPicker"
           >
             🎨
           </button>
           <div
             v-if="showColorPicker"
+            ref="colorPaletteRef"
             class="color-palette-popover"
-            role="radiogroup"
+            role="group"
             aria-label="Note card color"
           >
             <button
-              v-for="c in NOTE_COLORS"
+              v-for="(c, index) in NOTE_COLORS"
               :key="c.key"
               type="button"
               class="color-swatch-btn"
@@ -58,9 +62,11 @@
               :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
               :title="c.name"
               :aria-label="c.name"
-              role="radio"
-              :aria-checked="(thing.color || 'default') === c.key"
+              :aria-pressed="(thing.color || 'default') === c.key"
+              :aria-disabled="isColorSaving"
+              :tabindex="focusedColorIndex === index ? 0 : -1"
               @click="selectColor(c.key)"
+              @keydown="handleColorKeydown($event, index)"
             ></button>
           </div>
         </div>
@@ -119,6 +125,10 @@
         </button>
       </div>
     </header>
+
+    <div v-if="actionError" class="action-error" role="alert">
+      {{ actionError }}
+    </div>
 
     <!-- Normal View: Markdown Content -->
     <template v-if="!isEditing">
@@ -240,35 +250,100 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, onUnmounted } from 'vue';
 import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
+import { NOTE_COLORS } from '../constants/noteColors';
 import { renderMarkdown, highlightKeyword } from '../utils/markdown';
 
-const NOTE_COLORS: { key: NoteColor; name: string }[] = [
-  { key: 'default', name: 'Default' },
-  { key: 'coral', name: 'Coral' },
-  { key: 'peach', name: 'Peach' },
-  { key: 'sand', name: 'Sand' },
-  { key: 'mint', name: 'Mint' },
-  { key: 'sage', name: 'Sage' },
-  { key: 'fog', name: 'Fog' },
-  { key: 'storm', name: 'Storm' },
-  { key: 'dusk', name: 'Dusk' },
-  { key: 'blossom', name: 'Blossom' },
-  { key: 'clay', name: 'Clay' },
-  { key: 'chalk', name: 'Chalk' },
-];
-
 const showColorPicker = ref(false);
+const isColorSaving = ref(false);
+const actionError = ref<string | null>(null);
+const focusedColorIndex = ref(0);
+const colorPickerWrapperRef = ref<HTMLElement | null>(null);
+const colorTriggerRef = ref<HTMLButtonElement | null>(null);
+const colorPaletteRef = ref<HTMLElement | null>(null);
 
-async function selectColor(color: NoteColor) {
+function focusColor(index: number) {
+  focusedColorIndex.value = index;
+  nextTick(() => {
+    colorPaletteRef.value?.querySelectorAll<HTMLButtonElement>('.color-swatch-btn')[index]?.focus();
+  });
+}
+
+function closeColorPicker(returnFocus = false) {
   showColorPicker.value = false;
-  if (props.onSaveEdit) {
-    await props.onSaveEdit(props.thing._id, { color });
-  } else {
-    emit('update', props.thing._id, { color });
+  document.removeEventListener('pointerdown', handleOutsideColorPicker);
+  if (returnFocus) nextTick(() => colorTriggerRef.value?.focus());
+}
+
+function toggleColorPicker() {
+  if (showColorPicker.value) {
+    closeColorPicker();
+    return;
+  }
+  actionError.value = null;
+  showColorPicker.value = true;
+  document.addEventListener('pointerdown', handleOutsideColorPicker);
+  const selected = NOTE_COLORS.findIndex((color) => color.key === (props.thing.color || 'default'));
+  focusColor(selected < 0 ? 0 : selected);
+}
+
+function handleColorKeydown(event: KeyboardEvent, index: number) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeColorPicker(true);
+    return;
+  }
+
+  const columnCount = 4;
+  const offsets: Record<string, number> = {
+    ArrowLeft: -1,
+    ArrowRight: 1,
+    ArrowUp: -columnCount,
+    ArrowDown: columnCount,
+  };
+  if (offsets[event.key] === undefined && event.key !== 'Home' && event.key !== 'End') return;
+
+  event.preventDefault();
+  let nextIndex;
+  if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = NOTE_COLORS.length - 1;
+  else nextIndex = (index + offsets[event.key] + NOTE_COLORS.length) % NOTE_COLORS.length;
+  focusColor(nextIndex);
+}
+
+function handleOutsideColorPicker(event: PointerEvent) {
+  if (showColorPicker.value && !colorPickerWrapperRef.value?.contains(event.target as Node)) {
+    closeColorPicker();
   }
 }
+
+async function selectColor(color: NoteColor, closeAfterSave = true) {
+  if (isColorSaving.value) return;
+  if (color === (props.thing.color || 'default')) {
+    if (closeAfterSave) closeColorPicker(true);
+    return;
+  }
+  actionError.value = null;
+  if (!props.onSaveEdit) {
+    emit('update', props.thing._id, { color });
+    if (closeAfterSave) closeColorPicker(true);
+    return;
+  }
+
+  isColorSaving.value = true;
+  try {
+    const result = await props.onSaveEdit(props.thing._id, { color });
+    if (result.success && closeAfterSave) closeColorPicker(true);
+    else if (!result.success) actionError.value = result.error || 'Failed to update note color';
+  } catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Failed to update note color';
+  } finally {
+    isColorSaving.value = false;
+  }
+}
+
+onUnmounted(() => document.removeEventListener('pointerdown', handleOutsideColorPicker));
 
 const props = withDefaults(
   defineProps<{
@@ -449,7 +524,6 @@ async function confirmDelete() {
   border: 1px solid var(--note-border-color);
   border-radius: var(--md-sys-shape-corner-lg, 16px);
   padding: 1.25rem 1.4rem;
-  margin-bottom: 1rem;
   box-shadow: var(--md-sys-elevation-1);
   transition: box-shadow var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
               border-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
@@ -493,7 +567,7 @@ async function confirmDelete() {
 
 .note-time {
   font-size: 0.825rem;
-  color: #64748b;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .badge {
@@ -504,28 +578,23 @@ async function confirmDelete() {
   line-height: 1.3;
 }
 
-.badge-sticky {
-  background-color: #ebf8ff;
-  color: #2b6cb0;
-  border: 1px solid #bee3f8;
+.badge-sticky,
+.badge-shared {
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .badge-public {
-  background-color: #f0fff4;
-  color: #276749;
-  border: 1px solid #c6f6d5;
-}
-
-.badge-shared {
-  background-color: #faf5ff;
-  color: #6b46c1;
-  border: 1px solid #e9d8fd;
+  background-color: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .badge-archived {
-  background-color: #f7fafc;
-  color: #475569;
-  border: 1px solid #e2e8f0;
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface-variant);
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .card-actions {
@@ -533,7 +602,7 @@ async function confirmDelete() {
   align-items: center;
   gap: 0.3rem;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
 .note-card:hover .card-actions,
@@ -581,7 +650,7 @@ async function confirmDelete() {
 }
 
 .action-btn:hover {
-  background-color: rgba(60, 64, 67, 0.08);
+  background-color: var(--md-sys-color-surface-container-high);
 }
 
 .action-btn.active {
@@ -610,19 +679,22 @@ async function confirmDelete() {
   box-shadow: var(--md-sys-elevation-2);
   padding: 8px;
   display: grid;
-  grid-template-columns: repeat(6, 24px);
-  gap: 6px;
+  grid-template-columns: repeat(4, 40px);
+  gap: 4px;
   z-index: 50;
 }
 
 .color-swatch-btn {
-  width: 24px;
-  height: 24px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  border: 1px solid var(--note-border-color);
+  border: 8px solid transparent;
+  background-clip: content-box;
   cursor: pointer;
   padding: 0;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  box-shadow: inset 0 0 0 1px var(--note-border-color);
+  transition: transform var(--md-sys-motion-duration-short) ease,
+              border-color var(--md-sys-motion-duration-short) ease;
 }
 
 .color-swatch-btn:hover,
@@ -632,7 +704,21 @@ async function confirmDelete() {
 }
 
 .color-swatch-btn.active {
-  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+}
+
+.color-swatch-btn[aria-disabled="true"] {
+  cursor: wait;
+}
+
+.action-error {
+  background-color: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-error);
+  border: 1px solid var(--md-sys-color-error);
+  border-radius: var(--md-sys-shape-corner-xs);
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
 }
 
 .card-body {
@@ -644,17 +730,10 @@ async function confirmDelete() {
 }
 
 .card-body :deep(mark) {
-  background: #fef08a;
-  color: #1f1f1f;
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
   border-radius: 2px;
   padding: 0 2px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .card-body :deep(mark) {
-    background: #635d19;
-    color: #ffffff;
-  }
 }
 
 .card-body :deep(.wikilink) {
@@ -714,7 +793,7 @@ async function confirmDelete() {
 .card-attachments {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
-  border-top: 1px solid #edf2f7;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -725,7 +804,7 @@ async function confirmDelete() {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.85rem;
-  color: #3182ce;
+  color: var(--md-sys-color-primary);
   text-decoration: none;
 }
 
@@ -734,7 +813,7 @@ async function confirmDelete() {
 }
 
 .attachment-size {
-  color: #a0aec0;
+  color: var(--md-sys-color-on-surface-variant);
   font-size: 0.75rem;
 }
 
@@ -750,21 +829,21 @@ async function confirmDelete() {
 }
 
 .tag-pill {
-  background-color: #edf2f7;
+  background-color: var(--md-sys-color-surface-container-high);
   border: 1px solid transparent;
-  color: #4a5568;
+  color: var(--md-sys-color-on-surface-variant);
   font-size: 0.8rem;
   font-weight: 500;
   padding: 0.15rem 0.5rem;
   border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
 .tag-pill:hover {
-  background-color: #e2e8f0;
-  color: #2b6cb0;
-  border-color: #cbd5e0;
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  border-color: var(--md-sys-color-outline-variant);
 }
 
 /* Inline Edit Styles */
@@ -777,24 +856,25 @@ async function confirmDelete() {
 .edit-textarea {
   width: 100%;
   padding: 0.6rem;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 6px;
   font-family: inherit;
   font-size: 0.95rem;
   line-height: 1.5;
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface);
+  background: transparent;
   resize: vertical;
   outline: none;
 }
 
 .edit-textarea:focus {
-  border-color: #3182ce;
+  border-color: var(--md-sys-color-primary);
 }
 
 .edit-error {
-  background-color: #fff5f5;
-  color: #c53030;
-  border: 1px solid #fed7d7;
+  background-color: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-error);
+  border: 1px solid var(--md-sys-color-error);
   border-radius: 4px;
   padding: 0.4rem 0.6rem;
   font-size: 0.85rem;
@@ -811,12 +891,12 @@ async function confirmDelete() {
 
 .edit-hint {
   font-size: 0.75rem;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .edit-hint kbd {
-  background: #edf2f7;
-  border: 1px solid #cbd5e0;
+  background: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 3px;
   padding: 0.1rem 0.3rem;
   font-size: 0.7rem;
@@ -834,28 +914,28 @@ async function confirmDelete() {
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
 .btn-edit.primary {
-  background-color: #2b6cb0;
-  color: #ffffff;
+  background-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
   border: 1px solid transparent;
 }
 
 .btn-edit.primary:hover:not(:disabled) {
-  background-color: #2c5282;
+  opacity: 0.9;
 }
 
 .btn-edit.secondary {
   background-color: transparent;
-  color: #718096;
-  border: 1px solid #cbd5e0;
+  color: var(--md-sys-color-on-surface-variant);
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .btn-edit.secondary:hover:not(:disabled) {
-  background-color: #edf2f7;
-  color: #2d3748;
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
 }
 
 /* Delete Modal */
@@ -920,7 +1000,7 @@ async function confirmDelete() {
 }
 
 .btn-modal.cancel:hover:not(:disabled) {
-  background-color: rgba(60, 64, 67, 0.08);
+  background-color: var(--md-sys-color-surface-container-high);
 }
 
 .btn-modal.confirm-delete {

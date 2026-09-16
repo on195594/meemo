@@ -372,7 +372,7 @@ onUnmounted(() => {
   margin: 0 auto;
   padding: 1.5rem;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  transition: max-width 0.2s;
+  transition: max-width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
 .notes-view.is-wide {
@@ -386,7 +386,7 @@ onUnmounted(() => {
 .loading-state {
   text-align: center;
   padding: 3rem 1rem;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -396,8 +396,8 @@ onUnmounted(() => {
 .spinner {
   width: 28px;
   height: 28px;
-  border: 3px solid #e2e8f0;
-  border-top-color: #3182ce;
+  border: 3px solid var(--md-sys-color-outline-variant);
+  border-top-color: var(--md-sys-color-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -410,10 +410,10 @@ onUnmounted(() => {
   text-align: center;
   margin-top: 3rem;
   padding: 2.5rem 1.5rem;
-  background: #ffffff;
+  background: var(--md-sys-color-surface-container);
   border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  box-shadow: var(--md-sys-elevation-2);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -426,12 +426,12 @@ onUnmounted(() => {
 
 .auth-hero h2 {
   font-size: 1.5rem;
-  color: #1a202c;
+  color: var(--md-sys-color-on-surface);
   margin: 0;
 }
 
 .auth-hero p {
-  color: #4a5568;
+  color: var(--md-sys-color-on-surface-variant);
   max-width: 480px;
   font-size: 1rem;
 }
@@ -443,17 +443,17 @@ onUnmounted(() => {
   font-weight: 600;
   border: none;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
   margin-top: 0.5rem;
 }
 
 .hero-btn.primary {
-  background-color: #2b6cb0;
-  color: #ffffff;
+  background-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
 }
 
 .hero-btn.primary:hover {
-  background-color: #2c5282;
+  opacity: 0.9;
 }
 
 
@@ -462,44 +462,44 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  background-color: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background-color: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline-variant);
   padding: 0.5rem 0.85rem;
   border-radius: 10px;
   margin-bottom: 1.25rem;
   flex-wrap: wrap;
   font-size: 0.85rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-shadow: var(--md-sys-elevation-1);
 }
 
 .filter-label {
   font-weight: 600;
-  color: #64748b;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .filter-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 14px;
   padding: 0.18rem 0.6rem;
   font-size: 0.8rem;
-  color: #334155;
+  color: var(--md-sys-color-on-surface);
   font-weight: 500;
 }
 
 .filter-chip.archive-chip {
-  background-color: #fefce8;
-  border-color: #fef08a;
-  color: #854d0e;
+  background-color: var(--md-sys-color-secondary-container);
+  border-color: var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-secondary-container);
 }
 
 .chip-remove {
   background: none;
   border: none;
-  color: #94a3b8;
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
   font-size: 0.95rem;
   line-height: 1;
@@ -509,13 +509,13 @@ onUnmounted(() => {
 }
 
 .chip-remove:hover {
-  color: #ef4444;
+  color: var(--md-sys-color-error);
 }
 
 .clear-all-link {
   background: none;
   border: none;
-  color: #3182ce;
+  color: var(--md-sys-color-primary);
   cursor: pointer;
   font-size: 0.8rem;
   text-decoration: underline;
@@ -525,7 +525,7 @@ onUnmounted(() => {
 }
 
 .clear-all-link:hover {
-  color: #2b6cb0;
+  opacity: 0.8;
 }
 
 .toast-banner {
@@ -537,15 +537,15 @@ onUnmounted(() => {
 }
 
 .toast-banner.success {
-  background-color: #f0fff4;
-  border: 1px solid #c6f6d5;
-  color: #276749;
+  background-color: var(--md-sys-color-secondary-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-secondary-container);
 }
 
 .toast-banner.info {
-  background-color: #ebf8ff;
-  border: 1px solid #bee3f8;
-  color: #2b6cb0;
+  background-color: var(--md-sys-color-primary-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-primary-container);
 }
 
 @keyframes fadeIn {
@@ -554,8 +554,8 @@ onUnmounted(() => {
 }
 
 .error-banner {
-  background: #fed7d7;
-  color: #9b2c2c;
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-error);
   padding: 0.75rem;
   border-radius: 4px;
   margin-bottom: 1rem;
@@ -616,20 +616,20 @@ onUnmounted(() => {
 }
 
 .load-more-btn {
-  background-color: #ffffff;
-  border: 1px solid #cbd5e0;
+  background-color: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 8px;
   padding: 0.6rem 1.5rem;
   font-size: 0.9rem;
   font-weight: 500;
-  color: #3182ce;
+  color: var(--md-sys-color-primary);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
 .load-more-btn:hover:not(:disabled) {
-  background-color: #ebf8ff;
-  border-color: #3182ce;
+  background-color: var(--md-sys-color-primary-container);
+  border-color: var(--md-sys-color-primary);
 }
 
 .load-more-btn:disabled {
@@ -639,16 +639,16 @@ onUnmounted(() => {
 
 .end-marker {
   font-size: 0.85rem;
-  color: #a0aec0;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .empty-state {
   text-align: center;
-  background: #ffffff;
-  border: 1px dashed #cbd5e1;
+  background: var(--md-sys-color-surface-container);
+  border: 1px dashed var(--md-sys-color-outline-variant);
   border-radius: 12px;
   padding: 3.5rem 1.5rem;
-  color: #64748b;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .empty-icon {
@@ -660,14 +660,14 @@ onUnmounted(() => {
 .empty-state h3 {
   font-size: 1.15rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--md-sys-color-on-surface);
   margin-bottom: 0.5rem;
 }
 
 .clear-filters-btn {
   margin-top: 1.25rem;
-  background-color: #3182ce;
-  color: #ffffff;
+  background-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
   border: none;
   border-radius: 8px;
   padding: 0.5rem 1.25rem;
@@ -678,7 +678,7 @@ onUnmounted(() => {
 }
 
 .clear-filters-btn:hover {
-  background-color: #2b6cb0;
-  box-shadow: 0 2px 6px rgba(49, 130, 206, 0.25);
+  box-shadow: var(--md-sys-elevation-1);
+  opacity: 0.9;
 }
 </style>

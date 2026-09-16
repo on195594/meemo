@@ -4,6 +4,7 @@ var things = require('../../services/thing-service.js'),
     search = require('../../services/search-service.js'),
     asyncHandler = require('../middleware/async-handler.js'),
     responses = require('../responses.js'),
+    noteColors = require('../../note-colors.js'),
     HttpError = responses.HttpError,
     HttpSuccess = responses.HttpSuccess,
     validation = require('../middleware/validate.js'),
@@ -19,13 +20,11 @@ var attachment = z.union([
     }).passthrough()
 ]);
 
-var COLOR_ENUM = ['default', 'coral', 'peach', 'sand', 'mint', 'sage', 'fog', 'storm', 'dusk', 'blossom', 'clay', 'chalk'];
-
 var createBody = z.object({
     content: z.string({ required_error: 'content must be a string', invalid_type_error: 'content must be a string' })
         .min(1, 'content must be a string'),
     attachments: z.array(attachment, { invalid_type_error: 'attachments must be an array' }).default([]),
-    color: z.enum(COLOR_ENUM).optional().default('default')
+    color: z.enum(noteColors.NOTE_COLORS).optional().default('default')
 });
 
 var updateBody = createBody.extend({
@@ -33,7 +32,7 @@ var updateBody = createBody.extend({
     shared: z.boolean({ invalid_type_error: 'shared must be a boolean' }).default(false),
     archived: z.boolean({ invalid_type_error: 'archived must be a boolean' }).default(false),
     sticky: z.boolean({ invalid_type_error: 'sticky must be a boolean' }).default(false),
-    color: z.enum(COLOR_ENUM).optional()
+    color: z.enum(noteColors.NOTE_COLORS).optional()
 });
 
 var listQuery = z.object({

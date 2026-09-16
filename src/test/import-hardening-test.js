@@ -134,6 +134,25 @@ describe('Import Safety and Consistency (RF-106)', function () {
             expect(logic.validateThingsData(badData)).to.contain('invalid attachment identifier');
         });
 
+        it('rejects unsupported note colors without writing partial data', async function () {
+            var data = { things: [
+                { content: 'valid color', color: 'mint' },
+                { content: 'bad color', color: 'red' }
+            ] };
+            expect(logic.validateThingsData(data)).to.contain('invalid color');
+
+            var before = await config.db.collection('things').countDocuments({ ownerId: testUserId });
+            var error;
+            try {
+                await logic.importData(testUserId, data);
+            } catch (importError) {
+                error = importError;
+            }
+            expect(error).to.be.ok();
+            expect(error.message).to.contain('invalid color');
+            expect(await config.db.collection('things').countDocuments({ ownerId: testUserId })).to.equal(before);
+        });
+
         it('accepts valid empty and non-empty things array', function () {
             expect(logic.validateThingsData({ things: [] })).to.be(null);
             expect(logic.validateThingsData({
@@ -141,6 +160,7 @@ describe('Import Safety and Consistency (RF-106)', function () {
                     content: '# Hello world',
                     createdAt: Date.now(),
                     modifiedAt: Date.now(),
+                    color: 'mint',
                     attachments: [{ identifier: 'safe-file.png', fileName: 'safe-file.png', type: 'image/png' }]
                 }]
             })).to.be(null);

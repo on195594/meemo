@@ -43,6 +43,94 @@ describe('NoteCard behavior', () => {
     expect(wrapper.find('.attachment-size').text()).toBe('(2.0 KB)');
   });
 
+  it('uses the note color token for the card background', () => {
+    const wrapper = mount(NoteCard, { props: { thing: note({ color: 'mint' }) } });
+
+    expect(wrapper.attributes('style')).toContain('var(--note-color-mint)');
+  });
+
+  it('saves a selected color', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteCard, { props: { thing: note(), onSaveEdit } });
+
+    await wrapper.get('[title="Note color"]').trigger('click');
+    await wrapper.get('[aria-label="Coral"]').trigger('click');
+    await flushPromises();
+
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { color: 'coral' });
+    expect(wrapper.find('.color-palette-popover').exists()).toBe(false);
+  });
+
+  it('keeps the color picker open and reports a failed color save', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: false, error: 'Color failed' });
+    const wrapper = mount(NoteCard, { props: { thing: note(), onSaveEdit } });
+
+    await wrapper.get('[title="Note color"]').trigger('click');
+    await wrapper.get('[aria-label="Coral"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.get('[role="alert"]').text()).toBe('Color failed');
+    expect(wrapper.find('.color-palette-popover').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('supports arrow navigation and Escape in the color picker', async () => {
+    const wrapper = mount(NoteCard, {
+      attachTo: document.body,
+      props: { thing: note() },
+    });
+
+    const trigger = wrapper.get('[title="Note color"]');
+    await trigger.trigger('click');
+    await flushPromises();
+    const defaultColor = wrapper.get('[aria-label="Default"]');
+    expect(document.activeElement).toBe(defaultColor.element);
+
+    await defaultColor.trigger('keydown', { key: 'ArrowRight' });
+    await flushPromises();
+    expect((document.activeElement as HTMLElement).getAttribute('aria-label')).toBe('Coral');
+    expect(wrapper.emitted('update')).toBeUndefined();
+
+    await wrapper.get('[aria-label="Coral"]').trigger('keydown', { key: 'Escape' });
+    await flushPromises();
+    expect(wrapper.find('.color-palette-popover').exists()).toBe(false);
+    expect(document.activeElement).toBe(trigger.element);
+    wrapper.unmount();
+  });
+
+  it('saves only the color activated after keyboard navigation', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteCard, {
+      attachTo: document.body,
+      props: { thing: note(), onSaveEdit },
+    });
+
+    await wrapper.get('[title="Note color"]').trigger('click');
+    await wrapper.get('[aria-label="Default"]').trigger('keydown', { key: 'ArrowRight' });
+    await wrapper.get('[aria-label="Coral"]').trigger('keydown', { key: 'ArrowRight' });
+    expect(onSaveEdit).not.toHaveBeenCalled();
+
+    await wrapper.get('[aria-label="Peach"]').trigger('click');
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenCalledTimes(1);
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { color: 'peach' });
+    wrapper.unmount();
+  });
+
+  it('closes the color picker on an outside pointer event', async () => {
+    const wrapper = mount(NoteCard, {
+      attachTo: document.body,
+      props: { thing: note() },
+    });
+
+    await wrapper.get('[title="Note color"]').trigger('click');
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    await flushPromises();
+
+    expect(wrapper.find('.color-palette-popover').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it('emits the selected tag', async () => {
     const wrapper = mount(NoteCard, { props: { thing: note() } });
 
