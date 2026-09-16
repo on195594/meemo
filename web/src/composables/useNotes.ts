@@ -157,7 +157,6 @@ export function useNotes() {
           }
         }
       }
-      await fetchTags();
       return { success: true, thing: res.thing };
     } catch (err: any) {
       if (generation !== userGeneration) return { success: false, error: 'Session changed' };
@@ -206,7 +205,6 @@ export function useNotes() {
           });
         }
       }
-      await fetchTags();
       return { success: true, thing: updated };
     } catch (err: any) {
       if (generation !== userGeneration) return { success: false, error: 'Session changed' };
@@ -220,7 +218,6 @@ export function useNotes() {
       await api.things.delete(id);
       if (generation !== userGeneration) return { success: false, error: 'Session changed' };
       things.value = things.value.filter((t) => t._id !== id);
-      await fetchTags();
       return { success: true };
     } catch (err: any) {
       if (generation !== userGeneration) return { success: false, error: 'Session changed' };

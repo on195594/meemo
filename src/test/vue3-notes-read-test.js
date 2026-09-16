@@ -10,25 +10,12 @@ var fs = require('fs'),
 describe('Vue 3 Notes Read Path (RF-503)', function () {
     var webDir = path.resolve(__dirname, '../../web');
 
-    it('implements TagSidebar component in web/src/components/TagSidebar.vue', function () {
-        var filePath = path.join(webDir, 'src/components/TagSidebar.vue');
-        expect(fs.existsSync(filePath)).to.be(true);
-
-        var src = fs.readFileSync(filePath, 'utf8');
-        expect(src).to.contain('sidebar-title');
-        expect(src).to.contain('tag-item');
-        expect(src).to.contain('tag-count');
-        expect(src).to.contain('selectTag');
-        expect(src).to.contain('clearTag');
-    });
-
     it('integrates search, archive toggle, and stream layout in web/src/views/NotesView.vue', function () {
         var filePath = path.join(webDir, 'src/views/NotesView.vue');
         var src = fs.readFileSync(filePath, 'utf8');
 
         expect(src).to.contain('useNotes');
         expect(src).to.contain('NoteCard');
-        expect(src).to.contain('TagSidebar');
         expect(src).to.contain('active-filter-bar');
         expect(src).to.contain('load-more-btn');
         expect(src).to.contain('handleTagClick');

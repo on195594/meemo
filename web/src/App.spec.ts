@@ -142,7 +142,9 @@ describe('App authenticated note flows', () => {
     expect(localStorage.getItem('meemo_has_session')).toBe('1');
 
     state.rejectNextThings = true;
-    await wrapper.get('.header-toggle-btn').trigger('click');
+    await wrapper.get('.user-profile-btn').trigger('click');
+    const archiveBtn = wrapper.findAll('.dropdown-item').find((w) => w.text().includes('Archived'))!;
+    await archiveBtn.trigger('click');
     await settle();
 
     expect(useAuth().user.value).toBeNull();

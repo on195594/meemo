@@ -58,20 +58,6 @@
         </div>
 
         <div class="nav-right">
-          <!-- View Toggle: Active Notes / Archive -->
-          <div v-if="isAuthenticated" class="header-view-toggle">
-            <button
-              type="button"
-              class="header-toggle-btn"
-              :class="{ active: isArchived }"
-              @click="handleToggleArchiveView"
-              :title="isArchived ? 'Back to active notes' : 'View archived notes'"
-            >
-              <span class="btn-icon">{{ isArchived ? '↩️' : '📦' }}</span>
-              <span class="btn-label">{{ isArchived ? 'Active' : 'Archive' }}</span>
-            </button>
-          </div>
-
           <!-- Theme Mode Toggle -->
           <div class="header-theme-toggle">
             <button
@@ -107,6 +93,14 @@
                 <span class="header-username">@{{ user.username }}</span>
               </div>
               <hr class="dropdown-divider" />
+              <button
+                type="button"
+                class="dropdown-item"
+                role="menuitem"
+                @click="handleToggleArchiveFromMenu"
+              >
+                {{ isArchived ? '↩️ Active Notes' : '📦 Archived Notes' }}
+              </button>
               <button
                 type="button"
                 class="dropdown-item"
@@ -282,6 +276,11 @@ function handleToggleArchiveView() {
   const query = { ...route.query, archived: isArchived.value ? undefined : 'true' };
   if (route.path !== '/') router.push({ path: '/', query });
   else router.replace({ query });
+}
+
+function handleToggleArchiveFromMenu() {
+  handleToggleArchiveView();
+  closeUserMenu();
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
@@ -807,7 +806,6 @@ video {
   border-radius: 4px;
 }
 
-.header-view-toggle,
 .header-theme-toggle {
   display: flex;
   align-items: center;

@@ -48,7 +48,6 @@ describe('Vue 3 Feature Parity: Attachments, Settings, Import & Export (RF-505)'
         expect(src).to.contain('Application Title');
         expect(src).to.contain('Wide notes container');
         expect(src).to.contain('Wide navigation toolbar');
-        expect(src).to.contain('Show popular tags sidebar');
         expect(src).to.contain('Custom Background Image');
         expect(src).to.contain('image-picker-box');
         expect(src).to.contain('handleSave');
@@ -105,12 +104,11 @@ describe('Vue 3 Feature Parity: Attachments, Settings, Import & Export (RF-505)'
         expect(src).to.contain('is-wide');
     });
 
-    it('adapts NotesView to wide layout, sidebar visibility, and import events', function () {
+    it('adapts NotesView to wide layout and import events', function () {
         var filePath = path.join(webDir, 'src/views/NotesView.vue');
         var src = fs.readFileSync(filePath, 'utf8');
 
         expect(src).to.contain('is-wide');
-        expect(src).to.contain('settings.showTagSidebar');
         expect(src).to.contain('meemo:imported');
         expect(src).to.contain('handleImportEvent');
     });

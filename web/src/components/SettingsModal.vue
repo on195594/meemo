@@ -61,10 +61,6 @@
               <span>Wide navigation toolbar</span>
             </label>
             <label class="checkbox-label">
-              <input type="checkbox" v-model="formShowTagSidebar" :disabled="isLoading" />
-              <span>Show popular tags sidebar</span>
-            </label>
-            <label class="checkbox-label">
               <input type="checkbox" v-model="formPublicBackground" :disabled="isLoading" />
               <span>Show background image on public feed</span>
             </label>

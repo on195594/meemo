@@ -60,114 +60,101 @@
         {{ error }}
       </div>
 
-      <!-- Main Layout: Cards Stream & Tags Sidebar -->
-      <div class="notes-layout" :class="{ 'no-sidebar': settings.showTagSidebar === false }">
-        <!-- Center Stream Column -->
-        <main class="stream-column">
-          <!-- Note Composer (visible in active notes view) -->
-          <NoteComposer
-            v-if="!isArchived"
-            :on-save="createNote"
-            @created="onNoteCreated"
-          />
+      <!-- Main Cards Stream -->
+      <main class="stream-column">
+        <!-- Note Composer (visible in active notes view) -->
+        <NoteComposer
+          v-if="!isArchived"
+          :on-save="createNote"
+          @created="onNoteCreated"
+        />
 
-          <div v-if="isLoading" class="loading-state">
-            <span class="spinner"></span>
-            <p>Loading notes...</p>
-          </div>
+        <div v-if="isLoading" class="loading-state">
+          <span class="spinner"></span>
+          <p>Loading notes...</p>
+        </div>
 
-          <!-- Notes Card List -->
-          <div v-else-if="things.length > 0" class="notes-card-list">
-            <!-- Pinned Section -->
-            <section v-if="pinnedThings.length > 0" class="notes-section" aria-labelledby="pinned-heading">
-              <h3 id="pinned-heading" class="section-label">PINNED</h3>
-              <div class="m3-notes-masonry">
-                <NoteCard
-                  v-for="thing in pinnedThings"
-                  :key="thing._id"
-                  :thing="thing"
-                  :can-edit="true"
-                  :highlight-query="activeFilter || ''"
-                  :on-save-edit="updateNote"
-                  :on-delete-confirm="handleDeleteNote"
-                  @toggle-sticky="handleToggleSticky"
-                  @toggle-public="handleTogglePublic"
-                  @toggle-archive="handleToggleArchive"
-                  @tag-click="handleTagClick"
-                  @wikilink-click="handleWikilinkClick"
-                />
-              </div>
-            </section>
-
-            <!-- Others Section -->
-            <section v-if="otherThings.length > 0" class="notes-section" aria-labelledby="others-heading">
-              <h3 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">OTHERS</h3>
-              <div class="m3-notes-masonry">
-                <NoteCard
-                  v-for="thing in otherThings"
-                  :key="thing._id"
-                  :thing="thing"
-                  :can-edit="true"
-                  :highlight-query="activeFilter || ''"
-                  :on-save-edit="updateNote"
-                  :on-delete-confirm="handleDeleteNote"
-                  @toggle-sticky="handleToggleSticky"
-                  @toggle-public="handleTogglePublic"
-                  @toggle-archive="handleToggleArchive"
-                  @tag-click="handleTagClick"
-                  @wikilink-click="handleWikilinkClick"
-                />
-              </div>
-            </section>
-
-            <!-- Infinite Scroll / Load More Footer -->
-            <div ref="loadMoreTrigger" class="load-more-section">
-              <button
-                v-if="hasMore"
-                type="button"
-                class="load-more-btn"
-                :disabled="isLoadingMore"
-                @click="fetchMore"
-              >
-                <span v-if="isLoadingMore">Loading more notes...</span>
-                <span v-else>Load more notes</span>
-              </button>
-              <p v-else class="end-marker">
-                — You have reached the end of the notes —
-              </p>
+        <!-- Notes Card List -->
+        <div v-else-if="things.length > 0" class="notes-card-list">
+          <!-- Pinned Section -->
+          <section v-if="pinnedThings.length > 0" class="notes-section" aria-labelledby="pinned-heading">
+            <h3 id="pinned-heading" class="section-label">PINNED</h3>
+            <div class="m3-notes-masonry">
+              <NoteCard
+                v-for="thing in pinnedThings"
+                :key="thing._id"
+                :thing="thing"
+                :can-edit="true"
+                :highlight-query="activeFilter || ''"
+                :on-save-edit="updateNote"
+                :on-delete-confirm="handleDeleteNote"
+                @toggle-sticky="handleToggleSticky"
+                @toggle-public="handleTogglePublic"
+                @toggle-archive="handleToggleArchive"
+                @tag-click="handleTagClick"
+                @wikilink-click="handleWikilinkClick"
+              />
             </div>
-          </div>
+          </section>
 
-          <!-- Empty Results State -->
-          <div v-else class="empty-state">
-            <div class="empty-icon">{{ isArchived ? '📦' : '📝' }}</div>
-            <h3 v-if="hasActiveFilter">No notes found matching your filter</h3>
-            <h3 v-else-if="isArchived">No archived notes</h3>
-            <h3 v-else>No notes found</h3>
-            <p v-if="hasActiveFilter">Try adjusting your search terms or clearing tag filters.</p>
-            <p v-else-if="isArchived">Notes you archive will appear here.</p>
-            <p v-else>Type a note in the composer above to begin!</p>
+          <!-- Others Section -->
+          <section v-if="otherThings.length > 0" class="notes-section" aria-labelledby="others-heading">
+            <h3 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">OTHERS</h3>
+            <div class="m3-notes-masonry">
+              <NoteCard
+                v-for="thing in otherThings"
+                :key="thing._id"
+                :thing="thing"
+                :can-edit="true"
+                :highlight-query="activeFilter || ''"
+                :on-save-edit="updateNote"
+                :on-delete-confirm="handleDeleteNote"
+                @toggle-sticky="handleToggleSticky"
+                @toggle-public="handleTogglePublic"
+                @toggle-archive="handleToggleArchive"
+                @tag-click="handleTagClick"
+                @wikilink-click="handleWikilinkClick"
+              />
+            </div>
+          </section>
+
+          <!-- Infinite Scroll / Load More Footer -->
+          <div ref="loadMoreTrigger" class="load-more-section">
             <button
-              v-if="hasActiveFilter"
+              v-if="hasMore"
               type="button"
-              class="clear-filters-btn"
-              @click="clearRouteFilters"
+              class="load-more-btn"
+              :disabled="isLoadingMore"
+              @click="fetchMore"
             >
-              Clear filters
+              <span v-if="isLoadingMore">Loading more notes...</span>
+              <span v-else>Load more notes</span>
             </button>
+            <p v-else class="end-marker">
+              — You have reached the end of the notes —
+            </p>
           </div>
-        </main>
+        </div>
 
-        <!-- Right Tag Cloud Sidebar -->
-        <aside v-if="settings.showTagSidebar !== false" class="sidebar-column">
-          <TagSidebar
-            :tags="tags"
-            :selected-tag="selectedTag"
-            @select-tag="handleTagClick"
-            @clear-tag="clearTagFilter"
-          />
-        </aside>
-      </div>
+        <!-- Empty Results State -->
+        <div v-else class="empty-state">
+          <div class="empty-icon">{{ isArchived ? '📦' : '📝' }}</div>
+          <h3 v-if="hasActiveFilter">No notes found matching your filter</h3>
+          <h3 v-else-if="isArchived">No archived notes</h3>
+          <h3 v-else>No notes found</h3>
+          <p v-if="hasActiveFilter">Try adjusting your search terms or clearing tag filters.</p>
+          <p v-else-if="isArchived">Notes you archive will appear here.</p>
+          <p v-else>Type a note in the composer above to begin!</p>
+          <button
+            v-if="hasActiveFilter"
+            type="button"
+            class="clear-filters-btn"
+            @click="clearRouteFilters"
+          >
+            Clear filters
+          </button>
+        </div>
+      </main>
     </template>
   </div>
 </template>
@@ -181,7 +168,6 @@ import { useSettings } from '../composables/useSettings';
 import type { Thing } from '../api/client';
 import NoteComposer from '../components/NoteComposer.vue';
 import NoteCard from '../components/NoteCard.vue';
-import TagSidebar from '../components/TagSidebar.vue';
 
 const { isAuthenticated, isLoading: authLoading, isFirstUser } = useAuth();
 const { settings } = useSettings();
@@ -191,7 +177,6 @@ const openAuthModal = inject<((tab?: 'login' | 'register') => void) | undefined>
 
 const {
   things,
-  tags,
   isLoading,
   isLoadingMore,
   hasMore,
@@ -203,7 +188,6 @@ const {
   hasActiveFilter,
   fetchNotes,
   fetchMore,
-  fetchTags,
   setFilters,
   createNote,
   updateNote,
@@ -328,7 +312,6 @@ function setupIntersectionObserver() {
 watch(isAuthenticated, (authenticated) => {
   if (!authenticated) return;
   syncRouteFilters();
-  fetchTags();
 }, { immediate: true });
 
 watch(
@@ -346,7 +329,6 @@ watch(hasMore, () => {
 
 function handleImportEvent() {
   fetchNotes(true);
-  fetchTags();
   showToast('Notes refreshed after import', 'info');
 }
 
@@ -377,10 +359,6 @@ onUnmounted(() => {
 
 .notes-view.is-wide {
   max-width: 96%;
-}
-
-.notes-layout.no-sidebar {
-  grid-template-columns: 1fr;
 }
 
 .loading-state {
@@ -562,21 +540,9 @@ onUnmounted(() => {
 }
 
 /* Layout */
-.notes-layout {
-  display: grid;
-  grid-template-columns: 1fr 240px;
-  gap: 1.5rem;
-  align-items: start;
-}
-
-@media (max-width: 768px) {
-  .notes-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
 .stream-column {
   min-width: 0;
+  width: 100%;
 }
 
 .m3-notes-masonry {
@@ -603,11 +569,6 @@ onUnmounted(() => {
   color: var(--md-sys-color-on-surface-variant, #718096);
   text-transform: uppercase;
   margin: 1.5rem 0 0.75rem 0.25rem;
-}
-
-.sidebar-column {
-  position: sticky;
-  top: 5rem;
 }
 
 .load-more-section {
