@@ -97,17 +97,17 @@
                 type="button"
                 class="dropdown-item"
                 role="menuitem"
-                @click="handleToggleArchiveFromMenu"
+                @click="openSettings"
               >
-                {{ isArchived ? '↩️ Active Notes' : '📦 Archived Notes' }}
+                Settings
               </button>
               <button
                 type="button"
                 class="dropdown-item"
                 role="menuitem"
-                @click="openSettings"
+                @click="handleToggleArchiveFromMenu"
               >
-                Settings
+                {{ isArchived ? 'Active Notes' : 'Archived Notes' }}
               </button>
               <button
                 type="button"
