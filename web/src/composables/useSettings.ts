@@ -1,8 +1,45 @@
 import { ref } from 'vue';
 import { api } from '../api/client';
 
+export type ThemeMode = 'light' | 'dark' | 'auto';
+
+const THEME_STORAGE_KEY = 'meemo_theme';
+
+export function getStoredTheme(): ThemeMode {
+  if (typeof localStorage !== 'undefined') {
+    const val = localStorage.getItem(THEME_STORAGE_KEY);
+    if (val === 'light' || val === 'dark' || val === 'auto') {
+      return val;
+    }
+  }
+  return 'auto';
+}
+
+export function applyThemeToDOM(theme: ThemeMode): void {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  if (theme === 'dark') {
+    root.setAttribute('data-theme', 'dark');
+    root.style.colorScheme = 'dark';
+  } else if (theme === 'light') {
+    root.setAttribute('data-theme', 'light');
+    root.style.colorScheme = 'light';
+  } else {
+    root.removeAttribute('data-theme');
+    root.style.colorScheme = '';
+  }
+}
+
+export function setStoredTheme(theme: ThemeMode): void {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }
+  applyThemeToDOM(theme);
+}
+
 export interface AppSettings {
   title?: string;
+  theme?: ThemeMode;
   wide?: boolean;
   wideNavbar?: boolean;
   publicBackground?: boolean;
@@ -13,6 +50,7 @@ export interface AppSettings {
 
 const defaultSettings: AppSettings = {
   title: 'Meemo',
+  theme: 'auto',
   wide: false,
   wideNavbar: false,
   publicBackground: false,
@@ -29,6 +67,8 @@ let requestGeneration = 0;
 function applyToDOM(s: AppSettings) {
   if (typeof document !== 'undefined') {
     document.title = s.title || 'Meemo';
+    const activeTheme = s.theme || getStoredTheme();
+    applyThemeToDOM(activeTheme);
     if (s.backgroundImageDataUrl) {
       document.body.style.backgroundImage = `url("${s.backgroundImageDataUrl}")`;
       document.body.style.backgroundSize = 'cover';
@@ -37,6 +77,11 @@ function applyToDOM(s: AppSettings) {
       document.body.style.backgroundImage = '';
     }
   }
+}
+
+// Initial theme application
+if (typeof document !== 'undefined') {
+  applyThemeToDOM(getStoredTheme());
 }
 
 export function resetSettingsState(): void {
@@ -56,8 +101,12 @@ export function useSettings() {
       const res = await api.settings.get();
       if (generation !== requestGeneration) return settings.value;
       const loaded = (res.settings || {}) as AppSettings;
+      if (loaded.theme) {
+        setStoredTheme(loaded.theme);
+      }
       settings.value = {
         ...defaultSettings,
+        theme: getStoredTheme(),
         ...loaded,
       };
       applyToDOM(settings.value);
@@ -77,6 +126,9 @@ export function useSettings() {
     const generation = ++requestGeneration;
     isLoading.value = true;
     error.value = null;
+    if (updates.theme) {
+      setStoredTheme(updates.theme);
+    }
     const merged = {
       ...settings.value,
       ...updates,

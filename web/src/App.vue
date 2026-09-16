@@ -72,6 +72,20 @@
             </button>
           </div>
 
+          <!-- Theme Mode Toggle -->
+          <div class="header-theme-toggle">
+            <button
+              type="button"
+              class="header-toggle-btn theme-toggle-btn"
+              @click="cycleTheme"
+              :title="themeTitle"
+              :aria-label="themeTitle"
+            >
+              <span class="btn-icon">{{ themeIcon }}</span>
+              <span class="btn-label">{{ themeLabel }}</span>
+            </button>
+          </div>
+
           <div class="nav-auth">
             <!-- Authenticated User Profile Dropdown -->
             <div v-if="isAuthenticated && user" class="user-menu-wrapper">
@@ -213,7 +227,7 @@
 import { ref, computed, onMounted, onUnmounted, provide, watch, defineAsyncComponent } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuth } from './composables/useAuth';
-import { useSettings } from './composables/useSettings';
+import { useSettings, type ThemeMode, getStoredTheme, setStoredTheme } from './composables/useSettings';
 import LoginModal from './components/LoginModal.vue';
 
 const router = useRouter();
@@ -296,7 +310,49 @@ const {
   dismissSessionExpired,
 } = useAuth();
 
-const { settings, loadSettings } = useSettings();
+const { settings, loadSettings, saveSettings } = useSettings();
+
+const currentTheme = ref<ThemeMode>(getStoredTheme());
+
+watch(() => settings.value.theme, (newTheme) => {
+  if (newTheme && newTheme !== currentTheme.value) {
+    currentTheme.value = newTheme;
+    setStoredTheme(newTheme);
+  }
+});
+
+const themeIcon = computed(() => {
+  if (currentTheme.value === 'dark') return '🌙';
+  if (currentTheme.value === 'light') return '☀️';
+  return '🌓';
+});
+
+const themeLabel = computed(() => {
+  if (currentTheme.value === 'dark') return 'Dark';
+  if (currentTheme.value === 'light') return 'Light';
+  return 'Auto';
+});
+
+const themeTitle = computed(() => {
+  if (currentTheme.value === 'dark') return 'Theme: Dark (click to switch to Light)';
+  if (currentTheme.value === 'light') return 'Theme: Light (click to switch to Auto)';
+  return 'Theme: Auto (click to switch to Dark)';
+});
+
+const THEME_CYCLE: Record<ThemeMode, ThemeMode> = {
+  auto: 'dark',
+  dark: 'light',
+  light: 'auto',
+};
+
+function cycleTheme() {
+  const nextTheme = THEME_CYCLE[currentTheme.value] || 'dark';
+  currentTheme.value = nextTheme;
+  setStoredTheme(nextTheme);
+  if (isAuthenticated.value) {
+    saveSettings({ theme: nextTheme });
+  }
+}
 
 const showAuthModal = ref(false);
 const authModalTab = ref<'login' | 'register'>('login');
@@ -556,7 +612,7 @@ video {
   align-items: center;
   gap: 0.5rem;
   background: none;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
   padding: 0.3rem 0.6rem;
   border-radius: 20px;
   cursor: pointer;
@@ -564,7 +620,7 @@ video {
 }
 
 .user-profile-btn:hover {
-  border-color: #cbd5e0;
+  border-color: var(--md-sys-color-outline, #cbd5e0);
 }
 
 .user-avatar {
@@ -573,8 +629,8 @@ video {
   align-items: center;
   width: 26px;
   height: 26px;
-  background-color: #3182ce;
-  color: #ffffff;
+  background-color: var(--md-sys-color-primary, #3182ce);
+  color: var(--md-sys-color-on-primary, #ffffff);
   border-radius: 50%;
   font-size: 0.8rem;
   font-weight: 600;
@@ -583,12 +639,12 @@ video {
 .user-name {
   font-size: 0.9rem;
   font-weight: 500;
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface, #2d3748);
 }
 
 .caret-icon {
   font-size: 0.65rem;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
 }
 
 .user-dropdown-menu {
@@ -596,10 +652,10 @@ video {
   right: 0;
   top: calc(100% + 0.5rem);
   width: 180px;
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
+  background-color: var(--md-sys-color-surface-container, #ffffff);
+  border: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--md-sys-elevation-2, 0 4px 12px rgba(0, 0, 0, 0.1));
   padding: 0.5rem 0;
   display: flex;
   flex-direction: column;
@@ -615,17 +671,17 @@ video {
 .header-name {
   font-weight: 600;
   font-size: 0.9rem;
-  color: #1a202c;
+  color: var(--md-sys-color-on-surface, #1a202c);
 }
 
 .header-username {
   font-size: 0.8rem;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
 }
 
 .dropdown-divider {
   border: none;
-  border-top: 1px solid #edf2f7;
+  border-top: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
   margin: 0.4rem 0;
 }
 
@@ -633,7 +689,7 @@ video {
   display: block;
   padding: 0.4rem 1rem;
   font-size: 0.9rem;
-  color: #4a5568;
+  color: var(--md-sys-color-on-surface, #4a5568);
   text-decoration: none;
   text-align: left;
   background: none;
@@ -643,17 +699,17 @@ video {
 }
 
 .dropdown-item:hover {
-  background-color: #f7fafc;
-  color: #2b6cb0;
+  background-color: var(--md-sys-color-surface-container-high, #f7fafc);
+  color: var(--md-sys-color-primary, #2b6cb0);
 }
 
 .dropdown-item.logout-btn {
-  color: #e53e3e;
+  color: var(--md-sys-color-error, #e53e3e);
 }
 
 .dropdown-item.logout-btn:hover {
-  background-color: #fff5f5;
-  color: #c53030;
+  background-color: var(--md-sys-color-error-container, #fff5f5);
+  color: var(--md-sys-color-on-error, #c53030);
 }
 
 /* Header layout & search bar styles */
@@ -751,7 +807,8 @@ video {
   border-radius: 4px;
 }
 
-.header-view-toggle {
+.header-view-toggle,
+.header-theme-toggle {
   display: flex;
   align-items: center;
 }
@@ -760,28 +817,28 @@ video {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  background-color: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background-color: var(--md-sys-color-surface-container-low, #f8fafc);
+  border: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
   border-radius: 20px;
   padding: 0.32rem 0.75rem;
   font-size: 0.825rem;
   font-weight: 500;
-  color: #475569;
+  color: var(--md-sys-color-on-surface-variant, #475569);
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
 }
 
 .header-toggle-btn:hover {
-  background-color: #edf2f7;
-  border-color: #cbd5e1;
-  color: #1e293b;
+  background-color: var(--md-sys-color-surface-container-high, #edf2f7);
+  border-color: var(--md-sys-color-outline, #cbd5e1);
+  color: var(--md-sys-color-on-surface, #1e293b);
 }
 
 .header-toggle-btn.active {
-  background-color: #ebf8ff;
-  border-color: #90cdf4;
-  color: #2b6cb0;
+  background-color: var(--md-sys-color-primary-container, #ebf8ff);
+  border-color: var(--md-sys-color-primary, #90cdf4);
+  color: var(--md-sys-color-on-primary-container, #2b6cb0);
   font-weight: 600;
 }
 

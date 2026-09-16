@@ -21,7 +21,7 @@
           {{ errorMessage }}
         </div>
 
-        <!-- Section: General / Title -->
+        <!-- Section: General / Title & Theme -->
         <div class="form-group">
           <label for="settings-title-input" class="form-label">Application Title</label>
           <input
@@ -32,6 +32,20 @@
             placeholder="Meemo"
             :disabled="isLoading"
           />
+        </div>
+
+        <div class="form-group">
+          <label for="settings-theme-select" class="form-label">Theme Mode</label>
+          <select
+            id="settings-theme-select"
+            v-model="formTheme"
+            class="form-select"
+            :disabled="isLoading"
+          >
+            <option value="auto">System (Auto)</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
         </div>
 
         <!-- Section: Layout & Display -->
@@ -111,7 +125,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { useSettings } from '../composables/useSettings';
+import { useSettings, type ThemeMode, getStoredTheme, setStoredTheme } from '../composables/useSettings';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -125,6 +139,7 @@ const emit = defineEmits<{
 const { settings, isLoading, saveSettings } = useSettings();
 
 const formTitle = ref('Meemo');
+const formTheme = ref<ThemeMode>('auto');
 const formWide = ref(false);
 const formWideNavbar = ref(false);
 const formShowTagSidebar = ref(true);
@@ -141,6 +156,7 @@ watch(
     if (open) {
       errorMessage.value = null;
       formTitle.value = settings.value.title || 'Meemo';
+      formTheme.value = settings.value.theme || getStoredTheme();
       formWide.value = !!settings.value.wide;
       formWideNavbar.value = !!settings.value.wideNavbar;
       formShowTagSidebar.value = settings.value.showTagSidebar !== false;
@@ -194,8 +210,10 @@ function handleClose() {
 
 async function handleSave() {
   errorMessage.value = null;
+  setStoredTheme(formTheme.value);
   const result = await saveSettings({
     title: formTitle.value.trim() || 'Meemo',
+    theme: formTheme.value,
     wide: formWide.value,
     wideNavbar: formWideNavbar.value,
     showTagSidebar: formShowTagSidebar.value,
@@ -227,11 +245,12 @@ async function handleSave() {
 }
 
 .modal-card {
-  background: #ffffff;
+  background: var(--md-sys-color-surface-container, #ffffff);
+  border: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
   border-radius: 10px;
   width: 100%;
   max-width: 500px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   max-height: 90vh;
   display: flex;
@@ -243,13 +262,13 @@ async function handleSave() {
   justify-content: space-between;
   align-items: center;
   padding: 1.25rem 1.5rem 0.75rem;
-  border-bottom: 1px solid #edf2f7;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
 }
 
 .modal-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1a202c;
+  color: var(--md-sys-color-on-surface, #1a202c);
   margin: 0;
 }
 
@@ -258,14 +277,14 @@ async function handleSave() {
   border: none;
   font-size: 1.5rem;
   line-height: 1;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
   cursor: pointer;
   padding: 0.25rem;
   border-radius: 4px;
 }
 
 .close-btn:hover {
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface, #2d3748);
 }
 
 .settings-form {
@@ -278,9 +297,9 @@ async function handleSave() {
 
 .error-banner {
   padding: 0.6rem 0.8rem;
-  background-color: #fff5f5;
-  border: 1px solid #fed7d7;
-  color: #c53030;
+  background-color: var(--md-sys-color-error-container, #fff5f5);
+  border: 1px solid var(--md-sys-color-error, #fed7d7);
+  color: var(--md-sys-color-on-error, #c53030);
   border-radius: 6px;
   font-size: 0.875rem;
 }
@@ -294,19 +313,23 @@ async function handleSave() {
 .form-label {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #4a5568;
+  color: var(--md-sys-color-on-surface, #4a5568);
 }
 
-.form-input {
+.form-input,
+.form-select {
   padding: 0.5rem 0.75rem;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
   border-radius: 6px;
   font-size: 0.95rem;
   outline: none;
+  background-color: var(--md-sys-color-surface-container-low, #ffffff);
+  color: var(--md-sys-color-on-surface, #1f1f1f);
 }
 
-.form-input:focus {
-  border-color: #3182ce;
+.form-input:focus,
+.form-select:focus {
+  border-color: var(--md-sys-color-primary, #3182ce);
 }
 
 .checkbox-list {
@@ -321,30 +344,30 @@ async function handleSave() {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.9rem;
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface, #2d3748);
   cursor: pointer;
 }
 
 .image-picker-box {
   width: 100%;
   height: 90px;
-  border: 2px dashed #cbd5e0;
+  border: 2px dashed var(--md-sys-color-outline-variant, #cbd5e0);
   border-radius: 8px;
   display: flex;
   justify-content: center;
   align-items: center;
   cursor: pointer;
-  background-color: #f7fafc;
+  background-color: var(--md-sys-color-surface-container-low, #f7fafc);
   transition: border-color 0.2s;
 }
 
 .image-picker-box:hover {
-  border-color: #3182ce;
+  border-color: var(--md-sys-color-primary, #3182ce);
 }
 
 .picker-placeholder {
   font-size: 0.85rem;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
 }
 
 .hidden-file-input {
@@ -358,7 +381,7 @@ async function handleSave() {
 .btn-clear-bg {
   background: none;
   border: none;
-  color: #e53e3e;
+  color: var(--md-sys-color-error, #e53e3e);
   font-size: 0.8rem;
   cursor: pointer;
   text-decoration: underline;
@@ -371,7 +394,7 @@ async function handleSave() {
   gap: 0.5rem;
   margin-top: 0.5rem;
   padding-top: 0.75rem;
-  border-top: 1px solid #edf2f7;
+  border-top: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
 }
 
 .btn-modal {
@@ -384,23 +407,23 @@ async function handleSave() {
 }
 
 .btn-modal.primary {
-  background-color: #2b6cb0;
-  color: #ffffff;
+  background-color: var(--md-sys-color-primary, #2b6cb0);
+  color: var(--md-sys-color-on-primary, #ffffff);
   border: 1px solid transparent;
 }
 
 .btn-modal.primary:hover:not(:disabled) {
-  background-color: #2c5282;
+  opacity: 0.9;
 }
 
 .btn-modal.secondary {
-  background-color: #edf2f7;
-  color: #4a5568;
-  border: 1px solid #cbd5e0;
+  background-color: var(--md-sys-color-surface-container-high, #edf2f7);
+  color: var(--md-sys-color-on-surface, #4a5568);
+  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
 }
 
 .btn-modal.secondary:hover:not(:disabled) {
-  background-color: #e2e8f0;
+  background-color: var(--md-sys-color-surface-container, #e2e8f0);
 }
 
 .btn-modal:disabled {

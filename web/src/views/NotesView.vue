@@ -81,7 +81,7 @@
             <!-- Pinned Section -->
             <section v-if="pinnedThings.length > 0" class="notes-section" aria-labelledby="pinned-heading">
               <h3 id="pinned-heading" class="section-label">PINNED</h3>
-              <div class="m3-notes-grid">
+              <div class="m3-notes-masonry">
                 <NoteCard
                   v-for="thing in pinnedThings"
                   :key="thing._id"
@@ -102,7 +102,7 @@
             <!-- Others Section -->
             <section v-if="otherThings.length > 0" class="notes-section" aria-labelledby="others-heading">
               <h3 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">OTHERS</h3>
-              <div class="m3-notes-grid">
+              <div class="m3-notes-masonry">
                 <NoteCard
                   v-for="thing in otherThings"
                   :key="thing._id"
@@ -579,17 +579,17 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.m3-notes-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
-  align-items: start;
+.m3-notes-masonry {
+  column-width: 280px;
+  column-gap: 1rem;
 }
 
-@media (max-width: 600px) {
-  .m3-notes-grid {
-    grid-template-columns: 1fr;
-  }
+.m3-notes-masonry > * {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 1rem;
+  display: inline-block;
+  width: 100%;
 }
 
 .notes-section {

@@ -178,4 +178,41 @@ describe('App authenticated note flows', () => {
     expect(wrapper.text()).toContain('B private note');
     expect(wrapper.text()).not.toContain('A private note');
   });
+
+  it('cycles theme between auto, dark, and light and updates document theme attribute', async () => {
+    const { fetchMock } = backend();
+    const rendered = await renderApp(fetchMock);
+    wrapper = rendered.wrapper;
+
+    const themeBtn = wrapper.get('.theme-toggle-btn');
+    expect(themeBtn.text()).toContain('Auto');
+    expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+
+    await themeBtn.trigger('click');
+    await settle();
+    expect(themeBtn.text()).toContain('Dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(localStorage.getItem('meemo_theme')).toBe('dark');
+
+    await themeBtn.trigger('click');
+    await settle();
+    expect(themeBtn.text()).toContain('Light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(localStorage.getItem('meemo_theme')).toBe('light');
+
+    await themeBtn.trigger('click');
+    await settle();
+    expect(themeBtn.text()).toContain('Auto');
+    expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+    expect(localStorage.getItem('meemo_theme')).toBe('auto');
+  });
+
+  it('renders notes inside a masonry layout', async () => {
+    const { fetchMock } = backend();
+    const rendered = await renderApp(fetchMock);
+    wrapper = rendered.wrapper;
+
+    expect(wrapper.find('.m3-notes-masonry').exists()).toBe(true);
+    expect(wrapper.find('.note-card').exists()).toBe(true);
+  });
 });
