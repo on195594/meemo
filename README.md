@@ -71,7 +71,7 @@ docker compose up --build -d
 
 ## Development
 
-Requirements: Node.js 20 or newer, npm, and Docker.
+Requirements: Node.js 24 or newer, npm, and Docker.
 
 ```sh
 npm ci

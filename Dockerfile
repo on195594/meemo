@@ -1,4 +1,4 @@
-ARG ALPINE_VERSION=3.20
+ARG ALPINE_VERSION=3.24
 
 FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS web-builder
 RUN apk add --no-cache nodejs npm
