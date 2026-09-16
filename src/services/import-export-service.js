@@ -98,7 +98,8 @@ function exportData(userId, callback) {
                     modifiedAt: thing.modifiedAt,
                     content: thing.content,
                     externalContent: thing.externalContent || [],
-                    attachments: thing.attachments || []
+                    attachments: thing.attachments || [],
+                    color: thing.color || 'default'
                 };
             })
         };
@@ -180,9 +181,10 @@ async function insertImportedData(userId, data, state) {
         if (typeof modifiedAt === 'string') modifiedAt = (new Date(modifiedAt)).getTime();
         if (typeof modifiedAt !== 'number' || isNaN(modifiedAt)) modifiedAt = createdAt;
 
+        var color = typeof thing.color === 'string' ? thing.color : 'default';
         var result = await things.insertFull(userId, thing.content, tagObjects,
             Array.isArray(thing.attachments) ? thing.attachments : [],
-            Array.isArray(thing.externalContent) ? thing.externalContent : [], createdAt, modifiedAt);
+            Array.isArray(thing.externalContent) ? thing.externalContent : [], createdAt, modifiedAt, color);
         if (!result || !result._id) throw new Error('no result returned');
         state.thingIds.push(result._id);
         await things.get(userId, result._id);

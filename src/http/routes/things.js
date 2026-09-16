@@ -19,17 +19,21 @@ var attachment = z.union([
     }).passthrough()
 ]);
 
+var COLOR_ENUM = ['default', 'coral', 'peach', 'sand', 'mint', 'sage', 'fog', 'storm', 'dusk', 'blossom', 'clay', 'chalk'];
+
 var createBody = z.object({
     content: z.string({ required_error: 'content must be a string', invalid_type_error: 'content must be a string' })
         .min(1, 'content must be a string'),
-    attachments: z.array(attachment, { invalid_type_error: 'attachments must be an array' }).default([])
+    attachments: z.array(attachment, { invalid_type_error: 'attachments must be an array' }).default([]),
+    color: z.enum(COLOR_ENUM).optional().default('default')
 });
 
 var updateBody = createBody.extend({
     public: z.boolean({ invalid_type_error: 'public must be a boolean' }).default(false),
     shared: z.boolean({ invalid_type_error: 'shared must be a boolean' }).default(false),
     archived: z.boolean({ invalid_type_error: 'archived must be a boolean' }).default(false),
-    sticky: z.boolean({ invalid_type_error: 'sticky must be a boolean' }).default(false)
+    sticky: z.boolean({ invalid_type_error: 'sticky must be a boolean' }).default(false),
+    color: z.enum(COLOR_ENUM).optional()
 });
 
 var listQuery = z.object({
@@ -58,14 +62,14 @@ async function get(req, res, next) {
 }
 
 async function add(req, res, next) {
-    var result = await things.add(req.user.id, req.body.content, req.body.attachments);
+    var result = await things.add(req.user.id, req.body.content, req.body.attachments, req.body.color);
     next(new HttpSuccess(201, { thing: result }));
 }
 
 async function put(req, res, next) {
     try {
         var result = await things.put(req.user.id, req.params.id, req.body.content, req.body.attachments,
-            req.body.public, req.body.shared, req.body.archived, req.body.sticky);
+            req.body.public, req.body.shared, req.body.archived, req.body.sticky, req.body.color);
         next(new HttpSuccess(201, { thing: result }));
     } catch (error) {
         if (error.message === 'not found') throw new HttpError(404, 'not found');

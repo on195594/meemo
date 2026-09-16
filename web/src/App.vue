@@ -401,8 +401,8 @@ onUnmounted(() => {
 }
 
 body {
-  background-color: #f7fafc;
-  color: #2d3748;
+  background-color: var(--md-sys-color-surface, #f8fafd);
+  color: var(--md-sys-color-on-surface, #1f1f1f);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   line-height: 1.6;
   min-height: 100vh;
@@ -465,8 +465,8 @@ video {
 }
 
 .app-nav {
-  background-color: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+  background-color: var(--md-sys-color-surface, #ffffff);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -674,28 +674,28 @@ video {
   position: relative;
   display: flex;
   align-items: center;
-  background-color: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  border-radius: 20px;
-  padding: 0.25rem 0.75rem;
-  transition: all 0.2s ease;
+  background-color: var(--md-sys-color-surface-container-high, #e9eef6);
+  border: 1px solid transparent;
+  border-radius: var(--md-sys-shape-corner-xl, 24px);
+  padding: 0.35rem 0.85rem;
+  transition: all var(--md-sys-motion-duration-short) ease;
 }
 
 .header-search-box:hover {
-  background-color: #eef2f6;
-  border-color: #cbd5e1;
+  background-color: var(--md-sys-color-surface-container-high, #e2e8f0);
+  box-shadow: var(--md-sys-elevation-1);
 }
 
 .header-search-box.focused {
-  background-color: #ffffff;
-  border-color: #3182ce;
-  box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.15);
+  background-color: var(--md-sys-color-surface-container, #ffffff);
+  border-color: var(--md-sys-color-primary);
+  box-shadow: var(--md-sys-elevation-2), 0 0 0 2px var(--md-sys-color-primary-container);
 }
 
 .header-search-icon {
   font-size: 0.85rem;
   margin-right: 0.45rem;
-  color: #64748b;
+  color: var(--md-sys-color-on-surface-variant, #64748b);
   flex-shrink: 0;
   line-height: 1;
 }
@@ -705,7 +705,7 @@ video {
   border: none;
   background: transparent;
   font-size: 0.875rem;
-  color: #1e293b;
+  color: var(--md-sys-color-on-surface, #1e293b);
   outline: none;
   padding: 0.2rem 0;
 }

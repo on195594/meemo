@@ -6,6 +6,7 @@
       'is-archived': thing.archived,
       'is-editing': isEditing
     }"
+    :style="{ backgroundColor: 'var(--note-color-' + (thing.color || 'default') + ')' }"
   >
     <!-- Card Header / Meta & Action Buttons -->
     <header class="card-header">
@@ -29,6 +30,41 @@
 
       <!-- Action Buttons (when editable and not in edit mode) -->
       <div v-if="canEdit && !isEditing" class="card-actions">
+        <!-- Color Picker Popover -->
+        <div class="color-picker-wrapper">
+          <button
+            type="button"
+            class="action-btn color-btn"
+            :class="{ active: showColorPicker }"
+            title="Note color"
+            aria-haspopup="true"
+            :aria-expanded="showColorPicker"
+            @click="showColorPicker = !showColorPicker"
+          >
+            🎨
+          </button>
+          <div
+            v-if="showColorPicker"
+            class="color-palette-popover"
+            role="radiogroup"
+            aria-label="Note card color"
+          >
+            <button
+              v-for="c in NOTE_COLORS"
+              :key="c.key"
+              type="button"
+              class="color-swatch-btn"
+              :class="{ active: (thing.color || 'default') === c.key }"
+              :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
+              :title="c.name"
+              :aria-label="c.name"
+              role="radio"
+              :aria-checked="(thing.color || 'default') === c.key"
+              @click="selectColor(c.key)"
+            ></button>
+          </div>
+        </div>
+
         <!-- Sticky Toggle -->
         <button
           type="button"
@@ -205,8 +241,34 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue';
-import type { Thing, AttachmentDescriptor } from '../api/client';
+import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
 import { renderMarkdown, highlightKeyword } from '../utils/markdown';
+
+const NOTE_COLORS: { key: NoteColor; name: string }[] = [
+  { key: 'default', name: 'Default' },
+  { key: 'coral', name: 'Coral' },
+  { key: 'peach', name: 'Peach' },
+  { key: 'sand', name: 'Sand' },
+  { key: 'mint', name: 'Mint' },
+  { key: 'sage', name: 'Sage' },
+  { key: 'fog', name: 'Fog' },
+  { key: 'storm', name: 'Storm' },
+  { key: 'dusk', name: 'Dusk' },
+  { key: 'blossom', name: 'Blossom' },
+  { key: 'clay', name: 'Clay' },
+  { key: 'chalk', name: 'Chalk' },
+];
+
+const showColorPicker = ref(false);
+
+async function selectColor(color: NoteColor) {
+  showColorPicker.value = false;
+  if (props.onSaveEdit) {
+    await props.onSaveEdit(props.thing._id, { color });
+  } else {
+    emit('update', props.thing._id, { color });
+  }
+}
 
 const props = withDefaults(
   defineProps<{
@@ -383,34 +445,34 @@ async function confirmDelete() {
 
 <style scoped>
 .note-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  background-color: var(--note-color-default);
+  border: 1px solid var(--note-border-color);
+  border-radius: var(--md-sys-shape-corner-lg, 16px);
   padding: 1.25rem 1.4rem;
   margin-bottom: 1rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+  box-shadow: var(--md-sys-elevation-1);
+  transition: box-shadow var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
+              border-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
+              background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
   position: relative;
 }
 
 .note-card:hover {
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
-  border-color: #cbd5e1;
+  box-shadow: var(--md-sys-elevation-2);
+  border-color: var(--note-border-hover);
 }
 
 .note-card.is-sticky {
-  border-left: 4px solid #3182ce;
-  background-color: #fcfdfd;
+  border-left: 4px solid var(--md-sys-color-primary);
 }
 
 .note-card.is-archived {
   opacity: 0.85;
-  background-color: #fafbfc;
 }
 
 .note-card.is-editing {
-  border-color: #3182ce;
-  box-shadow: 0 0 0 2px rgba(49, 130, 206, 0.15);
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 2px var(--md-sys-color-primary-container);
 }
 
 .card-header {
@@ -488,54 +550,120 @@ async function confirmDelete() {
 .action-btn {
   background: none;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-full, 9999px);
   font-size: 0.95rem;
   cursor: pointer;
-  padding: 0.2rem 0.35rem;
+  padding: 0.35rem 0.45rem;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  position: relative;
+  transition: all var(--md-sys-motion-duration-short) ease;
+}
+
+/* Expand touch target to min 48x48px on pointer/touch */
+.action-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 48px;
+  min-height: 48px;
+  width: 100%;
+  height: 100%;
+}
+
+.action-btn:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
 .action-btn:hover {
-  background-color: #f1f5f9;
-  border-color: #e2e8f0;
+  background-color: rgba(60, 64, 67, 0.08);
 }
 
 .action-btn.active {
-  background-color: #ebf8ff;
-  border-color: #bee3f8;
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
 }
 
 .action-btn.delete-btn:hover {
-  background-color: #fff5f5;
-  border-color: #fed7d7;
+  background-color: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-error);
+}
+
+.color-picker-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.color-palette-popover {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  background: var(--md-sys-color-surface-container, #ffffff);
+  border: 1px solid var(--md-sys-color-outline-variant, #c4c7c5);
+  border-radius: var(--md-sys-shape-corner-md, 12px);
+  box-shadow: var(--md-sys-elevation-2);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(6, 24px);
+  gap: 6px;
+  z-index: 50;
+}
+
+.color-swatch-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--note-border-color);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.color-swatch-btn:hover,
+.color-swatch-btn:focus-visible {
+  transform: scale(1.15);
+  outline: 2px solid var(--md-sys-color-primary);
+}
+
+.color-swatch-btn.active {
+  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
 }
 
 .card-body {
   font-size: 0.95rem;
   line-height: 1.6;
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface, #1f1f1f);
   word-break: break-word;
   overflow-wrap: break-word;
 }
 
 .card-body :deep(mark) {
   background: #fef08a;
-  color: inherit;
+  color: #1f1f1f;
   border-radius: 2px;
-  padding: 0 1px;
+  padding: 0 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .card-body :deep(mark) {
+    background: #635d19;
+    color: #ffffff;
+  }
 }
 
 .card-body :deep(.wikilink) {
   display: inline;
-  color: #4f46e5;
-  background-color: #eef2ff;
-  border: 1px solid #c7d2fe;
-  border-radius: 4px;
-  padding: 1px 5px;
+  color: var(--md-sys-color-primary);
+  background-color: var(--md-sys-color-primary-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 6px;
+  padding: 1px 6px;
   font-size: 0.9em;
   font-weight: 500;
   text-decoration: none;
@@ -544,9 +672,7 @@ async function confirmDelete() {
 }
 
 .card-body :deep(.wikilink):hover {
-  background-color: #e0e7ff;
-  border-color: #a5b4fc;
-  color: #3730a3;
+  opacity: 0.85;
   text-decoration: underline;
 }
 
@@ -571,9 +697,10 @@ async function confirmDelete() {
 .card-body :deep(pre) {
   max-width: 100%;
   overflow-x: auto;
-  background: #f7fafc;
-  border: 1px solid #edf2f7;
-  border-radius: 6px;
+  background-color: var(--md-sys-color-surface-container-high, #e9eef6);
+  color: var(--md-sys-color-on-surface, #1f1f1f);
+  border: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
+  border-radius: var(--md-sys-shape-corner-md, 12px);
   padding: 0.75rem 1rem;
   margin: 0.75rem 0;
 }
@@ -744,57 +871,64 @@ async function confirmDelete() {
 }
 
 .delete-modal-card {
-  background: #ffffff;
-  border-radius: 8px;
-  padding: 1.5rem;
-  max-width: 400px;
-  width: 100%;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  background: var(--md-sys-color-surface-container-high, #ffffff);
+  border-radius: var(--md-sys-shape-corner-2xl, 28px);
+  padding: 1.75rem;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: var(--md-sys-elevation-3);
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
 }
 
 .delete-modal-card h3 {
-  font-size: 1.15rem;
-  color: #e53e3e;
-  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+  color: var(--md-sys-color-error, #e53e3e);
+  margin-bottom: 0.75rem;
 }
 
 .delete-modal-card p {
-  font-size: 0.9rem;
-  color: #4a5568;
+  font-size: 0.95rem;
+  color: var(--md-sys-color-on-surface-variant, #4a5568);
   line-height: 1.5;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
 }
 
 .delete-modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.75rem;
 }
 
 .btn-modal {
-  padding: 0.4rem 0.9rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  padding: 0.5rem 1.1rem;
+  border-radius: var(--md-sys-shape-corner-full, 9999px);
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
   border: none;
+  transition: all var(--md-sys-motion-duration-short) ease;
+}
+
+.btn-modal:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
 .btn-modal.cancel {
-  background-color: #edf2f7;
-  color: #4a5568;
+  background-color: transparent;
+  color: var(--md-sys-color-primary, #0b57d0);
 }
 
 .btn-modal.cancel:hover:not(:disabled) {
-  background-color: #e2e8f0;
+  background-color: rgba(60, 64, 67, 0.08);
 }
 
 .btn-modal.confirm-delete {
-  background-color: #e53e3e;
-  color: #ffffff;
+  background-color: var(--md-sys-color-error, #ba1a1a);
+  color: var(--md-sys-color-on-error, #ffffff);
 }
 
 .btn-modal.confirm-delete:hover:not(:disabled) {
-  background-color: #c53030;
+  opacity: 0.9;
 }
 </style>

@@ -65,17 +65,17 @@ onMounted(async () => {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 .stream-header {
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
   padding-bottom: 1rem;
   margin-bottom: 1.5rem;
 }
 .stream-header h1 {
   font-size: 1.5rem;
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface, #2d3748);
 }
 .status-indicator {
   text-align: center;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
   margin-top: 2rem;
 }
 .error-banner {

@@ -215,6 +215,11 @@ components:
         sticky:
           type: boolean
           example: false
+        color:
+          type: string
+          enum: [default, coral, peach, sand, mint, sage, fog, storm, dusk, blossom, clay, chalk]
+          default: default
+          example: default
 
     Tag:
       type: object
@@ -290,6 +295,11 @@ components:
                 description: Attachment identifier or safe path segment
               - $ref: '#/components/schemas/AttachmentDescriptor'
           default: []
+        color:
+          type: string
+          enum: [default, coral, peach, sand, mint, sage, fog, storm, dusk, blossom, clay, chalk]
+          default: default
+          example: default
 
     UpdateThingRequest:
       type: object
@@ -319,6 +329,10 @@ components:
         sticky:
           type: boolean
           default: false
+        color:
+          type: string
+          enum: [default, coral, peach, sand, mint, sage, fog, storm, dusk, blossom, clay, chalk]
+          example: coral
 
     SaveSettingsRequest:
       type: object

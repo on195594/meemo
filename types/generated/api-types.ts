@@ -1197,6 +1197,12 @@ export interface components {
             archived: boolean;
             /** @example false */
             sticky: boolean;
+            /**
+             * @default default
+             * @example default
+             * @enum {string}
+             */
+            color?: "default" | "coral" | "peach" | "sand" | "mint" | "sage" | "fog" | "storm" | "dusk" | "blossom" | "clay" | "chalk";
         };
         Tag: {
             /** @example meeting */
@@ -1228,6 +1234,12 @@ export interface components {
             content: string;
             /** @default [] */
             attachments?: (string | components["schemas"]["AttachmentDescriptor"])[];
+            /**
+             * @default default
+             * @example default
+             * @enum {string}
+             */
+            color?: "default" | "coral" | "peach" | "sand" | "mint" | "sage" | "fog" | "storm" | "dusk" | "blossom" | "clay" | "chalk";
         };
         UpdateThingRequest: {
             /** @example Updated note with */
@@ -1242,6 +1254,11 @@ export interface components {
             archived?: boolean;
             /** @default false */
             sticky?: boolean;
+            /**
+             * @example coral
+             * @enum {string}
+             */
+            color?: "default" | "coral" | "peach" | "sand" | "mint" | "sage" | "fog" | "storm" | "dusk" | "blossom" | "clay" | "chalk";
         };
         SaveSettingsRequest: {
             /**

@@ -104,6 +104,7 @@ function postProcess(userId, thing) {
     thing.shared = !!thing.shared;
     thing.archived = !!thing.archived;
     thing.sticky = !!thing.sticky;
+    thing.color = thing.color || 'default';
 }
 
 function getAll(userId, query, skip, limit, callback) {
@@ -180,18 +181,32 @@ function getById(thingId, callback) {
     return nodeify(promise, callback);
 }
 
-function add(userId, content, tags, attachments, externalContent, callback) {
-    return addFull(userId, content, tags, attachments, externalContent, Date.now(), Date.now(), callback);
+function add(userId, content, tags, attachments, externalContent, color, callback) {
+    if (typeof color === 'function') {
+        callback = color;
+        color = 'default';
+    }
+    return addFull(userId, content, tags, attachments, externalContent, Date.now(), Date.now(), color, callback);
 }
 
-function addFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, callback) {
-    var promise = insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt).then(function (result) {
+function addFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color, callback) {
+    if (typeof color === 'function') {
+        callback = color;
+        color = 'default';
+    }
+    var promise = insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color).then(function (result) {
         return get(userId, result._id);
     });
     return nodeify(promise, callback);
 }
 
-function insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, callback) {
+function insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color, callback) {
+    if (typeof color === 'function') {
+        callback = color;
+        color = 'default';
+    }
+    color = typeof color === 'string' ? color : 'default';
+
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof content, 'string');
     assert(Array.isArray(tags));
@@ -209,7 +224,8 @@ function insertFull(userId, content, tags, attachments, externalContent, created
         public: false,
         shared: false,
         archived: false,
-        sticky: false
+        sticky: false,
+        color: color
     };
 
     var promise = Promise.resolve().then(async function () {
@@ -223,7 +239,11 @@ function insertFull(userId, content, tags, attachments, externalContent, created
     return nodeify(promise, callback);
 }
 
-function put(userId, thingId, content, tags, attachments, externalContent, isPublic, isShared, isArchived, isSticky, callback) {
+function put(userId, thingId, content, tags, attachments, externalContent, isPublic, isShared, isArchived, isSticky, color, callback) {
+    if (typeof color === 'function') {
+        callback = color;
+        color = undefined;
+    }
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
     if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(new Error('not found')), callback);
@@ -240,6 +260,9 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
         archived: isArchived,
         sticky: isSticky
     };
+    if (typeof color === 'string') {
+        data.color = color;
+    }
 
     var promise = Promise.resolve().then(async function () {
         await checkNotFrozen();

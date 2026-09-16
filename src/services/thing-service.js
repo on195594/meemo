@@ -157,18 +157,26 @@ function getPublicShared(thingId, callback) {
     return nodeify(promise, callback);
 }
 
-function add(userId, content, attachments, callback) {
+function add(userId, content, attachments, color, callback) {
+    if (typeof color === 'function') {
+        callback = color;
+        color = 'default';
+    }
     var promise = Promise.resolve().then(async function () {
         var externalContent = await extractExternalContent(content);
         var tagObjects = extractTags(content);
-        var result = await things.add(userId, content, tagObjects, attachments, externalContent);
+        var result = await things.add(userId, content, tagObjects, attachments, externalContent, color);
         if (!result) throw new Error('no result returned');
         return get(userId, result._id);
     });
     return nodeify(promise, callback);
 }
 
-function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, callback) {
+function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, color, callback) {
+    if (typeof color === 'function') {
+        callback = color;
+        color = undefined;
+    }
     var promise = Promise.resolve().then(async function () {
         var tagObjects = extractTags(content);
         var externalContent;
@@ -180,7 +188,7 @@ function put(userId, thingId, content, attachments, isPublic, isShared, isArchiv
         }
 
         return things.put(userId, thingId, content, tagObjects, attachments, externalContent,
-            isPublic, isShared, isArchived, isSticky);
+            isPublic, isShared, isArchived, isSticky, color);
     });
     return nodeify(promise, callback);
 }

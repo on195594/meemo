@@ -2,6 +2,7 @@
   <div
     class="note-composer-card"
     :class="{ focused: isFocused || content.trim().length > 0 || attachments.length > 0, dragging: isDragging }"
+    :style="{ backgroundColor: 'var(--note-color-' + selectedColor + ')' }"
     @dragover.prevent="isDragging = true"
     @dragleave.prevent="isDragging = false"
     @drop.prevent="handleDrop"
@@ -57,6 +58,41 @@
     <!-- Action Bar (visible when focused or has content or attachments) -->
     <div v-show="isFocused || content.trim().length > 0 || attachments.length > 0" class="composer-actions">
       <div class="left-actions">
+        <!-- Color Picker Popover Button -->
+        <div class="composer-color-wrapper">
+          <button
+            type="button"
+            class="btn-icon"
+            :class="{ active: showColorPicker }"
+            title="Note color"
+            aria-haspopup="true"
+            :aria-expanded="showColorPicker"
+            @click="showColorPicker = !showColorPicker"
+          >
+            🎨
+          </button>
+          <div
+            v-if="showColorPicker"
+            class="color-palette-popover"
+            role="radiogroup"
+            aria-label="Note color"
+          >
+            <button
+              v-for="c in NOTE_COLORS"
+              :key="c.key"
+              type="button"
+              class="color-swatch-btn"
+              :class="{ active: selectedColor === c.key }"
+              :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
+              :title="c.name"
+              :aria-label="c.name"
+              role="radio"
+              :aria-checked="selectedColor === c.key"
+              @click="selectedColor = c.key; showColorPicker = false"
+            ></button>
+          </div>
+        </div>
+
         <!-- Attach File Button -->
         <button
           type="button"
@@ -105,15 +141,33 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import { api, type AttachmentDescriptor } from '../api/client';
+import { api, type AttachmentDescriptor, type NoteColor } from '../api/client';
 
 const props = defineProps<{
-  onSave: (content: string, attachments?: AttachmentDescriptor[]) => Promise<{ success: boolean; error?: string }>;
+  onSave: (content: string, attachments?: AttachmentDescriptor[], color?: NoteColor) => Promise<{ success: boolean; error?: string }>;
 }>();
 
 const emit = defineEmits<{
   (e: 'created'): void;
 }>();
+
+const NOTE_COLORS: { key: NoteColor; name: string }[] = [
+  { key: 'default', name: 'Default' },
+  { key: 'coral', name: 'Coral' },
+  { key: 'peach', name: 'Peach' },
+  { key: 'sand', name: 'Sand' },
+  { key: 'mint', name: 'Mint' },
+  { key: 'sage', name: 'Sage' },
+  { key: 'fog', name: 'Fog' },
+  { key: 'storm', name: 'Storm' },
+  { key: 'dusk', name: 'Dusk' },
+  { key: 'blossom', name: 'Blossom' },
+  { key: 'clay', name: 'Clay' },
+  { key: 'chalk', name: 'Chalk' },
+];
+
+const selectedColor = ref<NoteColor>('default');
+const showColorPicker = ref(false);
 
 const content = ref('');
 const attachments = ref<AttachmentDescriptor[]>([]);
@@ -230,6 +284,8 @@ function removeAttachment(index: number) {
 function handleCancel() {
   content.value = '';
   attachments.value = [];
+  selectedColor.value = 'default';
+  showColorPicker.value = false;
   error.value = null;
   isFocused.value = false;
   textareaRef.value?.blur();
@@ -242,10 +298,15 @@ async function handleSubmit() {
   isSaving.value = true;
   error.value = null;
 
-  const result = await props.onSave(trimmed, attachments.value);
+  const hasCustomColor = selectedColor.value && selectedColor.value !== 'default';
+  const result = hasCustomColor
+    ? await props.onSave(trimmed, attachments.value, selectedColor.value)
+    : await props.onSave(trimmed, attachments.value);
   if (result.success) {
     content.value = '';
     attachments.value = [];
+    selectedColor.value = 'default';
+    showColorPicker.value = false;
     isFocused.value = false;
     emit('created');
   } else {
@@ -266,28 +327,30 @@ defineExpose({
 
 <style scoped>
 .note-composer-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  background-color: var(--note-color-default);
+  border: 1px solid var(--note-border-color);
+  border-radius: var(--md-sys-shape-corner-lg, 16px);
   padding: 1rem 1.25rem;
   margin-bottom: 1.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  box-shadow: var(--md-sys-elevation-1);
+  transition: border-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
+              box-shadow var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
+              background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
 .note-composer-card:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  border-color: var(--note-border-hover);
+  box-shadow: var(--md-sys-elevation-2);
 }
 
 .note-composer-card.focused {
-  border-color: #3182ce;
-  box-shadow: 0 4px 14px -2px rgba(49, 130, 206, 0.15), 0 0 0 2px rgba(49, 130, 206, 0.15);
+  border-color: var(--md-sys-color-primary);
+  box-shadow: var(--md-sys-elevation-2), 0 0 0 2px var(--md-sys-color-primary-container);
 }
 
 .note-composer-card.dragging {
-  border-color: #3182ce;
-  background-color: #ebf8ff;
+  border-color: var(--md-sys-color-primary);
+  background-color: var(--md-sys-color-primary-container);
 }
 
 .composer-body {
@@ -396,16 +459,84 @@ defineExpose({
 
 .btn-icon {
   background: none;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--md-sys-shape-corner-full, 9999px);
   cursor: pointer;
   font-size: 0.95rem;
-  padding: 0.2rem 0.4rem;
-  transition: background-color 0.2s;
+  padding: 0.35rem 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all var(--md-sys-motion-duration-short) ease;
+}
+
+/* Expand touch target to min 48x48px on pointer/touch */
+.btn-icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 48px;
+  min-height: 48px;
+  width: 100%;
+  height: 100%;
+}
+
+.btn-icon:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
 .btn-icon:hover:not(:disabled) {
-  background-color: #edf2f7;
+  background-color: rgba(60, 64, 67, 0.08);
+}
+
+.btn-icon.active {
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+.composer-color-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.color-palette-popover {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 8px;
+  background: var(--md-sys-color-surface-container, #ffffff);
+  border: 1px solid var(--md-sys-color-outline-variant, #c4c7c5);
+  border-radius: var(--md-sys-shape-corner-md, 12px);
+  box-shadow: var(--md-sys-elevation-2);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(6, 24px);
+  gap: 6px;
+  z-index: 50;
+}
+
+.color-swatch-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--note-border-color);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.color-swatch-btn:hover,
+.color-swatch-btn:focus-visible {
+  transform: scale(1.15);
+  outline: 2px solid var(--md-sys-color-primary);
+}
+
+.color-swatch-btn.active {
+  box-shadow: 0 0 0 2px var(--md-sys-color-primary);
 }
 
 .hidden-file-input {
@@ -414,16 +545,16 @@ defineExpose({
 
 .shortcut-hint {
   font-size: 0.75rem;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
 }
 
 .shortcut-hint kbd {
-  background: #edf2f7;
-  border: 1px solid #cbd5e0;
-  border-radius: 3px;
-  padding: 0.1rem 0.3rem;
+  background: rgba(60, 64, 67, 0.08);
+  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
+  border-radius: var(--md-sys-shape-corner-xs, 4px);
+  padding: 0.1rem 0.35rem;
   font-size: 0.7rem;
-  font-family: monospace;
+  font-family: inherit;
 }
 
 .btn-group {
@@ -432,38 +563,41 @@ defineExpose({
 }
 
 .btn-composer {
-  padding: 0.45rem 1rem;
-  border-radius: 8px;
+  padding: 0.5rem 1.15rem;
+  border-radius: var(--md-sys-shape-corner-full, 9999px);
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
   border: none;
-  transition: all 0.2s ease;
+  transition: all var(--md-sys-motion-duration-short) ease;
+}
+
+.btn-composer:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
 .btn-composer.primary {
-  background-color: #3182ce;
-  color: #ffffff;
+  background-color: var(--md-sys-color-primary, #0b57d0);
+  color: var(--md-sys-color-on-primary, #ffffff);
 }
 
 .btn-composer.primary:hover:not(:disabled) {
-  background-color: #2b6cb0;
-  box-shadow: 0 2px 6px rgba(49, 130, 206, 0.25);
+  box-shadow: var(--md-sys-elevation-1);
+  opacity: 0.95;
 }
 
 .btn-composer.secondary {
-  background-color: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
+  background-color: transparent;
+  color: var(--md-sys-color-primary, #0b57d0);
 }
 
 .btn-composer.secondary:hover:not(:disabled) {
-  background-color: #e2e8f0;
-  color: #1e293b;
+  background-color: rgba(60, 64, 67, 0.08);
 }
 
 .btn-composer:disabled {
-  opacity: 0.6;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 </style>

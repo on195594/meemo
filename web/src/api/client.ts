@@ -23,6 +23,7 @@ export type PublicUserProfile = components['schemas']['PublicUserProfile'];
 export type PublicUserSummary = components['schemas']['PublicUserSummary'];
 export type AttachmentDescriptor = components['schemas']['AttachmentDescriptor'];
 export type Thing = components['schemas']['Thing'];
+export type NoteColor = NonNullable<components['schemas']['Thing']['color']>;
 export type Tag = components['schemas']['Tag'];
 
 type JsonResponse<

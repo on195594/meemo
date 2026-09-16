@@ -48,7 +48,7 @@ onMounted(async () => {
 }
 .status-indicator {
   text-align: center;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
 }
 .error-banner {
   background: #fed7d7;

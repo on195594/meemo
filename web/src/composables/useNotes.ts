@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue';
-import { api, type Thing, type Tag, type AttachmentDescriptor } from '../api/client';
+import { api, type Thing, type Tag, type AttachmentDescriptor, type NoteColor } from '../api/client';
 
 // Module-level singleton state so App.vue header and NotesView share the same notes & search state
 const things = ref<Thing[]>([]);
@@ -130,7 +130,8 @@ export function useNotes() {
   // Write path operations (RF-504)
   async function createNote(
     content: string,
-    attachments: AttachmentDescriptor[] = []
+    attachments: AttachmentDescriptor[] = [],
+    color?: NoteColor
   ): Promise<{ success: boolean; thing?: Thing; error?: string }> {
     if (!content || !content.trim()) {
       return { success: false, error: 'Content cannot be empty' };
@@ -138,7 +139,11 @@ export function useNotes() {
 
     const generation = userGeneration;
     try {
-      const res = await api.things.create({ content: content.trim(), attachments });
+      const payload: any = { content: content.trim(), attachments };
+      if (color !== undefined) {
+        payload.color = color;
+      }
+      const res = await api.things.create(payload);
       if (generation !== userGeneration) return { success: false, error: 'Session changed' };
       if (!isArchived.value) {
         if (res.thing.sticky) {
@@ -170,7 +175,7 @@ export function useNotes() {
       return { success: false, error: 'Content cannot be empty' };
     }
 
-    const payload = {
+    const payload: any = {
       content: content.trim(),
       attachments: updates.attachments !== undefined ? updates.attachments : (existing?.attachments || []),
       public: updates.public !== undefined ? updates.public : (existing?.public || false),
@@ -178,6 +183,9 @@ export function useNotes() {
       archived: updates.archived !== undefined ? updates.archived : (existing?.archived || false),
       sticky: updates.sticky !== undefined ? updates.sticky : (existing?.sticky || false),
     };
+    if (updates.color !== undefined) {
+      payload.color = updates.color;
+    }
 
     const generation = userGeneration;
     try {

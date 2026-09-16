@@ -78,20 +78,47 @@
 
           <!-- Notes Card List -->
           <div v-else-if="things.length > 0" class="notes-card-list">
-            <NoteCard
-              v-for="thing in things"
-              :key="thing._id"
-              :thing="thing"
-              :can-edit="true"
-              :highlight-query="activeFilter || ''"
-              :on-save-edit="updateNote"
-              :on-delete-confirm="handleDeleteNote"
-              @toggle-sticky="handleToggleSticky"
-              @toggle-public="handleTogglePublic"
-              @toggle-archive="handleToggleArchive"
-              @tag-click="handleTagClick"
-              @wikilink-click="handleWikilinkClick"
-            />
+            <!-- Pinned Section -->
+            <section v-if="pinnedThings.length > 0" class="notes-section" aria-labelledby="pinned-heading">
+              <h3 id="pinned-heading" class="section-label">PINNED</h3>
+              <div class="m3-notes-grid">
+                <NoteCard
+                  v-for="thing in pinnedThings"
+                  :key="thing._id"
+                  :thing="thing"
+                  :can-edit="true"
+                  :highlight-query="activeFilter || ''"
+                  :on-save-edit="updateNote"
+                  :on-delete-confirm="handleDeleteNote"
+                  @toggle-sticky="handleToggleSticky"
+                  @toggle-public="handleTogglePublic"
+                  @toggle-archive="handleToggleArchive"
+                  @tag-click="handleTagClick"
+                  @wikilink-click="handleWikilinkClick"
+                />
+              </div>
+            </section>
+
+            <!-- Others Section -->
+            <section v-if="otherThings.length > 0" class="notes-section" aria-labelledby="others-heading">
+              <h3 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">OTHERS</h3>
+              <div class="m3-notes-grid">
+                <NoteCard
+                  v-for="thing in otherThings"
+                  :key="thing._id"
+                  :thing="thing"
+                  :can-edit="true"
+                  :highlight-query="activeFilter || ''"
+                  :on-save-edit="updateNote"
+                  :on-delete-confirm="handleDeleteNote"
+                  @toggle-sticky="handleToggleSticky"
+                  @toggle-public="handleTogglePublic"
+                  @toggle-archive="handleToggleArchive"
+                  @tag-click="handleTagClick"
+                  @wikilink-click="handleWikilinkClick"
+                />
+              </div>
+            </section>
 
             <!-- Infinite Scroll / Load More Footer -->
             <div ref="loadMoreTrigger" class="load-more-section">
@@ -146,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, inject } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, inject } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
 import { useNotes } from '../composables/useNotes';
@@ -185,6 +212,9 @@ const {
   togglePublic,
   toggleArchive,
 } = useNotes();
+
+const pinnedThings = computed(() => things.value.filter((t) => t.sticky));
+const otherThings = computed(() => things.value.filter((t) => !t.sticky));
 
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
@@ -547,6 +577,32 @@ onUnmounted(() => {
 
 .stream-column {
   min-width: 0;
+}
+
+.m3-notes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 600px) {
+  .m3-notes-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.notes-section {
+  margin-bottom: 2rem;
+}
+
+.section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--md-sys-color-on-surface-variant, #718096);
+  text-transform: uppercase;
+  margin: 1.5rem 0 0.75rem 0.25rem;
 }
 
 .sidebar-column {
