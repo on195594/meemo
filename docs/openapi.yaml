@@ -469,7 +469,7 @@ components:
       name: mode
       in: query
       required: false
-      description: Search execution mode ('regex' for substring pattern matching, 'text' for MongoDB full-text index with stemming and scoring)
+      description: Search execution mode. 'regex' (default) evaluates conjunctive substring matching across all tokens. 'text' utilizes MongoDB $text full-text index with English Porter stemming and TF-IDF relevance scoring (textScore), ranking multi-term matches higher and supporting quoted phrases.
       schema:
         type: string
         enum: [regex, text]

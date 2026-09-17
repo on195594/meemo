@@ -103,8 +103,8 @@ async function ensureTextIndex(collection) {
             existingTextIndex.key &&
             existingTextIndex.key.ownerId === 1 &&
             existingTextIndex.weights &&
-            existingTextIndex.weights.tags &&
-            existingTextIndex.weights.content;
+            existingTextIndex.weights.tags === 10 &&
+            existingTextIndex.weights.content === 5;
 
         if (isTarget) {
             return;

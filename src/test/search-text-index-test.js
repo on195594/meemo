@@ -9,6 +9,7 @@ var expect = require('expect.js'),
     databaseThings = require('../database/things.js'),
     search = require('../services/search-service.js'),
     thingService = require('../services/thing-service.js'),
+    migrator = require('../../scripts/migrate-data-to-v2.js'),
     appModule = require('../../app.js');
 
 describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
@@ -176,6 +177,38 @@ describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
             expect(results[0]._id).to.be(noteDocA._id);
         });
 
+        it('clarifies multi-term search contract: regex requires all terms (AND), text ranks by relevance', async function () {
+            // Note containing both words
+            var noteBoth = await thingService.add(testUserA, 'multi-term test: alpha bravo together', []);
+            // Note containing only alpha
+            var noteAlpha = await thingService.add(testUserA, 'multi-term test: only alpha here', []);
+
+            // In regex mode: "alpha bravo" requires both terms
+            var regexQuery = search.buildQuery({ filter: 'alpha bravo', mode: 'regex' });
+            var regexResults = await thingService.getAll(testUserA, regexQuery, 0, 10);
+            expect(regexResults.length).to.be(1);
+            expect(regexResults[0]._id).to.be(noteBoth._id);
+
+            // In text mode: "alpha bravo" matches both, but note with both terms has higher relevance score
+            var textQuery = search.buildQuery({ filter: 'alpha bravo', mode: 'text' });
+            var textResults = await thingService.getAll(testUserA, textQuery, 0, 10);
+            expect(textResults.length).to.be(2);
+            expect(textResults[0]._id).to.be(noteBoth._id);
+            expect(textResults[1]._id).to.be(noteAlpha._id);
+            expect(textResults[0].score).to.be.greaterThan(textResults[1].score);
+
+            // In both modes: quoted phrase '"alpha bravo"' requires the continuous phrase
+            var quotedRegex = search.buildQuery({ filter: '"alpha bravo"', mode: 'regex' });
+            var quotedRegexResults = await thingService.getAll(testUserA, quotedRegex, 0, 10);
+            expect(quotedRegexResults.length).to.be(1);
+            expect(quotedRegexResults[0]._id).to.be(noteBoth._id);
+
+            var quotedText = search.buildQuery({ filter: '"alpha bravo"', mode: 'text' });
+            var quotedTextResults = await thingService.getAll(testUserA, quotedText, 0, 10);
+            expect(quotedTextResults.length).to.be(1);
+            expect(quotedTextResults[0]._id).to.be(noteBoth._id);
+        });
+
         it('auto-upgrades legacy text index to compound owner_text_content_tags index', async function () {
             var collection = db.collection('things');
             // Drop target index and create legacy index
@@ -196,6 +229,25 @@ describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
             expect(targetIdx.name).to.be('owner_text_content_tags');
             expect(targetIdx.key.ownerId).to.be(1);
             expect(targetIdx.weights).to.eql({ tags: 10, content: 5 });
+        });
+
+        it('auto-upgrades text index when existing index has wrong weights', async function () {
+            var collection = db.collection('things');
+            await collection.dropIndex('owner_text_content_tags');
+            // Create index with wrong weights (1 and 1 instead of 10 and 5)
+            await collection.createIndex({ ownerId: 1, content: 'text', tags: 'text' }, {
+                name: 'owner_text_content_tags',
+                weights: { tags: 1, content: 1 }
+            });
+
+            var beforeIdx = (await collection.indexes()).find(function (i) { return i.name === 'owner_text_content_tags'; });
+            expect(beforeIdx.weights).to.eql({ tags: 1, content: 1 });
+
+            // Trigger ensureIndexes
+            await databaseThings.ensureIndexes();
+
+            var afterIdx = (await collection.indexes()).find(function (i) { return i.name === 'owner_text_content_tags'; });
+            expect(afterIdx.weights).to.eql({ tags: 10, content: 5 });
         });
     });
 
@@ -260,6 +312,31 @@ describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
                 .expect(200);
             expect(res.body).to.have.property('things');
             expect(res.body.things.length).to.be.greaterThan(0);
+        });
+    });
+
+    describe('Migration plannedOwners resolution without existing Mongo user', function () {
+        it('resolves canonical owner from plannedOwners during dry-run when user not in Mongo', function (done) {
+            var planned = { newuser: '000000000000000000009999' };
+            migrator.resolveCanonicalOwner(db, 'newuser', function (err, canonicalId, username) {
+                expect(err).to.be(null);
+                expect(canonicalId).to.be('000000000000000000009999');
+                expect(username).to.be('newuser');
+                done();
+            }, 'test-phase', null, planned);
+        });
+
+        it('rejects when resolved user ID does not match plannedOwners manifest', async function () {
+            var wrongPlanned = { textsearchuser: '000000000000000000008888' };
+            await new Promise(function (resolve, reject) {
+                migrator.resolveCanonicalOwner(db, 'textsearchuser', function (err) {
+                    if (err) {
+                        expect(err.message).to.contain('manifest');
+                        return resolve();
+                    }
+                    reject(new Error('Expected manifest mismatch error'));
+                }, 'test-phase', null, wrongPlanned);
+            });
         });
     });
 });

@@ -195,7 +195,7 @@ export interface paths {
                 query?: {
                     /** @description Search query string supporting text keywords, */
                     filter?: components["parameters"]["FilterQuery"];
-                    /** @description Search execution mode ('regex' for substring pattern matching, 'text' for MongoDB full-text index with stemming and scoring) */
+                    /** @description Search execution mode. 'regex' (default) evaluates conjunctive substring matching across all tokens. 'text' utilizes MongoDB $text full-text index with English Porter stemming and TF-IDF relevance scoring (textScore), ranking multi-term matches higher and supporting quoted phrases. */
                     mode?: components["parameters"]["SearchModeQuery"];
                     /** @description Filter by sticky flag */
                     sticky?: components["parameters"]["StickyQuery"];
@@ -692,7 +692,7 @@ export interface paths {
                 query?: {
                     /** @description Search query string supporting text keywords, */
                     filter?: components["parameters"]["FilterQuery"];
-                    /** @description Search execution mode ('regex' for substring pattern matching, 'text' for MongoDB full-text index with stemming and scoring) */
+                    /** @description Search execution mode. 'regex' (default) evaluates conjunctive substring matching across all tokens. 'text' utilizes MongoDB $text full-text index with English Porter stemming and TF-IDF relevance scoring (textScore), ranking multi-term matches higher and supporting quoted phrases. */
                     mode?: components["parameters"]["SearchModeQuery"];
                     /** @description Number of records to skip */
                     skip?: components["parameters"]["SkipQuery"];
@@ -1395,7 +1395,7 @@ export interface components {
         FileIdentifierPath: string;
         /** @description Search query string supporting text keywords, */
         FilterQuery: string;
-        /** @description Search execution mode ('regex' for substring pattern matching, 'text' for MongoDB full-text index with stemming and scoring) */
+        /** @description Search execution mode. 'regex' (default) evaluates conjunctive substring matching across all tokens. 'text' utilizes MongoDB $text full-text index with English Porter stemming and TF-IDF relevance scoring (textScore), ranking multi-term matches higher and supporting quoted phrases. */
         SearchModeQuery: "regex" | "text";
         /** @description Filter by sticky flag */
         StickyQuery: boolean;

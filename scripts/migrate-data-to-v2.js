@@ -799,8 +799,8 @@ function ensureUnifiedIndexes(db, callback) {
                                 existing.key &&
                                 existing.key.ownerId === 1 &&
                                 existing.weights &&
-                                existing.weights.tags &&
-                                existing.weights.content;
+                                existing.weights.tags === 10 &&
+                                existing.weights.content === 5;
                             if (isTarget) return;
                             if (typeof collection.dropIndex === 'function') {
                                 await collection.dropIndex(existing.name);
@@ -897,15 +897,22 @@ function resolveCanonicalOwner(db, prefix, callback, phase, ownerMap, plannedOwn
     if (users && typeof users.resolveUser === 'function') {
         users.resolveUser(prefix, function (err, u) {
             if (!err && u && u.id) {
+                if (plannedOwners && plannedOwners[prefix.toLowerCase()] &&
+                        String(u.id) !== plannedOwners[prefix.toLowerCase()]) {
+                    return callback(migrationError(
+                        phase, prefix, 'users', 'resolveUser',
+                        new Error('Resolved owner does not match reviewed users manifest')
+                    ));
+                }
                 return callback(null, u.id, u.username);
             }
             if (err && (!users.UserError || err.code !== users.UserError.NOT_FOUND)) {
                 return callback(migrationError(phase, prefix, 'users', 'resolveUser', err));
             }
-            lookupInMongoUsers(db, prefix, callback, phase);
+            lookupInMongoUsers(db, prefix, callback, phase, false, null, plannedOwners);
         });
     } else {
-        lookupInMongoUsers(db, prefix, callback, phase);
+        lookupInMongoUsers(db, prefix, callback, phase, false, null, plannedOwners);
     }
 }
 
@@ -934,7 +941,7 @@ function lookupInMongoUsers(db, prefix, callback, phase, required, errorOwner, p
                 new Error('Mapped owner does not match reviewed users manifest')
             ));
         }
-        if (!doc && required && plannedOwners && plannedOwners[prefix.toLowerCase()]) {
+        if (!doc && plannedOwners && plannedOwners[prefix.toLowerCase()]) {
             return callback(null, plannedOwners[prefix.toLowerCase()], prefix);
         }
         if (!doc && required) {

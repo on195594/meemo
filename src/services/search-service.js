@@ -17,7 +17,7 @@ function parseTokens(filterStr) {
     var trimmed = filterStr.trim();
     if (!trimmed) return [];
 
-    var tokens = trimmed.match(/\[\[[^\]\n]+\]\]|[^\s,，、；;]+/g) || [];
+    var tokens = trimmed.match(/"[^"]+"|\[\[[^\]\n]+\]\]|[^\s,，、；;]+/g) || [];
     return tokens.map(function (token) {
         var word = token.trim();
         if (word.startsWith('[[') && word.endsWith(']]')) {
@@ -30,6 +30,30 @@ function parseTokens(filterStr) {
     }).filter(Boolean);
 }
 
+function sanitizeTextQuery(textWords) {
+    var raw = textWords.join(' ');
+    var quoteCount = (raw.match(/"/g) || []).length;
+    if (quoteCount % 2 !== 0) {
+        raw = raw.replace(/"/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    return raw;
+}
+
+/**
+ * Builds a MongoDB query filter from a user query string.
+ *
+ * Search Mode Contracts:
+ * - 'regex' (default):
+ *   Conjunctive matching ($and). Each token must be present in either note content
+ *   (case-insensitive regex) or tags. Quoted phrases ("phrase here") match literal continuous substrings.
+ *
+ * - 'text':
+ *   Full-text index matching using MongoDB $text and English Porter stemming.
+ *   Unquoted words are evaluated as relevance-ranked search terms (OR disjunction with TF-IDF weights,
+ *   ranking notes with more match occurrences higher via textScore).
+ *   Quoted phrases (e.g. "benchmark project") enforce exact phrase containment.
+ *   Tags (#work) are conjunctive ($and) with the full-text search condition.
+ */
 function buildSearchFilter(filterStr, mode) {
     var words = parseTokens(filterStr);
     if (!words.length) return null;
@@ -64,7 +88,10 @@ function buildSearchFilter(filterStr, mode) {
 
         var conditions = tagConditions.slice();
         if (textWords.length > 0) {
-            conditions.push({ $text: { $search: textWords.join(' ') } });
+            var searchStr = sanitizeTextQuery(textWords);
+            if (searchStr && WORD_CHAR_PATTERN.test(searchStr)) {
+                conditions.push({ $text: { $search: searchStr } });
+            }
         }
         if (!conditions.length) return null;
         return conditions.length === 1 ? conditions[0] : { $and: conditions };
@@ -82,10 +109,16 @@ function buildSearchFilter(filterStr, mode) {
                 return { tags: tagOnly.toLowerCase() };
             }
         }
+        var pattern = word;
+        if (pattern.startsWith('"') && pattern.endsWith('"') && pattern.length >= 2) {
+            pattern = pattern.slice(1, -1);
+        } else {
+            pattern = pattern.replace(/^"+|"+$/g, '');
+        }
         return {
             $or: [
-                { content: { $regex: escapeRegExp(word), $options: 'i' } },
-                { tags: word.toLowerCase() }
+                { content: { $regex: escapeRegExp(pattern), $options: 'i' } },
+                { tags: pattern.toLowerCase() }
             ]
         };
     });
