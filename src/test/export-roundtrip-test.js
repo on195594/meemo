@@ -221,18 +221,20 @@ describe('Export and Import Round-Trip Safety Net (RF-107)', function () {
     });
 
     it('step 5: verifies imported attachment is accessible and bit-for-bit intact', function (done) {
-        var importerFolder = path.join(testAttachmentDir, 'importer');
-        var targetFile = path.join(importerFolder, uploadedAttachmentIdentifier);
+        users.resolveUser('importer', function (err, u) {
+            if (err) return done(err);
+            var importerFolder = path.join(testAttachmentDir, u.id);
+            var targetFile = path.join(importerFolder, uploadedAttachmentIdentifier);
 
-        expect(fs.existsSync(targetFile)).to.be(true);
-        var fileContent = fs.readFileSync(targetFile);
-        var expectedBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
-        expect(fileContent.slice(0, 12).equals(expectedBytes)).to.be(true);
+            expect(fs.existsSync(targetFile)).to.be(true);
+            var fileContent = fs.readFileSync(targetFile);
+            var expectedBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+            expect(fileContent.slice(0, 12).equals(expectedBytes)).to.be(true);
 
-        // Retrieve importer's imported note containing the attachment
-        importerAgent
-            .get('/api/things')
-            .expect(200)
+            // Retrieve importer's imported note containing the attachment
+            importerAgent
+                .get('/api/things')
+                .expect(200)
             .end(function (err, res) {
                 if (err) return done(err);
 
@@ -253,6 +255,7 @@ describe('Export and Import Round-Trip Safety Net (RF-107)', function () {
                         done();
                     });
             });
+        });
     });
 
     it('step 6: ensures export-import round-trip is repeatable across multiple instances', function (done) {

@@ -76,7 +76,7 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
         else process.env.AUTH_USER_SOURCE = prevAuthSource;
 
         config.attachmentDir = prevAttachmentDir;
-        users.initRepository('file');
+        users.initRepository('mongo');
 
         fs.rmSync(testUsersFile, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });

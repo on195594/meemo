@@ -12,7 +12,7 @@ Meemo is a small browser application served by Express and backed by MongoDB and
 6. Runtime, HTTP, services, storage, user repositories, and primary database modules use Promise-first `async`/`await`; callback adapters remain only for legacy scripts and tests during migration.
 7. `src/database/` reads and writes MongoDB collections (unified collections `things`, `tags`, and `settings` partitioned by `ownerId`, plus `users` and `sessions`).
 8. `src/storage/local-storage.js` owns persistent attachment filesystem access.
-9. `src/users.js` abstracts account storage across MongoDB, legacy file, and temporary fallback implementations via `UserRepository`; MongoDB is the production target.
+9. `src/users.js` abstracts account storage targeting `MongoUserRepository` via `UserRepository` (legacy file and fallback repositories have been retired).
 10. `web/` is compiled by Vite into the generated, ignored `public/` directory, serving as the modern Vue 3 Single Page Application with client-side routing.
 
 The runtime reads and writes only unified collections. `things` is the online single source of truth for tag identity and usage: `/api/tags` aggregates the owner-partitioned `things.tags` arrays in real time, while the persisted `tags` collection is a migration/readiness projection. Ordinary Thing mutations (`add`, `put`, `del`) write directly and atomically to `things` without active-writer lease counters. For offline migration and release readiness verification (`verify-production-readiness.js`), a durable MongoDB write freeze gate (`things.acquireWriteFreeze` / `things.requireWriteFreeze`) blocks Thing mutations and fails closed when unverified. Tag reconstruction (`cleanupTags`) repairs Thing tag arrays using compare-and-set filters, aggregates fresh usage from `things`, and atomically swaps the replacement collection over `tags` via MongoDB's atomic `renameCollection`. Dynamic `<user>_*` collection discovery exists only in migration and read-only retirement tooling; it is not part of request handling.
@@ -25,7 +25,7 @@ Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, pers
 | --- | --- |
 | Notes, settings, sessions | MongoDB (unified collections: `things`, `settings`, `sessions`; `things.tags` is the single source of truth for tags; `tags` collection is a historical projection) |
 | Attachments | `ATTACHMENT_DIR` partitioned by stable `userId` |
-| Accounts | MongoDB `users` collection; legacy `USERS_FILE` and fallback repositories are deprecated compatibility modes preserved for offline test and verification |
+| Accounts | MongoDB `users` collection (accounts are stored solely in MongoDB; legacy user files are read-only inputs for offline migration tools only) |
 
 Meemo supports username/password authentication only. Passwords are stored as bcrypt hashes, and successful login creates a server-side session backed by MongoDB with a stable user ID.
 

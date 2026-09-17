@@ -24,6 +24,7 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
     var prevAttachmentDir = config.attachmentDir;
     var testAttachmentDir = '/tmp/meemo-upload-storage-' + process.pid;
     var authAgent;
+    var uploaderUser;
 
     // Small limits for testing upload capping
     var prevMaxAttach = process.env.MAX_ATTACHMENT_SIZE;
@@ -48,11 +49,16 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
                 users.create('uploader', 'uploader@example.com', 'Uploader', 'Password123!', function (err) {
                     if (err) return done(err);
 
-                    authAgent = request.agent(app);
-                    authAgent
-                        .post('/api/login')
-                        .send({ username: 'uploader', password: 'Password123!' })
-                        .expect(200, done);
+                    users.resolveUser('uploader', function (err, u) {
+                        if (err) return done(err);
+                        uploaderUser = u;
+
+                        authAgent = request.agent(app);
+                        authAgent
+                            .post('/api/login')
+                            .send({ username: 'uploader', password: 'Password123!' })
+                            .expect(200, done);
+                    });
                 });
             }, done);
         });
@@ -119,11 +125,11 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
                     expect(res.body.fileName).to.equal('passwd.png');
 
                     // Check physical file on disk
-                    var storedPath = path.join(testAttachmentDir, 'uploader', res.body.identifier);
+                    var storedPath = path.join(testAttachmentDir, uploaderUser.id, res.body.identifier);
                     expect(fs.existsSync(storedPath)).to.be(true);
 
                     // Ensure malicious filename does not exist
-                    var badPath = path.join(testAttachmentDir, 'uploader', '..', '..', 'etc', 'passwd.png');
+                    var badPath = path.join(testAttachmentDir, uploaderUser.id, '..', '..', 'etc', 'passwd.png');
                     expect(fs.existsSync(badPath)).to.be(false);
                     done();
                 });

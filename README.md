@@ -30,12 +30,12 @@ Open <http://localhost:3000>, register an account, and sign in. View logs with `
 
 ## Authentication and storage
 
-Meemo supports username/password authentication. `AUTH_USER_SOURCE` selects MongoDB, the legacy JSON file configured by `USERS_FILE`, or the temporary fallback repository. MongoDB is the production target; keep the file source only while migration or rollback compatibility is explicitly required. Successful logins create server-side sessions stored in MongoDB with decoupled, stable user IDs.
+Meemo supports username/password authentication with accounts stored exclusively in MongoDB (`AUTH_USER_SOURCE=mongo`). Legacy file and fallback repositories have been retired. Successful logins create server-side sessions stored in MongoDB with decoupled, stable user IDs.
 
 The Compose stack uses two named volumes:
 
-- `meemo_data`: attachments and, while the legacy file account source is selected, the account file
-- `mongodb_data`: notes, tags, settings, and sessions
+- `meemo_data`: attachment files stored on disk
+- `mongodb_data`: accounts, notes, tags, settings, and sessions
 
 Set a stable, strong `SESSION_SECRET`. When it is omitted, Meemo generates a process-local secret and existing sessions become invalid after every restart.
 
@@ -50,8 +50,7 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `MONGODB_URL` | `mongodb://127.0.0.1:27017/meemo` | `mongodb://mongodb:27017/meemo` | MongoDB connection URL |
 | `APP_ORIGIN` | `http://localhost` | `http://localhost:3000` | Public origin used in RSS links |
 | `ATTACHMENT_DIR` | `./storage` | `/app/data/storage` | Attachment directory |
-| `USERS_FILE` | `./.users.json` | — | Account data file (deprecated legacy file source; offline tests/migration only) |
-| `AUTH_USER_SOURCE` | `file` | `mongo` | Account repository: `mongo` (required in production), or deprecated `file`/`fallback` for offline tests |
+| `AUTH_USER_SOURCE` | `mongo` | `mongo` | Account repository: `mongo` (exclusive target) |
 | `SESSION_SECRET` | Random on startup | Value of host `SESSION_SECRET` | Session signing secret |
 | `REGISTRATION_MODE` | `open` | `first-user` | Registration policy: `open`, `first-user`, or `disabled` |
 | `URL_ENRICHMENT_ENABLED` | `false` | `false` | Outbound URL metadata fetch (disabled by default for SSRF safety) |

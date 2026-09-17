@@ -7,24 +7,32 @@
 /* global beforeEach:false */
 /* global afterEach:false */
 
-var usersFilePath = '/tmp/meemo-users-test-' + process.pid + '.json';
-process.env.USERS_FILE = usersFilePath;
-
 var expect = require('expect.js'),
-    fs = require('fs'),
+    MongoClient = require('mongodb').MongoClient,
     config = require('../config.js'),
     users = require('../users.js');
 
 describe('Users', function () {
+    var dbClient;
+
+    before(async function () {
+        dbClient = await MongoClient.connect(config.databaseUrl);
+        config.db = dbClient.db();
+        await config._clearDatabase();
+    });
+
+    after(async function () {
+        if (dbClient) {
+            await config._clearDatabase();
+            await dbClient.close();
+        }
+    });
+
     function setup(done) {
-        process.env.USERS_FILE = usersFilePath;
-        fs.rmSync(usersFilePath, { force: true });
         config._clearDatabase(done);
     }
 
     function cleanup(done) {
-        process.env.USERS_FILE = usersFilePath;
-        fs.rmSync(usersFilePath, { force: true });
         config._clearDatabase(done);
     }
 
@@ -74,7 +82,7 @@ describe('Users', function () {
         });
 
         it('fails with a non-existent user', function (done) {
-            users.verify('nonexistent', 'password', function (error) {
+            users.verify('idontexist', 'wrongpassword', function (error) {
                 expect(error).to.not.be(null);
                 expect(error.code).to.be('not found');
                 done();

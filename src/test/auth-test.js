@@ -20,9 +20,18 @@ describe('Authentication & Registration Policy (RF-101)', function () {
 
     var prevUsersFile = process.env.USERS_FILE;
 
-    function resetUserFile() {
+    function resetUserFile(done) {
         process.env.USERS_FILE = usersFilePath;
         fs.rmSync(usersFilePath, { force: true });
+        if (config.db) {
+            var promise = config.db.collection('users').deleteMany({});
+            if (done) {
+                promise.then(function () { done(); }, done);
+                return;
+            }
+            return promise;
+        }
+        if (done) done();
     }
 
     before(function (done) {
@@ -49,9 +58,9 @@ describe('Authentication & Registration Policy (RF-101)', function () {
     });
 
     describe('POST /api/register validation', function () {
-        beforeEach(function () {
+        beforeEach(function (done) {
             process.env.REGISTRATION_MODE = 'open';
-            resetUserFile();
+            resetUserFile(done);
         });
 
         it('rejects missing fields with 400', function (done) {
@@ -183,8 +192,8 @@ describe('Authentication & Registration Policy (RF-101)', function () {
     });
 
     describe('REGISTRATION_MODE policies', function () {
-        beforeEach(function () {
-            resetUserFile();
+        beforeEach(function (done) {
+            resetUserFile(done);
         });
 
         it('blocks registration when REGISTRATION_MODE=disabled', function (done) {
@@ -346,35 +355,41 @@ describe('Authentication & Registration Policy (RF-101)', function () {
                 expect(await users.count()).to.equal(1);
             });
 
-            it('releases the claim when the default user file cannot be written', async function () {
-                var unwritablePath = '/tmp/meemo-auth-missing-' + process.pid + '/users.json';
-                process.env.USERS_FILE = unwritablePath;
-                fs.rmSync(unwritablePath, { recursive: true, force: true });
-                users.initRepository('file');
+            it('releases the claim when user creation fails', async function () {
+                var failingRepo = {
+                    create: function () { return Promise.reject(new Error('simulated write failure')); },
+                    getByUsername: function () { return Promise.resolve(null); },
+                    count: function () { return Promise.resolve(0); }
+                };
+                var prevRepo = users.getRepository();
+                users.setRepository(failingRepo);
 
+                try {
+                    await request(app)
+                        .post('/api/register')
+                        .send({
+                            username: 'faileduser',
+                            password: 'password123',
+                            email: 'failed@example.com',
+                            displayName: 'Failed User'
+                        })
+                        .expect(500);
+
+                    expect(await config.db.collection('system_config').countDocuments({
+                        _id: 'registration-initialized'
+                    })).to.equal(0);
+                } finally {
+                    users.setRepository(prevRepo);
+                }
+
+                await resetUserFile();
                 await request(app)
                     .post('/api/register')
                     .send({
-                        username: 'failedfileuser',
-                        password: 'password123',
-                        email: 'failed@example.com',
-                        displayName: 'Failed File User'
-                    })
-                    .expect(500);
-
-                expect(await config.db.collection('system_config').countDocuments({
-                    _id: 'registration-initialized'
-                })).to.equal(0);
-
-                resetUserFile();
-                users.initRepository('file');
-                await request(app)
-                    .post('/api/register')
-                    .send({
-                        username: 'recoveredfileuser',
+                        username: 'recovereduser',
                         password: 'password123',
                         email: 'recovered@example.com',
-                        displayName: 'Recovered File User'
+                        displayName: 'Recovered User'
                     })
                     .expect(201);
                 expect(await users.count()).to.equal(1);
@@ -386,16 +401,18 @@ describe('Authentication & Registration Policy (RF-101)', function () {
         beforeEach(function (done) {
             delete process.env.LOGIN_RATE_LIMIT_MAX;
             delete process.env.LOGIN_RATE_LIMIT_WINDOW_MS;
-            resetUserFile();
-            request(app)
-                .post('/api/register')
-                .send({
-                    username: 'validuser',
-                    password: 'password123',
-                    email: 'user@example.com',
-                    displayName: 'Valid User'
-                })
-                .expect(201, done);
+            resetUserFile(function (err) {
+                if (err) return done(err);
+                request(app)
+                    .post('/api/register')
+                    .send({
+                        username: 'validuser',
+                        password: 'password123',
+                        email: 'user@example.com',
+                        displayName: 'Valid User'
+                    })
+                    .expect(201, done);
+            });
         });
 
         it('returns 401 with unified message for nonexistent user without leaking 404', function (done) {

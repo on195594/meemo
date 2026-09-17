@@ -15,8 +15,6 @@ var MongoClient = require('mongodb').MongoClient;
 var config = require('../config.js');
 var users = require('../users.js');
 var MongoUserRepository = require('../database/users-mongo.js');
-var LegacyFileUserRepository = require('../database/users-file.js');
-var FallbackUserRepository = require('../database/users-fallback.js');
 var migrator = require('../../scripts/migrate-users-to-mongo.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
@@ -46,7 +44,7 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
         if (prevAuthSource === undefined) delete process.env.AUTH_USER_SOURCE;
         else process.env.AUTH_USER_SOURCE = prevAuthSource;
 
-        users.setRepository(new LegacyFileUserRepository());
+        users.initRepository('mongo');
         fs.rmSync(testUsersFile, { force: true });
         fs.rmSync(testManifestFile, { force: true });
 
@@ -154,54 +152,6 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
                             expect(names).to.contain('user1');
                             expect(names).to.contain('user2');
                             done();
-                        });
-                    });
-                });
-            });
-        });
-    });
-
-    describe('FallbackUserRepository dual-read capability', function () {
-        it('reads from file when not in mongo, and gives priority to mongo when present', function (done) {
-            var fileRepo = new LegacyFileUserRepository(testUsersFile);
-            var fallbackRepo = new FallbackUserRepository(mongoRepo, fileRepo);
-
-            // Create user in file repo only
-            fileRepo.create({
-                username: 'fileonly',
-                displayName: 'File Only',
-                email: 'file@example.com',
-                passwordHash: 'filehash'
-            }, function (err) {
-                if (err) return done(err);
-
-                // Create user in mongo repo only
-                mongoRepo.create({
-                    username: 'mongoonly',
-                    displayName: 'Mongo Only',
-                    email: 'mongo@example.com',
-                    passwordHash: 'mongohash'
-                }, function (err) {
-                    if (err) return done(err);
-
-                    // Dual read: find file user
-                    fallbackRepo.getByUsername('fileonly', function (err, u1) {
-                        if (err) return done(err);
-                        expect(u1).to.be.ok();
-                        expect(u1.username).to.equal('fileonly');
-
-                        // Dual read: find mongo user
-                        fallbackRepo.getByUsername('mongoonly', function (err, u2) {
-                            if (err) return done(err);
-                            expect(u2).to.be.ok();
-                            expect(u2.username).to.equal('mongoonly');
-
-                        // Dual list: contains both
-                            fallbackRepo.list(function (err, list) {
-                                if (err) return done(err);
-                                expect(list.length).to.equal(2);
-                                done();
-                            });
                         });
                     });
                 });

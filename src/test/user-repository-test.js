@@ -2,26 +2,66 @@
 
 /* global it:false */
 /* global describe:false */
-/* global beforeEach:false */
 /* global afterEach:false */
 
 var expect = require('expect.js');
-var fs = require('fs');
-var path = require('path');
+var util = require('util');
+var nodeify = require('../promise.js');
 var users = require('../users.js');
 var UserRepository = require('../database/user-repository.js');
-var LegacyFileUserRepository = require('../database/users-file.js');
+
+function MemoryUserRepository() {
+    UserRepository.call(this);
+    this._users = {};
+}
+util.inherits(MemoryUserRepository, UserRepository);
+
+MemoryUserRepository.prototype.get = function (id, callback) {
+    var user = this._users[id] || null;
+    return nodeify(Promise.resolve(user ? Object.assign({}, user) : null), callback);
+};
+
+MemoryUserRepository.prototype.getByUsername = function (username, callback) {
+    var self = this;
+    var norm = username.toLowerCase();
+    var foundKey = Object.keys(this._users).find(function (key) {
+        return key.toLowerCase() === norm ||
+            (self._users[key].username && self._users[key].username.toLowerCase() === norm);
+    });
+    var user = foundKey ? this._users[foundKey] : null;
+    return nodeify(Promise.resolve(user ? Object.assign({}, user) : null), callback);
+};
+
+MemoryUserRepository.prototype.create = function (userData, callback) {
+    var self = this;
+    return nodeify(Promise.resolve().then(function () {
+        var norm = userData.username.toLowerCase();
+        var exists = Object.keys(self._users).some(function (k) {
+            return k.toLowerCase() === norm;
+        });
+        if (exists) throw new Error('user exists');
+        var user = Object.assign({}, userData);
+        user.id = user.id || user.username;
+        self._users[userData.username] = user;
+        return Object.assign({}, user);
+    }), callback);
+};
+
+MemoryUserRepository.prototype.list = function (callback) {
+    var self = this;
+    var list = Object.keys(this._users).map(function (k) {
+        return Object.assign({}, self._users[k]);
+    });
+    return nodeify(Promise.resolve(list), callback);
+};
+
+MemoryUserRepository.prototype.count = function (callback) {
+    return nodeify(Promise.resolve(Object.keys(this._users).length), callback);
+};
 
 describe('UserRepository Abstraction (RF-201)', function () {
-    var testFilePath = '/tmp/meemo-user-repo-test-' + process.pid + '.json';
-
-    beforeEach(function () {
-        fs.rmSync(testFilePath, { force: true });
-    });
-
     afterEach(function () {
-        fs.rmSync(testFilePath, { force: true });
-        users.setRepository(new LegacyFileUserRepository());
+        users.initRepository('mongo');
     });
 
     describe('UserRepository base class contract', function () {
@@ -36,9 +76,9 @@ describe('UserRepository Abstraction (RF-201)', function () {
         });
     });
 
-    describe('LegacyFileUserRepository persistence', function () {
+    describe('Custom UserRepository persistence', function () {
         it('correctly creates, retrieves, and counts users', function (done) {
-            var repo = new LegacyFileUserRepository(testFilePath);
+            var repo = new MemoryUserRepository();
 
             repo.count(function (err, count) {
                 if (err) return done(err);
@@ -74,7 +114,7 @@ describe('UserRepository Abstraction (RF-201)', function () {
         });
 
         it('rejects duplicate username on create', function (done) {
-            var repo = new LegacyFileUserRepository(testFilePath);
+            var repo = new MemoryUserRepository();
             var userData = {
                 username: 'uniqueuser',
                 displayName: 'Unique',
@@ -94,7 +134,7 @@ describe('UserRepository Abstraction (RF-201)', function () {
         });
 
         it('supports case-insensitive username lookup in getByUsername', function (done) {
-            var repo = new LegacyFileUserRepository(testFilePath);
+            var repo = new MemoryUserRepository();
             var userData = {
                 username: 'mixedCaseUser',
                 displayName: 'Mixed Case',
@@ -114,9 +154,8 @@ describe('UserRepository Abstraction (RF-201)', function () {
             });
         });
 
-        it('returns empty list and null get on non-existent storage file', function (done) {
-            var nonExistentPath = '/tmp/meemo-nonexistent-' + Date.now() + '.json';
-            var repo = new LegacyFileUserRepository(nonExistentPath);
+        it('returns empty list and null get on empty repository', function (done) {
+            var repo = new MemoryUserRepository();
 
             repo.list(function (err, list) {
                 if (err) return done(err);
@@ -134,7 +173,7 @@ describe('UserRepository Abstraction (RF-201)', function () {
 
     describe('User module repository swappability', function () {
         it('allows setting custom repository implementation', function (done) {
-            var customRepo = new LegacyFileUserRepository(testFilePath);
+            var customRepo = new MemoryUserRepository();
             users.setRepository(customRepo);
 
             expect(users.getRepository()).to.equal(customRepo);

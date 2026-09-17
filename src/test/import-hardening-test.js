@@ -65,33 +65,28 @@ describe('Import Safety and Consistency (RF-106)', function () {
     var authAgent;
     var testUserId;
 
-    before(function (done) {
+    before(async function () {
+        this.timeout(10000);
         process.env.USERS_FILE = usersFilePath;
         config.attachmentDir = testAttachmentDir;
 
         fs.rmSync(usersFilePath, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
 
-        config._clearDatabase(function (err) {
-            if (err) return done(err);
+        await config._clearDatabase();
+        var client = await require('mongodb').MongoClient.connect(config.databaseUrl);
+        config.db = client.db();
+        app = createApp({ sessionMemory: true });
 
-            require('mongodb').MongoClient.connect(config.databaseUrl).then(function (client) {
-                config.db = client.db();
-                app = createApp({ sessionMemory: true });
+        await users.create('importer', 'importer@example.com', 'Importer', 'Password123!');
+        var u = await users.resolveUser('importer');
+        testUserId = u.id;
 
-                users.create('importer', 'importer@example.com', 'Importer', 'Password123!', function (err) {
-                    if (err) return done(err);
-
-                    testUserId = 'importer';
-
-                    authAgent = request.agent(app);
-                    authAgent
-                        .post('/api/login')
-                        .send({ username: 'importer', password: 'Password123!' })
-                        .expect(200, done);
-                });
-            }, done);
-        });
+        authAgent = request.agent(app);
+        await authAgent
+            .post('/api/login')
+            .send({ username: 'importer', password: 'Password123!' })
+            .expect(200);
     });
 
     after(function (done) {

@@ -7,9 +7,7 @@ var assert = require('assert'),
     bcrypt = require('bcrypt'),
     nodeify = require('./promise.js'),
     UserRepository = require('./database/user-repository.js'),
-    LegacyFileUserRepository = require('./database/users-file.js'), // @deprecated: retained for test suites & offline migration verification
-    MongoUserRepository = require('./database/users-mongo.js'),
-    FallbackUserRepository = require('./database/users-fallback.js'); // @deprecated: retained for test suites & dual-read verification
+    MongoUserRepository = require('./database/users-mongo.js');
 
 function UserError(code, messageOrError) {
     assert.strictEqual(typeof code, 'string');
@@ -28,21 +26,15 @@ var repository = null;
 
 /**
  * Resolves account repository from AUTH_USER_SOURCE.
- * Production runtime exclusively targets MongoUserRepository ('mongo').
- * 'file' and 'fallback' are deprecated compatibility adapters preserved for Mocha test suites and offline audit.
+ * Runtime exclusively targets MongoUserRepository ('mongo').
  */
 function createRepositoryFromEnv() {
-    var source = process.env.AUTH_USER_SOURCE;
+    var source = process.env.AUTH_USER_SOURCE || 'mongo';
     var isProduction = process.env.NODE_ENV === 'production';
-    if (!source) {
-        source = isProduction ? 'mongo' : 'file';
-    }
     if (isProduction && source !== 'mongo') {
         throw new Error('FATAL: AUTH_USER_SOURCE must be mongo when NODE_ENV=production');
     }
     if (source === 'mongo') return new MongoUserRepository();
-    if (source === 'fallback') return new FallbackUserRepository(new MongoUserRepository(), new LegacyFileUserRepository());
-    if (source === 'file') return new LegacyFileUserRepository();
     throw new Error('Unsupported AUTH_USER_SOURCE: ' + source);
 }
 
@@ -64,7 +56,6 @@ function initRepository(source) {
 function getUsersFilePath() {
     var repo = getRepository();
     if (repo && typeof repo.getFilePath === 'function') return repo.getFilePath();
-    if (repo && repo.fallback && typeof repo.fallback.getFilePath === 'function') return repo.fallback.getFilePath();
     return null;
 }
 
@@ -180,9 +171,7 @@ module.exports = {
     verify: verify,
     resolveUser: resolveUser,
     UserRepository: UserRepository,
-    LegacyFileUserRepository: LegacyFileUserRepository,
     MongoUserRepository: MongoUserRepository,
-    FallbackUserRepository: FallbackUserRepository,
     getRepository: getRepository,
     setRepository: setRepository,
     initRepository: initRepository,
