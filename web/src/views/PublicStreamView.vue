@@ -14,6 +14,7 @@
           :key="thing._id"
           :thing="thing"
           :can-edit="false"
+          @open-detail="openNoteModal"
           @wikilink-click="handleWikilinkClick"
           @image-click="handleImageClick"
         />
@@ -22,6 +23,15 @@
         <p>No public notes available.</p>
       </div>
     </main>
+
+    <NoteDetailModal
+      :open="isNoteModalOpen"
+      :thing="activeModalNote"
+      :can-edit="false"
+      @close="isNoteModalOpen = false"
+      @wikilink-click="handleWikilinkClick"
+      @image-click="handleImageClick"
+    />
 
     <ImageLightbox
       :open="isLightboxOpen"
@@ -37,11 +47,20 @@ import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, type Thing, type PublicUserProfile } from '../api/client';
 import NoteCard from '../components/NoteCard.vue';
+import NoteDetailModal from '../components/NoteDetailModal.vue';
 import ImageLightbox, { type LightboxImage } from '../components/ImageLightbox.vue';
 
 const route = useRoute();
 const router = useRouter();
 const userId = String(route.params.userId);
+
+const isNoteModalOpen = ref(false);
+const activeModalNote = ref<Thing | null>(null);
+
+function openNoteModal(thing: Thing) {
+  activeModalNote.value = thing;
+  isNoteModalOpen.value = true;
+}
 
 function handleWikilinkClick(target: string) {
   router.push({ path: '/', query: { q: target } });

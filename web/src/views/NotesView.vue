@@ -90,6 +90,7 @@
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
                 :on-delete-confirm="handleDeleteNote"
+                @open-detail="openNoteModal"
                 @toggle-sticky="handleToggleSticky"
                 @toggle-public="handleTogglePublic"
                 @toggle-archive="handleToggleArchive"
@@ -115,6 +116,7 @@
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
                 :on-delete-confirm="handleDeleteNote"
+                @open-detail="openNoteModal"
                 @toggle-sticky="handleToggleSticky"
                 @toggle-public="handleTogglePublic"
                 @toggle-archive="handleToggleArchive"
@@ -305,6 +307,24 @@
         :initial-index="lightboxIndex"
         @close="isLightboxOpen = false"
       />
+
+      <!-- Google Keep Style Note Detail Modal -->
+      <NoteDetailModal
+        :open="isNoteModalOpen"
+        :thing="activeModalNote"
+        :can-edit="true"
+        :initial-mode="modalInitialMode"
+        :highlight-query="activeFilter || ''"
+        :on-save-edit="updateNote"
+        :on-delete-confirm="handleDeleteNote"
+        @close="closeNoteModal"
+        @toggle-sticky="handleToggleSticky"
+        @toggle-public="handleTogglePublic"
+        @toggle-archive="handleToggleArchive"
+        @image-click="handleImageClick"
+        @tag-click="handleTagClick"
+        @wikilink-click="handleWikilinkClick"
+      />
     </template>
   </div>
 </template>
@@ -319,6 +339,7 @@ import type { Thing, NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import NoteComposer from '../components/NoteComposer.vue';
 import NoteCard from '../components/NoteCard.vue';
+import NoteDetailModal from '../components/NoteDetailModal.vue';
 import ImageLightbox, { type LightboxImage } from '../components/ImageLightbox.vue';
 
 const { isAuthenticated, isLoading: authLoading, isFirstUser } = useAuth();
@@ -419,6 +440,38 @@ async function handleDeleteNote(id: string) {
   }
   return result;
 }
+
+const isNoteModalOpen = ref(false);
+const activeModalNote = ref<Thing | null>(null);
+const modalInitialMode = ref<'view' | 'edit'>('view');
+
+function openNoteModal(thing: Thing, mode: 'view' | 'edit' = 'view') {
+  if (isSelectionMode.value) {
+    handleToggleSelect(thing);
+    return;
+  }
+  activeModalNote.value = thing;
+  modalInitialMode.value = mode;
+  isNoteModalOpen.value = true;
+}
+
+function closeNoteModal() {
+  isNoteModalOpen.value = false;
+  activeModalNote.value = null;
+}
+
+watch(
+  () => things.value,
+  (newThings) => {
+    if (activeModalNote.value && isNoteModalOpen.value) {
+      const found = newThings.find((t) => t._id === activeModalNote.value?._id);
+      if (found) {
+        activeModalNote.value = found;
+      }
+    }
+  },
+  { deep: true }
+);
 
 function handleQueryRemove() {
   const query = { ...route.query };

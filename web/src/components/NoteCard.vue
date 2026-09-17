@@ -5,9 +5,11 @@
       'is-sticky': thing.sticky,
       'is-archived': thing.archived,
       'is-editing': isEditing,
-      'is-selected': selected
+      'is-selected': selected,
+      'is-clickable': !isEditing && hasOpenDetailListener
     }"
     :style="{ backgroundColor: 'var(--note-color-' + (thing.color || 'default') + ')' }"
+    @click="handleCardClick"
   >
     <!-- Selection Checkbox Button -->
     <button
@@ -390,6 +392,7 @@ const emit = defineEmits<{
   (e: 'imageClick', images: LightboxImage[], initialIndex: number): void;
   (e: 'update', id: string, updates: Partial<Thing>): void;
   (e: 'delete', id: string): void;
+  (e: 'openDetail', thing: Thing, mode: 'view' | 'edit'): void;
 }>();
 
 const isEditing = ref(false);
@@ -454,7 +457,14 @@ function formatFileSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const instance = getCurrentInstance();
+const hasOpenDetailListener = computed(() => Boolean(instance?.vnode.props?.onOpenDetail));
+
 function startEdit() {
+  if (hasOpenDetailListener.value) {
+    emit('openDetail', props.thing, 'edit');
+    return;
+  }
   editContent.value = props.thing.content || '';
   editError.value = null;
   isEditing.value = true;
@@ -466,6 +476,33 @@ function startEdit() {
 function cancelEdit() {
   isEditing.value = false;
   editError.value = null;
+}
+
+function handleCardClick(event: MouseEvent) {
+  if (isEditing.value || !hasOpenDetailListener.value) return;
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+
+  if (
+    target.closest('.card-select-btn') ||
+    target.closest('.card-actions') ||
+    target.closest('.task-list-item-checkbox') ||
+    target.closest('.attachment-link') ||
+    target.closest('.tag-pill') ||
+    target.closest('a') ||
+    target.closest('.delete-modal-overlay') ||
+    target.closest('.inline-edit-form')
+  ) {
+    return;
+  }
+
+  if (target.closest('img') && hasImageClickListener.value) {
+    return;
+  }
+
+  emit('openDetail', props.thing, 'view');
 }
 
 const cardBodyRef = ref<HTMLElement | null>(null);
@@ -509,7 +546,6 @@ function openLightbox(src: string) {
   emit('imageClick', images, index >= 0 ? index : 0);
 }
 
-const instance = getCurrentInstance();
 const hasImageClickListener = computed(() => Boolean(instance?.vnode.props?.onImageClick));
 const isTaskSaving = ref(false);
 
@@ -665,6 +701,10 @@ async function confirmDelete() {
 .note-card:hover {
   box-shadow: var(--md-sys-elevation-2);
   border-color: var(--note-border-hover);
+}
+
+.note-card.is-clickable {
+  cursor: pointer;
 }
 
 .note-card.is-sticky {
