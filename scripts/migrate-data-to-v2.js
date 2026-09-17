@@ -783,14 +783,37 @@ function ensureUnifiedIndexes(db, callback) {
                     ], done);
                 },
                 function (done) {
-                    collectionOperation(db, 'apply:indexes', '<all>', 'things', 'createIndex', [
-                        { ownerId: 1, content: 'text', tags: 'text' },
-                        { name: 'owner_text_content_tags', weights: { tags: 10, content: 5 } }
-                    ], function (err) {
-                        if (err && (err.message.indexOf('only one text index') !== -1 || err.codeName === 'IndexOptionsConflict' || err.codeName === 'IndexKeySpecsConflict')) {
-                            return done(null);
+                    var collection = db.collection('things');
+                    if (typeof collection.indexes !== 'function') {
+                        return collectionOperation(db, 'apply:indexes', '<all>', 'things', 'createIndex', [
+                            { ownerId: 1, content: 'text', tags: 'text' },
+                            { name: 'owner_text_content_tags', weights: { tags: 10, content: 5 } }
+                        ], done);
+                    }
+                    collection.indexes().then(async function (indexes) {
+                        var existing = (indexes || []).find(function (idx) {
+                            return idx.key && Object.values(idx.key).some(function (v) { return v === 'text'; });
+                        });
+                        if (existing) {
+                            var isTarget = existing.name === 'owner_text_content_tags' &&
+                                existing.key &&
+                                existing.key.ownerId === 1 &&
+                                existing.weights &&
+                                existing.weights.tags &&
+                                existing.weights.content;
+                            if (isTarget) return;
+                            if (typeof collection.dropIndex === 'function') {
+                                await collection.dropIndex(existing.name);
+                            }
                         }
-                        done(err);
+                        await collection.createIndex(
+                            { ownerId: 1, content: 'text', tags: 'text' },
+                            { name: 'owner_text_content_tags', weights: { tags: 10, content: 5 } }
+                        );
+                    }).then(function () {
+                        done(null);
+                    }, function (err) {
+                        done(migrationError('apply:indexes', '<all>', 'things', 'createIndex', err));
                     });
                 }
             ], next);

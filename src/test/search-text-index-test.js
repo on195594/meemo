@@ -94,6 +94,18 @@ describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
             var queryText = search.buildQuery({ filter: 'benchmark', mode: 'text' });
             expect(search.queryHasText(queryText)).to.be(true);
         });
+
+        it('handles punctuation-only and invalid negation tokens gracefully', function () {
+            expect(search.buildSearchFilter('#', 'text')).to.be(null);
+            expect(search.buildSearchFilter('###', 'text')).to.be(null);
+            expect(search.buildSearchFilter('!!!', 'text')).to.be(null);
+            expect(search.buildSearchFilter('-', 'text')).to.be(null);
+            expect(search.buildSearchFilter('--', 'text')).to.be(null);
+            expect(search.buildSearchFilter('hello !!!', 'text')).to.eql({ $text: { $search: 'hello' } });
+            expect(search.buildSearchFilter('-negation hello', 'text')).to.eql({ $text: { $search: '-negation hello' } });
+            expect(search.buildSearchFilter('#', 'regex')).to.be(null);
+            expect(search.buildSearchFilter('!!!', 'regex')).to.be(null);
+        });
     });
 
     describe('MongoDB $text stemming, scoring, and sorting', function () {
@@ -163,6 +175,28 @@ describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
             expect(results.length).to.be(1);
             expect(results[0]._id).to.be(noteDocA._id);
         });
+
+        it('auto-upgrades legacy text index to compound owner_text_content_tags index', async function () {
+            var collection = db.collection('things');
+            // Drop target index and create legacy index
+            await collection.dropIndex('owner_text_content_tags');
+            await collection.createIndex({ content: 'text' }, { name: 'content_text', default_language: 'none' });
+
+            var beforeIdxs = await collection.indexes();
+            expect(beforeIdxs.some(function (i) { return i.name === 'content_text'; })).to.be(true);
+            expect(beforeIdxs.some(function (i) { return i.name === 'owner_text_content_tags'; })).to.be(false);
+
+            // Trigger ensureIndexes - should detect and auto-upgrade
+            await databaseThings.ensureIndexes();
+
+            var afterIdxs = await collection.indexes();
+            expect(afterIdxs.some(function (i) { return i.name === 'content_text'; })).to.be(false);
+            var targetIdx = afterIdxs.find(function (i) { return i.name === 'owner_text_content_tags'; });
+            expect(targetIdx).to.be.ok();
+            expect(targetIdx.name).to.be('owner_text_content_tags');
+            expect(targetIdx.key.ownerId).to.be(1);
+            expect(targetIdx.weights).to.eql({ tags: 10, content: 5 });
+        });
     });
 
     describe('HTTP GET /api/things?mode=text integration', function () {
@@ -219,6 +253,13 @@ describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
                 .expect(200);
 
             expect(res.body.things.length).to.be(0);
+        });
+
+        it('handles punctuation-only query safely without throwing 500', async function () {
+            var res = await agent.get('/api/things?filter=%23&mode=text')
+                .expect(200);
+            expect(res.body).to.have.property('things');
+            expect(res.body.things.length).to.be.greaterThan(0);
         });
     });
 });

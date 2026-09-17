@@ -79,26 +79,57 @@ function getUnifiedCollection() {
 
 function createIndex(collection, spec, options) {
     return collection.createIndex(spec, options).catch(function (error) {
-        if (error.codeName !== 'IndexOptionsConflict' && error.codeName !== 'IndexKeySpecsConflict') throw error;
+        if (error.codeName !== 'IndexOptionsConflict') throw error;
     });
 }
 
+async function ensureTextIndex(collection) {
+    var TARGET_NAME = 'owner_text_content_tags';
+    var TARGET_SPEC = { ownerId: 1, content: 'text', tags: 'text' };
+    var TARGET_OPTIONS = { name: TARGET_NAME, weights: { tags: 10, content: 5 } };
+
+    if (typeof collection.indexes !== 'function') {
+        return collection.createIndex(TARGET_SPEC, TARGET_OPTIONS);
+    }
+
+    var indexes = await collection.indexes().catch(function () { return []; });
+    var existingTextIndex = indexes.find(function (idx) {
+        if (!idx.key) return false;
+        return Object.values(idx.key).some(function (val) { return val === 'text'; });
+    });
+
+    if (existingTextIndex) {
+        var isTarget = existingTextIndex.name === TARGET_NAME &&
+            existingTextIndex.key &&
+            existingTextIndex.key.ownerId === 1 &&
+            existingTextIndex.weights &&
+            existingTextIndex.weights.tags &&
+            existingTextIndex.weights.content;
+
+        if (isTarget) {
+            return;
+        }
+        if (typeof collection.dropIndex === 'function') {
+            await collection.dropIndex(existingTextIndex.name);
+        }
+    }
+
+    await collection.createIndex(TARGET_SPEC, TARGET_OPTIONS);
+}
+
 function ensureIndexes(callback) {
-    var promise = Promise.resolve().then(function () {
+    var promise = Promise.resolve().then(async function () {
         if (!config.db) throw new Error('MongoDB database is not connected');
         var collection = config.db.collection('things');
-        return Promise.all([
+        await Promise.all([
             createIndex(collection, { ownerId: 1, modifiedAt: -1 }),
             createIndex(collection, { ownerId: 1, sticky: -1, modifiedAt: -1 }),
             createIndex(collection, { ownerId: 1, archived: 1, modifiedAt: -1 }),
             createIndex(collection, { ownerId: 1, tags: 1 }),
             createIndex(collection, { ownerId: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
-            createIndex(collection, { ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
-            createIndex(collection, { ownerId: 1, content: 'text', tags: 'text' }, {
-                name: 'owner_text_content_tags',
-                weights: { tags: 10, content: 5 }
-            })
+            createIndex(collection, { ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 })
         ]);
+        await ensureTextIndex(collection);
     }).then(function () {
         indexesCreated = true;
     });
