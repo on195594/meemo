@@ -340,6 +340,8 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
                 .end(function (err, res) {
                     expect(err).to.be(null);
                     expect(res.headers['content-type']).to.contain('application/rss+xml');
+                    expect(res.text).to.contain('/shared/' + publicThingId);
+                    expect(res.text).not.to.contain('/blog/TODO');
 
                     request(app)
                         .get('/api/rss/' + aliceUser.id)
@@ -347,6 +349,8 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
                         .end(function (err, res2) {
                             expect(err).to.be(null);
                             expect(res2.headers['content-type']).to.contain('application/rss+xml');
+                            expect(res2.text).to.contain('/shared/' + publicThingId);
+                            expect(res2.text).not.to.contain('/blog/TODO');
                             done();
                         });
                 });

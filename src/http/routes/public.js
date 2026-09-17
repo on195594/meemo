@@ -73,7 +73,7 @@ async function getRSS(req, res) {
         throw error;
     }
 
-    var webServer = process.env.APP_ORIGIN || 'http://localhost';
+    var webServer = (process.env.APP_ORIGIN || 'http://localhost').replace(/\/+$/, '');
     var feed = new rss({
         title: (data.settings && data.settings.title) || 'Meemo',
         image_url: webServer + '/img/logo128.png',
@@ -81,10 +81,10 @@ async function getRSS(req, res) {
     });
 
     data.things.forEach(function (thing) {
-        var title = thing.content.split('\n').filter(function (line) { return !!line.trim(); })[0];
+        var title = thing.content.split('\n').filter(function (line) { return !!line.trim(); })[0] || 'Untitled note';
         feed.item({
             title: title,
-            url: webServer + '/blog/TODO',
+            url: webServer + '/shared/' + thing._id,
             author: data.user.displayName + '( ' + data.user.username + ' )',
             date: new Date(thing.createdAt),
             description: markdown.render(thing.richContent, { baseUrl: webServer })

@@ -23,7 +23,7 @@ Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, pers
 
 | Data | Storage |
 | --- | --- |
-| Notes, tags, settings, sessions | MongoDB (unified collections: `things`, `tags`, `settings`, `sessions`) |
+| Notes, settings, sessions | MongoDB (unified collections: `things`, `settings`, `sessions`; `things.tags` is the single source of truth for tags; `tags` collection is a historical projection) |
 | Attachments | `ATTACHMENT_DIR` partitioned by stable `userId` |
 | Accounts | MongoDB `users` collection; legacy `USERS_FILE` and fallback repositories are deprecated compatibility modes preserved for offline test and verification |
 
@@ -43,7 +43,7 @@ Routes are registered by `src/http/router.js` from `src/http/app.js`:
 - `/api/profile`: authenticated user identity and settings
 - `/api/things`, `/api/files`, `/api/tags`, `/api/settings`: authenticated application API
 - `/api/import`, `/api/export`: archive transfer with size limits and path traversal protection
-- `/api/public/*`, `/api/rss/*`, `/public/*`: public streams and feeds
+- `/api/public/*`, `/api/rss/*`, `/public/*`, `/shared/*`: public streams, RSS feeds with canonical note URLs, and shared notes
 - `/api/health/live`, `/api/health/ready`, `/api/healthcheck`: container and orchestration health probes
 
 The authoritative OpenAPI 3.0 specification is maintained in `docs/openapi.yaml`, and progressive TypeScript declarations for core domain models and API contracts reside in `types/api.d.ts`.

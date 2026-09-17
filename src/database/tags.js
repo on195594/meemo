@@ -2,6 +2,18 @@
 
 'use strict';
 
+/**
+ * Unified tags collection projection repository.
+ *
+ * NOTE: As defined in docs/LONG_TERM_ARCHITECTURE.md (Section 10), the authoritative
+ * online single source of truth for tag identity and usage is `things.tags` in MongoDB.
+ * Runtime read operations (`/api/tags`) aggregate dynamically from `things` via `things.getTagUsage`.
+ * This module and the persisted `tags` collection serve exclusively as a historical
+ * migration projection and verification artifact (e.g. `cleanupTags` and readiness checks).
+ * Direct mutation functions (update, del, etc.) are @deprecated and retained only for
+ * legacy test suite backwards compatibility.
+ */
+
 var assert = require('assert'),
     crypto = require('crypto'),
     ObjectId = require('mongodb').ObjectId,
@@ -49,6 +61,9 @@ function ensureIndexes(callback) {
     return nodeify(promise, callback);
 }
 
+/**
+ * @deprecated Use things.getTagUsage(userId) for online tag usage queries.
+ */
 function get(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
 
@@ -60,11 +75,17 @@ function get(userId, callback) {
     return nodeify(promise, callback);
 }
 
+/**
+ * @deprecated Retained for legacy migration test suites only. Online mutations update things.tags.
+ */
 function update(userId, name, callback) {
     var promise = updateWithState(userId, name).then(function () { return undefined; });
     return nodeify(promise, callback);
 }
 
+/**
+ * @deprecated Retained for legacy migration test suites only.
+ */
 function updateWithState(userId, name, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof name, 'string');
@@ -88,6 +109,9 @@ function updateWithState(userId, name, callback) {
     return nodeify(promise, callback);
 }
 
+/**
+ * @deprecated Retained for legacy migration test suites only.
+ */
 function restoreUpdate(userId, state, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert(state && typeof state.name === 'string');
@@ -115,6 +139,9 @@ function restoreUpdate(userId, state, callback) {
     return nodeify(promise, callback);
 }
 
+/**
+ * @deprecated Retained for legacy migration test suites only.
+ */
 function del(userId, tagId, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof tagId, 'string');
