@@ -561,16 +561,14 @@ Username 可以修改；内部 owner identity 不应因此改变。
 MongoDB users
 ```
 
-以下模式只能属于迁移/测试兼容：
+历史兼容模式：
 
 ```text
 USERS_FILE
 fallback repository
 ```
 
-禁止新增生产功能依赖 legacy user source。
-
-一旦 rollback / migration window 正式结束，应安排删除，而不是让 compatibility code 永久存在。
+**现状更新**：`users-file.js` 和 `users-fallback.js` 现已彻底删除，`src/users.js` 统一仅保留 `MongoUserRepository` 作为运行期持久化实现；离线迁移脚本保留只读格式解析能力以备灾难恢复。禁止新增任何生产功能依赖 legacy user source。
 
 ---
 

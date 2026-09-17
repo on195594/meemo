@@ -1,15 +1,16 @@
 # Meemo
 
-Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It uses username/password authentication, MongoDB for application data and sessions, and the local filesystem for attachments. Accounts can use MongoDB or the legacy file repository selected by configuration.
+Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It uses username/password authentication, MongoDB for application data, accounts, and sessions, and the local filesystem for attachments.
 
 ## Features
 
-- Markdown notes with tags and full-text search
+- Google Keep-inspired expanded note viewing and editing modal dialog with responsive backdrop, real-time 12-color theming, and auto-save
+- Markdown notes with tags, wikilinks, task lists, and MongoDB `$text` full-text search with relevance scoring
 - Attachments, archive, sticky notes, and public sharing
-- Public feeds and RSS
+- Public feeds and RSS with canonical note URLs
 - JSON archive import and export
-- High-performance MongoDB compound ESR indexes and tag aggregation
-- Local username/password accounts with bcrypt password hashes
+- High-performance MongoDB compound ESR indexes, text indexing, and tag aggregation
+- Local username/password accounts with bcrypt password hashes stored exclusively in MongoDB
 - MongoDB unified collection model with stable user identity decoupling
 - Read-only retirement preflight and historical v1-to-v2 migration tooling
 - Docker Compose deployment and single-command `./deploy.sh` hot-restart
@@ -112,7 +113,7 @@ Build and test from the repository. Operate the deployed containers from the pro
 | `src/services/` | Promise-first authentication, things, attachments, sharing, settings, health, and import/export behavior |
 | `src/storage/` | Local filesystem attachment adapter |
 | `src/database/` | MongoDB persistence (things, tags, settings, users, and sessions) |
-| `src/users.js` | Account repository abstraction and password handling |
+| `src/users.js` | Account repository abstraction targeting MongoDB users and bcrypt password handling |
 | `types/` | TypeScript domain definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`) |
 | `scripts/` | Historical v1-to-v2 migration tools, read-only retirement/business-readiness verifiers, benchmark, and attachment GC |
 | `src/test/` | Backend and contract tests run by Mocha |
@@ -127,6 +128,7 @@ Do not commit generated `public/`, `node_modules/`, account files, attachments, 
 
 - [Contribution guide](CONTRIBUTING.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Long-term architecture](docs/LONG_TERM_ARCHITECTURE.md)
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Master branch protection](docs/BRANCH_PROTECTION.md)

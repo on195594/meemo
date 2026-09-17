@@ -53,12 +53,6 @@ function initRepository(source) {
     return repository;
 }
 
-function getUsersFilePath() {
-    var repo = getRepository();
-    if (repo && typeof repo.getFilePath === 'function') return repo.getFilePath();
-    return null;
-}
-
 function profile(userId, full, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof full, 'boolean');
@@ -174,6 +168,5 @@ module.exports = {
     MongoUserRepository: MongoUserRepository,
     getRepository: getRepository,
     setRepository: setRepository,
-    initRepository: initRepository,
-    getUsersFilePath: getUsersFilePath
+    initRepository: initRepository
 };

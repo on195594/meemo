@@ -21,6 +21,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `web/`: modern Vue 3 + Vite + TypeScript browser application.
 - `public/`: generated frontend output; never edit or commit it.
 - `docs/ARCHITECTURE.md`: component boundaries, API contracts, and runtime flow.
+- `docs/LONG_TERM_ARCHITECTURE.md`: normative long-term architectural constraints and complexity budget.
 - `docs/BACKUP_RESTORE.md`: production backup, disaster recovery, and verification runbooks.
 - `docs/BRANCH_PROTECTION.md`: reference master branch protection and check policies (disabled for single-maintainer development).
 - `docs/DEPENDENCY_SECURITY.md`: production dependency security audit and vulnerability remediation map.
