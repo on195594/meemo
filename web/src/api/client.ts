@@ -135,6 +135,7 @@ export const api = {
     list: (params?: ListThingsQuery) => {
       const query = new URLSearchParams();
       if (params?.filter) query.set('filter', params.filter);
+      if (params?.mode) query.set('mode', params.mode);
       if (params?.sticky !== undefined) query.set('sticky', String(params.sticky));
       if (params?.archived !== undefined) query.set('archived', String(params.archived));
       if (params?.skip !== undefined) query.set('skip', String(params.skip));
@@ -272,6 +273,7 @@ export const api = {
     listThings: (userId: string, params?: ListPublicThingsQuery) => {
       const query = new URLSearchParams();
       if (params?.filter) query.set('filter', params.filter);
+      if (params?.mode) query.set('mode', params.mode);
       if (params?.skip !== undefined) query.set('skip', String(params.skip));
       if (params?.limit !== undefined) query.set('limit', String(params.limit));
       const qs = query.toString();

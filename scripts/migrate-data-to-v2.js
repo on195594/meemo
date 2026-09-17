@@ -729,8 +729,10 @@ function getDbConnection(options, phase, callback) {
         } catch (error) {
             return callback(error);
         }
+        var prevDb = config.db;
         config.db = options.db;
         return callback(null, options.db, function close() {
+            config.db = prevDb;
             if (!options.close) return Promise.resolve();
             if (options.close.length === 0) return Promise.resolve().then(options.close);
             return new Promise(function (resolve, reject) {
@@ -756,8 +758,10 @@ function getDbConnection(options, phase, callback) {
         if (err) {
             return closeConnection(function () { return client.close(); }, phase, err, callback);
         }
+        var prevDb = config.db;
         config.db = db;
         callback(null, db, function close() {
+            config.db = prevDb;
             return client.close();
         });
     });
@@ -803,13 +807,31 @@ function ensureUnifiedIndexes(db, callback) {
                                 existing.weights.content === 5;
                             if (isTarget) return;
                             if (typeof collection.dropIndex === 'function') {
-                                await collection.dropIndex(existing.name);
+                                await collection.dropIndex(existing.name).catch(function (err) {
+                                    if (err && (err.codeName === 'IndexNotFound' || err.code === 27 || /index not found/i.test(err.message))) {
+                                        return;
+                                    }
+                                    throw err;
+                                });
                             }
                         }
-                        await collection.createIndex(
-                            { ownerId: 1, content: 'text', tags: 'text' },
-                            { name: 'owner_text_content_tags', weights: { tags: 10, content: 5 } }
-                        );
+                        try {
+                            await collection.createIndex(
+                                { ownerId: 1, content: 'text', tags: 'text' },
+                                { name: 'owner_text_content_tags', weights: { tags: 10, content: 5 } }
+                            );
+                        } catch (err) {
+                            if (err && (err.codeName === 'IndexOptionsConflict' || err.code === 85 || err.codeName === 'IndexKeySpecsConflict')) {
+                                var refreshed = await collection.indexes().catch(function () { return []; });
+                                var targetMatch = refreshed.find(function (idx) {
+                                    return idx.name === 'owner_text_content_tags' &&
+                                        idx.key && idx.key.ownerId === 1 &&
+                                        idx.weights && idx.weights.tags === 10 && idx.weights.content === 5;
+                                });
+                                if (targetMatch) return;
+                            }
+                            throw err;
+                        }
                     }).then(function () {
                         done(null);
                     }, function (err) {

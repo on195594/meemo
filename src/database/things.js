@@ -110,11 +110,29 @@ async function ensureTextIndex(collection) {
             return;
         }
         if (typeof collection.dropIndex === 'function') {
-            await collection.dropIndex(existingTextIndex.name);
+            await collection.dropIndex(existingTextIndex.name).catch(function (err) {
+                if (err && (err.codeName === 'IndexNotFound' || err.code === 27 || /index not found/i.test(err.message))) {
+                    return;
+                }
+                throw err;
+            });
         }
     }
 
-    await collection.createIndex(TARGET_SPEC, TARGET_OPTIONS);
+    try {
+        await collection.createIndex(TARGET_SPEC, TARGET_OPTIONS);
+    } catch (err) {
+        if (err && (err.codeName === 'IndexOptionsConflict' || err.code === 85 || err.codeName === 'IndexKeySpecsConflict')) {
+            var refreshed = await collection.indexes().catch(function () { return []; });
+            var targetMatch = refreshed.find(function (idx) {
+                return idx.name === TARGET_NAME &&
+                    idx.key && idx.key.ownerId === 1 &&
+                    idx.weights && idx.weights.tags === 10 && idx.weights.content === 5;
+            });
+            if (targetMatch) return;
+        }
+        throw err;
+    }
 }
 
 function ensureIndexes(callback) {

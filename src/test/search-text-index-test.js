@@ -249,6 +249,24 @@ describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
             var afterIdx = (await collection.indexes()).find(function (i) { return i.name === 'owner_text_content_tags'; });
             expect(afterIdx.weights).to.eql({ tags: 10, content: 5 });
         });
+
+        it('handles concurrent ensureIndexes invocations idempotently without IndexNotFound error', async function () {
+            var collection = db.collection('things');
+            await collection.dropIndex('owner_text_content_tags');
+            await collection.createIndex({ content: 'text' }, { name: 'content_text' });
+
+            // Run two ensureIndexes concurrently
+            await Promise.all([
+                databaseThings.ensureIndexes(),
+                databaseThings.ensureIndexes()
+            ]);
+
+            var afterIdxs = await collection.indexes();
+            expect(afterIdxs.some(function (i) { return i.name === 'content_text'; })).to.be(false);
+            var targetIdx = afterIdxs.find(function (i) { return i.name === 'owner_text_content_tags'; });
+            expect(targetIdx).to.be.ok();
+            expect(targetIdx.weights).to.eql({ tags: 10, content: 5 });
+        });
     });
 
     describe('HTTP GET /api/things?mode=text integration', function () {
