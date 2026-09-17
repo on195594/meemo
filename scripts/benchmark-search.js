@@ -10,11 +10,16 @@ var MongoClient = require('mongodb').MongoClient,
     thingService = require('../src/services/thing-service.js');
 
 var SCENARIOS = [
-    { name: 'single-keyword', options: { filter: 'benchmark', archived: false } },
-    { name: 'chinese-keyword', options: { filter: '基准', archived: false } },
-    { name: 'multi-term', options: { filter: 'benchmark project', archived: false } },
+    { name: 'single-keyword', options: { filter: 'benchmark', mode: 'regex', archived: false } },
+    { name: 'chinese-keyword', options: { filter: '基准', mode: 'regex', archived: false } },
+    { name: 'multi-term', options: { filter: 'benchmark project', mode: 'regex', archived: false } },
     { name: 'tag', options: { filter: '#work', archived: false } },
-    { name: 'archived', options: { archived: true } }
+    { name: 'archived', options: { archived: true } },
+    { name: 'single-keyword-text', options: { filter: 'benchmark', mode: 'text', archived: false } },
+    { name: 'multi-term-text', options: { filter: 'benchmark project', mode: 'text', archived: false } },
+    { name: 'stemming-regex', options: { filter: 'writes', mode: 'regex', archived: false } },
+    { name: 'stemming-text', options: { filter: 'writes', mode: 'text', archived: false } },
+    { name: 'tag-and-keyword-text', options: { filter: '#work benchmark', mode: 'text', archived: false } }
 ];
 
 function parseCount(name, fallback) {
@@ -25,13 +30,29 @@ function parseCount(name, fallback) {
     return value;
 }
 
+function parseOptionalCount(name) {
+    var prefix = '--' + name + '=';
+    var argument = process.argv.slice(2).find(function (value) { return value.startsWith(prefix); });
+    if (!argument) return null;
+    var value = Number(argument.slice(prefix.length));
+    if (!Number.isInteger(value) || value < 1) throw new Error(name + ' must be a positive integer');
+    return value;
+}
+
 function fixture(size, ownerId) {
     var timestamp = 1700000000000;
     return Array.from({ length: size }, function (unused, index) {
         var benchmark = index % 10 === 0;
+        var stemming = index % 15 === 0;
+        var content = 'ordinary personal note ' + index;
+        if (benchmark) {
+            content = 'benchmark project 基准 note ' + index + ' #work';
+        } else if (stemming) {
+            content = 'writing documentation and notes about software ' + index;
+        }
         return {
             ownerId: ownerId,
-            content: benchmark ? 'benchmark project 基准 note ' + index + ' #work' : 'ordinary personal note ' + index,
+            content: content,
             tags: [index % 5 === 0 ? 'work' : 'personal'],
             archived: index % 20 === 0,
             sticky: index % 2 === 0,
@@ -85,10 +106,14 @@ async function benchmarkScenario(db, ownerId, scenario, warmupRuns, repetitions,
     durations.sort(function (left, right) { return left - right; });
 
     var query = search.buildQuery(scenario.options);
-    var explanation = await db.collection('things').find(mongoQuery(ownerId, query))
-        .sort({ sticky: -1, modifiedAt: -1, _id: -1 })
-        .limit(limit)
-        .explain('executionStats');
+    var cursor = db.collection('things').find(mongoQuery(ownerId, query));
+    if (search.queryHasText(query)) {
+        cursor = cursor.project({ score: { $meta: 'textScore' } })
+            .sort({ sticky: -1, score: { $meta: 'textScore' }, modifiedAt: -1, _id: -1 });
+    } else {
+        cursor = cursor.sort({ sticky: -1, modifiedAt: -1, _id: -1 });
+    }
+    var explanation = await cursor.limit(limit).explain('executionStats');
     var stats = explanation.executionStats;
 
     return {
@@ -96,6 +121,7 @@ async function benchmarkScenario(db, ownerId, scenario, warmupRuns, repetitions,
         options: scenario.options,
         query: query,
         documentsReturned: result.length,
+        scores: result.map(function (item) { return item.score; }).filter(function (s) { return s !== undefined; }),
         latencyMs: latency(durations),
         mongo: {
             nReturned: stats.nReturned,
@@ -145,7 +171,8 @@ async function benchmarkDataset(db, options) {
 async function main() {
     var warmupRuns = parseCount('warmup', 3);
     var repetitions = parseCount('repetitions', 10);
-    var sizes = [1000, 10000, 50000];
+    var customSize = parseOptionalCount('size');
+    var sizes = customSize ? [customSize] : [1000, 10000];
     var ownerId = 'vr212-benchmark-' + process.pid + '-' + Date.now();
     var client = await MongoClient.connect(config.databaseUrl);
     try {

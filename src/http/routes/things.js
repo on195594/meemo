@@ -37,6 +37,7 @@ var updateBody = createBody.extend({
 
 var listQuery = z.object({
     filter: z.string().max(1000).optional(),
+    mode: z.enum(['regex', 'text']).optional().default('regex'),
     sticky: validation.queryBoolean.optional().default(false),
     archived: validation.queryBoolean.optional().default(false),
     skip: validation.pagination.skip,

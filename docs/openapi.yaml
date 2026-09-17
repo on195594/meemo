@@ -224,6 +224,10 @@ components:
           allOf:
             - $ref: '#/components/schemas/NoteColor'
           default: default
+        score:
+          type: number
+          description: Relevance match score when search mode is text
+          example: 1.25
 
     Tag:
       type: object
@@ -461,6 +465,16 @@ components:
         type: string
         maxLength: 1000
 
+    SearchModeQuery:
+      name: mode
+      in: query
+      required: false
+      description: Search execution mode ('regex' for substring pattern matching, 'text' for MongoDB full-text index with stemming and scoring)
+      schema:
+        type: string
+        enum: [regex, text]
+        default: regex
+
     StickyQuery:
       name: sticky
       in: query
@@ -662,6 +676,7 @@ paths:
         - sessionCookie: []
       parameters:
         - $ref: '#/components/parameters/FilterQuery'
+        - $ref: '#/components/parameters/SearchModeQuery'
         - $ref: '#/components/parameters/StickyQuery'
         - $ref: '#/components/parameters/ArchivedQuery'
         - $ref: '#/components/parameters/SkipQuery'
@@ -1013,6 +1028,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/UserIdPath'
         - $ref: '#/components/parameters/FilterQuery'
+        - $ref: '#/components/parameters/SearchModeQuery'
         - $ref: '#/components/parameters/SkipQuery'
         - $ref: '#/components/parameters/LimitQuery'
       responses:

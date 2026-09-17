@@ -729,6 +729,7 @@ function getDbConnection(options, phase, callback) {
         } catch (error) {
             return callback(error);
         }
+        config.db = options.db;
         return callback(null, options.db, function close() {
             if (!options.close) return Promise.resolve();
             if (options.close.length === 0) return Promise.resolve().then(options.close);
@@ -755,6 +756,7 @@ function getDbConnection(options, phase, callback) {
         if (err) {
             return closeConnection(function () { return client.close(); }, phase, err, callback);
         }
+        config.db = db;
         callback(null, db, function close() {
             return client.close();
         });
@@ -782,8 +784,14 @@ function ensureUnifiedIndexes(db, callback) {
                 },
                 function (done) {
                     collectionOperation(db, 'apply:indexes', '<all>', 'things', 'createIndex', [
-                        { content: 'text' }, { default_language: 'none' }
-                    ], done);
+                        { ownerId: 1, content: 'text', tags: 'text' },
+                        { name: 'owner_text_content_tags', weights: { tags: 10, content: 5 } }
+                    ], function (err) {
+                        if (err && (err.message.indexOf('only one text index') !== -1 || err.codeName === 'IndexOptionsConflict' || err.codeName === 'IndexKeySpecsConflict')) {
+                            return done(null);
+                        }
+                        done(err);
+                    });
                 }
             ], next);
         },
@@ -859,6 +867,7 @@ function discoverLegacyCollections(db, callback, phase) {
 
 function resolveCanonicalOwner(db, prefix, callback, phase, ownerMap, plannedOwners) {
     phase = phase || 'resolve-owner';
+    if (!config.db && db) config.db = db;
     if (ownerMap && ownerMaps.has(ownerMap, prefix)) {
         return resolveMappedOwner(db, prefix, ownerMap[prefix], callback, phase, plannedOwners);
     }

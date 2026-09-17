@@ -79,7 +79,7 @@ function getUnifiedCollection() {
 
 function createIndex(collection, spec, options) {
     return collection.createIndex(spec, options).catch(function (error) {
-        if (error.codeName !== 'IndexOptionsConflict') throw error;
+        if (error.codeName !== 'IndexOptionsConflict' && error.codeName !== 'IndexKeySpecsConflict') throw error;
     });
 }
 
@@ -93,12 +93,24 @@ function ensureIndexes(callback) {
             createIndex(collection, { ownerId: 1, archived: 1, modifiedAt: -1 }),
             createIndex(collection, { ownerId: 1, tags: 1 }),
             createIndex(collection, { ownerId: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
-            createIndex(collection, { ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 })
+            createIndex(collection, { ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
+            createIndex(collection, { ownerId: 1, content: 'text', tags: 'text' }, {
+                name: 'owner_text_content_tags',
+                weights: { tags: 10, content: 5 }
+            })
         ]);
     }).then(function () {
         indexesCreated = true;
     });
     return nodeify(promise, callback);
+}
+
+function queryHasText(query) {
+    if (!query || typeof query !== 'object') return false;
+    if (query.$text) return true;
+    if (Array.isArray(query.$and)) return query.$and.some(queryHasText);
+    if (Array.isArray(query.$or)) return query.$or.some(queryHasText);
+    return false;
 }
 
 function postProcess(userId, thing) {
@@ -118,8 +130,17 @@ function getAll(userId, query, skip, limit, callback) {
 
     var ownerCondition = { ownerId: userId };
     var unifiedQuery = Object.keys(query).length ? { $and: [ownerCondition, query] } : ownerCondition;
-    var promise = getUnifiedCollection().find(unifiedQuery)
-        .sort({ sticky: -1, modifiedAt: -1, _id: -1 })
+    var hasText = queryHasText(unifiedQuery);
+    var cursor = getUnifiedCollection().find(unifiedQuery);
+
+    if (hasText) {
+        cursor = cursor.project({ score: { $meta: 'textScore' } })
+            .sort({ sticky: -1, score: { $meta: 'textScore' }, modifiedAt: -1, _id: -1 });
+    } else {
+        cursor = cursor.sort({ sticky: -1, modifiedAt: -1, _id: -1 });
+    }
+
+    var promise = cursor
         .skip(skip)
         .limit(limit)
         .toArray().then(function (result) {
@@ -321,5 +342,6 @@ module.exports = {
     requireWriteFreeze: requireWriteFreeze,
     ensureIndexes: ensureIndexes,
     getUnifiedCollection: getUnifiedCollection,
-    resetCache: resetCache
+    resetCache: resetCache,
+    queryHasText: queryHasText
 };

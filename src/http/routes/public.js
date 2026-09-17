@@ -19,6 +19,7 @@ var thingParams = userParams.extend({ thingId: validation.objectId });
 var legacyFileParams = userParams.extend({ fileId: validation.safePathSegment });
 var listQuery = z.object({
     filter: z.string().max(1000).optional(),
+    mode: z.enum(['regex', 'text']).optional().default('regex'),
     skip: validation.pagination.skip,
     limit: validation.pagination.limit
 });
@@ -35,7 +36,7 @@ async function getThing(req, res, next) {
 }
 
 async function getAll(req, res, next) {
-    var query = things.buildSearchFilter(req.query.filter) || {};
+    var query = things.buildSearchFilter(req.query.filter, req.query.mode) || {};
     var result = await sharing.getAll(req.params.userId, query, req.query.skip, req.query.limit);
     next(new HttpSuccess(200, { things: result }));
 }

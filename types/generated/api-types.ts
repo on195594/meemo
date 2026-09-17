@@ -195,6 +195,8 @@ export interface paths {
                 query?: {
                     /** @description Search query string supporting text keywords, */
                     filter?: components["parameters"]["FilterQuery"];
+                    /** @description Search execution mode ('regex' for substring pattern matching, 'text' for MongoDB full-text index with stemming and scoring) */
+                    mode?: components["parameters"]["SearchModeQuery"];
                     /** @description Filter by sticky flag */
                     sticky?: components["parameters"]["StickyQuery"];
                     /** @description Filter by archived flag */
@@ -690,6 +692,8 @@ export interface paths {
                 query?: {
                     /** @description Search query string supporting text keywords, */
                     filter?: components["parameters"]["FilterQuery"];
+                    /** @description Search execution mode ('regex' for substring pattern matching, 'text' for MongoDB full-text index with stemming and scoring) */
+                    mode?: components["parameters"]["SearchModeQuery"];
                     /** @description Number of records to skip */
                     skip?: components["parameters"]["SkipQuery"];
                     /** @description Maximum records to return */
@@ -1204,6 +1208,11 @@ export interface components {
             sticky: boolean;
             /** @default default */
             color?: components["schemas"]["NoteColor"];
+            /**
+             * @description Relevance match score when search mode is text
+             * @example 1.25
+             */
+            score?: number;
         };
         Tag: {
             /** @example meeting */
@@ -1386,6 +1395,8 @@ export interface components {
         FileIdentifierPath: string;
         /** @description Search query string supporting text keywords, */
         FilterQuery: string;
+        /** @description Search execution mode ('regex' for substring pattern matching, 'text' for MongoDB full-text index with stemming and scoring) */
+        SearchModeQuery: "regex" | "text";
         /** @description Filter by sticky flag */
         StickyQuery: boolean;
         /** @description Filter by archived flag */
