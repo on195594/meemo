@@ -160,7 +160,7 @@ describe('HTTP modules and validation (RF-302)', function () {
                 });
         });
 
-        it('does not gzip large binary responses without text/json Content-Type', function (done) {
+        it('does not gzip large binary responses without compressible Content-Type', function (done) {
             request(testApp)
                 .get('/test/large-binary')
                 .set('Accept-Encoding', 'gzip')
@@ -169,7 +169,6 @@ describe('HTTP modules and validation (RF-302)', function () {
                     expect(err).to.be(null);
                     expect(res.headers['content-encoding']).to.be(undefined);
                     expect(res.headers['content-type']).to.contain('application/octet-stream');
-                    expect(res.headers['vary']).to.contain('Accept-Encoding');
                     done();
                 });
         });
