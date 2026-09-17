@@ -55,6 +55,7 @@ describe('NoteDetailModal', () => {
 
     const overlay = document.querySelector('.note-modal-overlay');
     expect(overlay).not.toBeNull();
+    expect(overlay?.getAttribute('aria-label')).toBe('Note details');
 
     // Badges & color
     expect(document.querySelector('.badge-sticky')?.textContent).toContain('Pinned');
@@ -242,6 +243,33 @@ describe('NoteDetailModal', () => {
     wrapper.unmount();
   });
 
+  it('keeps modal open when auto-save fails on close', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: false, error: 'Network error' });
+    const wrapper = mount(NoteDetailModal, {
+      props: {
+        open: true,
+        thing: note(),
+        initialMode: 'edit',
+        onSaveEdit,
+      },
+    });
+
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'Failing save content';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+
+    const closeBtn = document.querySelector('.done-btn') as HTMLButtonElement;
+    closeBtn.click();
+    await flushPromises();
+
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Failing save content' });
+    // Modal stays open when save fails
+    expect(wrapper.emitted('close')).toBeUndefined();
+
+    wrapper.unmount();
+  });
+
   it('toggles pin, public, and archive states', async () => {
     const onToggleSticky = vi.fn();
     const onTogglePublic = vi.fn();
@@ -275,6 +303,52 @@ describe('NoteDetailModal', () => {
     expect(archiveBtn).not.toBeNull();
     archiveBtn.click();
     expect(onToggleArchive).toHaveBeenCalledWith(current);
+
+    wrapper.unmount();
+  });
+
+  it('prioritizes stream action events to trigger toasts even when onSaveEdit is provided', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
+    const onToggleSticky = vi.fn();
+    const current = note();
+
+    const wrapper = mount(NoteDetailModal, {
+      props: {
+        open: true,
+        thing: current,
+        onSaveEdit,
+        onToggleSticky,
+      },
+    });
+
+    const pinBtn = document.querySelector('.pin-btn') as HTMLButtonElement;
+    expect(pinBtn).not.toBeNull();
+    pinBtn.click();
+
+    expect(onToggleSticky).toHaveBeenCalledWith(current);
+    expect(onSaveEdit).not.toHaveBeenCalled();
+
+    wrapper.unmount();
+  });
+
+  it('cleans up color picker when modal closes', async () => {
+    const wrapper = mount(NoteDetailModal, {
+      props: {
+        open: true,
+        thing: note(),
+      },
+    });
+
+    const colorTrigger = document.querySelector('.color-btn') as HTMLButtonElement;
+    colorTrigger.click();
+    await flushPromises();
+
+    expect(document.querySelector('.color-palette-popover')).not.toBeNull();
+
+    await wrapper.setProps({ open: false });
+    await flushPromises();
+
+    expect(document.querySelector('.color-palette-popover')).toBeNull();
 
     wrapper.unmount();
   });

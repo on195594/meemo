@@ -3,10 +3,11 @@
     <Transition name="note-modal-fade">
       <div
         v-if="open && thing"
+        ref="overlayRef"
         class="note-modal-overlay"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="note-modal-title"
+        aria-label="Note details"
         tabindex="-1"
         @click="handleBackdropClick"
         @keydown="handleWindowKeydown"
@@ -375,6 +376,7 @@ const showColorPicker = ref(false);
 const focusedColorIndex = ref(0);
 const showDeleteConfirm = ref(false);
 
+const overlayRef = ref<HTMLElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const renderedBodyRef = ref<HTMLElement | null>(null);
 const colorWrapperRef = ref<HTMLElement | null>(null);
@@ -475,6 +477,9 @@ function collectImages(): LightboxImage[] {
 
 const instance = getCurrentInstance();
 const hasImageClickListener = computed(() => Boolean(instance?.vnode.props?.onImageClick));
+const hasStickyListener = computed(() => Boolean(instance?.vnode.props?.onToggleSticky));
+const hasPublicListener = computed(() => Boolean(instance?.vnode.props?.onTogglePublic));
+const hasArchiveListener = computed(() => Boolean(instance?.vnode.props?.onToggleArchive));
 
 function handleAttachmentClick(event: MouseEvent, att: AttachmentDescriptor) {
   if (hasImageClickListener.value && isImageAttachment(att) && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
@@ -655,11 +660,23 @@ async function saveContent(): Promise<boolean> {
   }
 }
 
+const isClosing = ref(false);
+
 async function closeWithSave() {
-  if (hasUnsavedChanges.value && editDraft.value.trim()) {
-    await saveContent();
+  if (isClosing.value || isSaving.value) return;
+  isClosing.value = true;
+  try {
+    if (hasUnsavedChanges.value && editDraft.value.trim()) {
+      const saved = await saveContent();
+      if (!saved) {
+        // Save failed — keep modal open so user can retry or discard
+        return;
+      }
+    }
+    emit('close');
+  } finally {
+    isClosing.value = false;
   }
-  emit('close');
 }
 
 function handleBackdropClick() {
@@ -771,6 +788,10 @@ async function selectColor(color: NoteColor) {
 // Action Toggles
 async function togglePin() {
   if (!currentNote.value || !props.canEdit) return;
+  if (hasStickyListener.value) {
+    emit('toggleSticky', props.thing || currentNote.value);
+    return;
+  }
   const nextSticky = !currentNote.value.sticky;
   actionError.value = null;
   if (props.onSaveEdit) {
@@ -788,6 +809,10 @@ async function togglePin() {
 
 async function togglePublic() {
   if (!currentNote.value || !props.canEdit) return;
+  if (hasPublicListener.value) {
+    emit('togglePublic', props.thing || currentNote.value);
+    return;
+  }
   const nextPublic = !currentNote.value.public;
   actionError.value = null;
   if (props.onSaveEdit) {
@@ -805,6 +830,10 @@ async function togglePublic() {
 
 async function toggleArchive() {
   if (!currentNote.value || !props.canEdit) return;
+  if (hasArchiveListener.value) {
+    emit('toggleArchive', props.thing || currentNote.value);
+    return;
+  }
   const nextArchived = !currentNote.value.archived;
   actionError.value = null;
   if (props.onSaveEdit) {
@@ -858,14 +887,18 @@ watch(
         currentMode.value = props.initialMode || 'view';
         if (currentMode.value === 'edit') {
           nextTick(() => textareaRef.value?.focus());
+        } else {
+          nextTick(() => overlayRef.value?.focus());
         }
       }
     } else {
       document.body.style.overflow = '';
       window.removeEventListener('keydown', handleWindowKeydown);
-      showColorPicker.value = false;
+      closeColorPicker();
       showDeleteConfirm.value = false;
       actionError.value = null;
+      isClosing.value = false;
+      isSaving.value = false;
     }
   },
   { immediate: true }

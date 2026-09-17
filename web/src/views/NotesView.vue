@@ -442,36 +442,31 @@ async function handleDeleteNote(id: string) {
 }
 
 const isNoteModalOpen = ref(false);
-const activeModalNote = ref<Thing | null>(null);
+const activeModalNoteId = ref<string | null>(null);
+const fallbackModalNote = ref<Thing | null>(null);
 const modalInitialMode = ref<'view' | 'edit'>('view');
+
+const activeModalNote = computed<Thing | null>(() => {
+  if (!activeModalNoteId.value) return null;
+  return things.value.find((t) => t._id === activeModalNoteId.value) || fallbackModalNote.value;
+});
 
 function openNoteModal(thing: Thing, mode: 'view' | 'edit' = 'view') {
   if (isSelectionMode.value) {
     handleToggleSelect(thing);
     return;
   }
-  activeModalNote.value = thing;
+  activeModalNoteId.value = thing._id;
+  fallbackModalNote.value = thing;
   modalInitialMode.value = mode;
   isNoteModalOpen.value = true;
 }
 
 function closeNoteModal() {
   isNoteModalOpen.value = false;
-  activeModalNote.value = null;
+  activeModalNoteId.value = null;
+  fallbackModalNote.value = null;
 }
-
-watch(
-  () => things.value,
-  (newThings) => {
-    if (activeModalNote.value && isNoteModalOpen.value) {
-      const found = newThings.find((t) => t._id === activeModalNote.value?._id);
-      if (found) {
-        activeModalNote.value = found;
-      }
-    }
-  },
-  { deep: true }
-);
 
 function handleQueryRemove() {
   const query = { ...route.query };
