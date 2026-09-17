@@ -6,7 +6,6 @@ var express = require('express'),
     cors = require('cors'),
     path = require('path'),
     serveStatic = require('serve-static'),
-    compression = require('compression'),
     createRouter = require('./router.js'),
     responses = require('./responses.js'),
     logger = require('./middleware/logger.js'),
@@ -28,8 +27,6 @@ function createApp(options) {
     var uploads = createUploads();
     var structuredLogger = options.logger || logger.defaultLogger;
     app.use(structuredLogger.middleware);
-
-    app.use(compression({ threshold: 1024 }));
 
     var trustProxyEnv = process.env.TRUST_PROXY;
     if (trustProxyEnv === 'true' || trustProxyEnv === '1') {
@@ -75,7 +72,5 @@ function createApp(options) {
 
     return app;
 }
-
-createApp.gzipMiddleware = compression({ threshold: 1024 });
 
 module.exports = createApp;

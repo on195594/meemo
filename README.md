@@ -69,6 +69,8 @@ export SESSION_SECRET="$(openssl rand -hex 32)"
 docker compose up --build -d
 ```
 
+A production-ready reverse proxy template offloading gzip/brotli compression, SSL termination, and static asset caching to Nginx is provided at [`docs/nginx-reverse-proxy.conf`](docs/nginx-reverse-proxy.conf).
+
 ## Development
 
 Requirements: Node.js 24 or newer, npm, and Docker.
