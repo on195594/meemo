@@ -81,13 +81,19 @@ async function getRSS(req, res) {
     });
 
     data.things.forEach(function (thing) {
-        var title = thing.content.split('\n').filter(function (line) { return !!line.trim(); })[0] || 'Untitled note';
+        var content = thing.content || '';
+        var title = content.split('\n').filter(function (line) { return !!line.trim(); })[0] || 'Untitled note';
+        var itemUrl = webServer + '/shared/' + thing._id;
+        var renderedDescription = markdown.render(thing.richContent || content, { baseUrl: webServer })
+            .replace(/(src|href)="\/api\//g, '$1="' + webServer + '/api/');
+
         feed.item({
             title: title,
-            url: webServer + '/shared/' + thing._id,
-            author: data.user.displayName + '( ' + data.user.username + ' )',
+            url: itemUrl,
+            guid: itemUrl,
+            author: data.user.displayName + ' (' + data.user.username + ')',
             date: new Date(thing.createdAt),
-            description: markdown.render(thing.richContent, { baseUrl: webServer })
+            description: renderedDescription
         });
     });
 

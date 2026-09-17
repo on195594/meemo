@@ -334,6 +334,7 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
         });
 
         it('resolves GET /api/rss/:userId with both username and userId', function (done) {
+            var expectedOrigin = (process.env.APP_ORIGIN || 'http://localhost').replace(/\/+$/, '');
             request(app)
                 .get('/api/rss/alice203')
                 .expect(200)
@@ -341,6 +342,8 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
                     expect(err).to.be(null);
                     expect(res.headers['content-type']).to.contain('application/rss+xml');
                     expect(res.text).to.contain('/shared/' + publicThingId);
+                    expect(res.text).to.contain(expectedOrigin + '/shared/' + publicThingId + '</guid>');
+                    expect(res.text).to.contain('Alice TwoZeroThree (alice203)');
                     expect(res.text).not.to.contain('/blog/TODO');
 
                     request(app)
@@ -350,10 +353,51 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
                             expect(err).to.be(null);
                             expect(res2.headers['content-type']).to.contain('application/rss+xml');
                             expect(res2.text).to.contain('/shared/' + publicThingId);
+                            expect(res2.text).to.contain(expectedOrigin + '/shared/' + publicThingId + '</guid>');
+                            expect(res2.text).to.contain('Alice TwoZeroThree (alice203)');
                             expect(res2.text).not.to.contain('/blog/TODO');
                             done();
                         });
                 });
+        });
+
+        it('handles notes without content or with relative media links in RSS safely', async function () {
+            var emptyThing = await config.db.collection('things').insertOne({
+                ownerId: aliceUser.id,
+                content: '',
+                attachments: [],
+                tags: [],
+                public: true,
+                shared: false,
+                archived: false,
+                sticky: false,
+                createdAt: Date.now(),
+                modifiedAt: Date.now()
+            });
+
+            var mediaThing = await config.db.collection('things').insertOne({
+                ownerId: aliceUser.id,
+                content: 'Attachment note\n![img](/api/files/alice203/test.png)',
+                attachments: [],
+                tags: [],
+                public: true,
+                shared: false,
+                archived: false,
+                sticky: false,
+                createdAt: Date.now(),
+                modifiedAt: Date.now()
+            });
+
+            var expectedOrigin = (process.env.APP_ORIGIN || 'http://localhost').replace(/\/+$/, '');
+            var res = await request(app).get('/api/rss/alice203').expect(200);
+            expect(res.text).to.contain('Untitled note');
+            expect(res.text).to.contain('src="' + expectedOrigin + '/api/files/alice203/test.png"');
+            expect(res.text).to.contain('/shared/' + emptyThing.insertedId.toString());
+            expect(res.text).to.contain('/shared/' + mediaThing.insertedId.toString());
+
+            await config.db.collection('things').deleteMany({
+                _id: { $in: [emptyThing.insertedId, mediaThing.insertedId] }
+            });
         });
 
         it('returns 404 for unknown user in public routes', function (done) {
