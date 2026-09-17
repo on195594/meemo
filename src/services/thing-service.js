@@ -28,10 +28,11 @@ tagMarkdown.renderer.rules.hashtag_open = function (tokens, idx, options, env) {
 };
 
 var escapeRegExp = search.escapeRegExp;
+var URL_FEATURE_PATTERN = /([a-z][a-z0-9+.-]*:\/\/|mailto:)/i;
 
 function extractURLs(content) {
     if (!content || typeof content !== 'string') return [];
-    if (content.indexOf('http://') === -1 && content.indexOf('https://') === -1 && content.indexOf('www.') === -1) {
+    if (!URL_FEATURE_PATTERN.test(content)) {
         return [];
     }
     var env = { urls: [] };

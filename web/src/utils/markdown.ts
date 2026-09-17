@@ -89,6 +89,7 @@ md.renderer.rules.wikilink = function (tokens, idx, _options, _env, self) {
 
 const markdownCache = new Map<string, string>();
 const MAX_MARKDOWN_CACHE_SIZE = 500;
+const MAX_CACHEABLE_CHARS = 16384; // 16K chars (~16-48 KB max across UTF-8/CJK), prevents caching huge notes
 
 export function clearMarkdownCache(): void {
   markdownCache.clear();
@@ -96,19 +97,24 @@ export function clearMarkdownCache(): void {
 
 export function renderMarkdown(content: string): string {
   if (!content) return '';
-  const cached = markdownCache.get(content);
-  if (cached !== undefined) return cached;
+  const shouldCache = content.length <= MAX_CACHEABLE_CHARS;
+  if (shouldCache) {
+    const cached = markdownCache.get(content);
+    if (cached !== undefined) return cached;
+  }
 
   const rawHtml = md.render(content);
   const sanitized = DOMPurify.sanitize(rawHtml, {
     ADD_ATTR: ['target', 'rel', 'loading', 'decoding', 'data-wikilink'],
   });
 
-  if (markdownCache.size >= MAX_MARKDOWN_CACHE_SIZE) {
-    const oldestKey = markdownCache.keys().next().value;
-    if (oldestKey !== undefined) markdownCache.delete(oldestKey);
+  if (shouldCache) {
+    if (markdownCache.size >= MAX_MARKDOWN_CACHE_SIZE) {
+      const oldestKey = markdownCache.keys().next().value;
+      if (oldestKey !== undefined) markdownCache.delete(oldestKey);
+    }
+    markdownCache.set(content, sanitized);
   }
-  markdownCache.set(content, sanitized);
   return sanitized;
 }
 

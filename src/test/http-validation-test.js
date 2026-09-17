@@ -100,4 +100,91 @@ describe('HTTP modules and validation (RF-302)', function () {
         expect(body.message).to.equal('Internal server error');
         expect(JSON.stringify(body)).not.to.contain('/private/data/users');
     });
+
+    describe('gzip compression middleware', function () {
+        var express = require('express');
+        var testApp = express();
+        testApp.use(createApp.gzipMiddleware);
+
+        testApp.get('/test/large-html', function (req, res) {
+            res.send('<h1>' + 'x'.repeat(2000) + '</h1>');
+        });
+        testApp.get('/test/large-json', function (req, res) {
+            res.send({ data: 'x'.repeat(2000) });
+        });
+        testApp.get('/test/small-html', function (req, res) {
+            res.send('<h1>small</h1>');
+        });
+        testApp.get('/test/large-binary', function (req, res) {
+            res.send(Buffer.alloc(2000, 1));
+        });
+
+        it('gzips large html and sets text/html charset utf-8 with Vary header', function (done) {
+            request(testApp)
+                .get('/test/large-html')
+                .set('Accept-Encoding', 'gzip')
+                .expect(200)
+                .end(function (err, res) {
+                    expect(err).to.be(null);
+                    expect(res.headers['content-encoding']).to.equal('gzip');
+                    expect(res.headers['content-type']).to.contain('text/html');
+                    expect(res.headers['vary']).to.contain('Accept-Encoding');
+                    done();
+                });
+        });
+
+        it('gzips large json and preserves application/json charset utf-8', function (done) {
+            request(testApp)
+                .get('/test/large-json')
+                .set('Accept-Encoding', 'gzip')
+                .expect(200)
+                .end(function (err, res) {
+                    expect(err).to.be(null);
+                    expect(res.headers['content-encoding']).to.equal('gzip');
+                    expect(res.headers['content-type']).to.contain('application/json');
+                    expect(res.headers['vary']).to.contain('Accept-Encoding');
+                    done();
+                });
+        });
+
+        it('does not gzip small responses below 1KB threshold but includes Vary header', function (done) {
+            request(testApp)
+                .get('/test/small-html')
+                .set('Accept-Encoding', 'gzip')
+                .expect(200)
+                .end(function (err, res) {
+                    expect(err).to.be(null);
+                    expect(res.headers['content-encoding']).to.be(undefined);
+                    expect(res.headers['vary']).to.contain('Accept-Encoding');
+                    done();
+                });
+        });
+
+        it('does not gzip large binary responses without text/json Content-Type', function (done) {
+            request(testApp)
+                .get('/test/large-binary')
+                .set('Accept-Encoding', 'gzip')
+                .expect(200)
+                .end(function (err, res) {
+                    expect(err).to.be(null);
+                    expect(res.headers['content-encoding']).to.be(undefined);
+                    expect(res.headers['content-type']).to.contain('application/octet-stream');
+                    expect(res.headers['vary']).to.contain('Accept-Encoding');
+                    done();
+                });
+        });
+
+        it('does not gzip when client does not accept gzip', function (done) {
+            request(testApp)
+                .get('/test/large-html')
+                .set('Accept-Encoding', 'identity')
+                .expect(200)
+                .end(function (err, res) {
+                    expect(err).to.be(null);
+                    expect(res.headers['content-encoding']).to.be(undefined);
+                    expect(res.headers['vary']).to.contain('Accept-Encoding');
+                    done();
+                });
+        });
+    });
 });

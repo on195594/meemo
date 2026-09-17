@@ -29,44 +29,7 @@ function createApp(options) {
     var structuredLogger = options.logger || logger.defaultLogger;
     app.use(structuredLogger.middleware);
 
-    app.use(function (req, res, next) {
-        var acceptEncoding = req.headers['accept-encoding'] || '';
-        if (!acceptEncoding.includes('gzip')) return next();
-
-        var originalSend = res.send;
-        res.send = function (body) {
-            if (res.headersSent) return originalSend.call(res, body);
-
-            var isBuffer = Buffer.isBuffer(body);
-            var isString = typeof body === 'string';
-            if (!isBuffer && !isString && typeof body === 'object' && body !== null) {
-                body = JSON.stringify(body);
-                isString = true;
-                if (!res.getHeader('Content-Type')) {
-                    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-                }
-            }
-
-            var byteLength = isBuffer ? body.length : (isString ? Buffer.byteLength(body) : 0);
-            if (byteLength < 1024) {
-                return originalSend.call(res, body);
-            }
-
-            var contentType = String(res.getHeader('Content-Type') || '');
-            if (contentType && !/json|text|javascript|css|xml|html/i.test(contentType)) {
-                return originalSend.call(res, body);
-            }
-
-            zlib.gzip(body, function (err, compressed) {
-                if (err) return originalSend.call(res, body);
-                res.removeHeader('Content-Length');
-                res.setHeader('Content-Encoding', 'gzip');
-                res.setHeader('Vary', 'Accept-Encoding');
-                originalSend.call(res, compressed);
-            });
-        };
-        next();
-    });
+    app.use(gzipMiddleware);
 
     var trustProxyEnv = process.env.TRUST_PROXY;
     if (trustProxyEnv === 'true' || trustProxyEnv === '1') {
@@ -112,5 +75,47 @@ function createApp(options) {
 
     return app;
 }
+
+function gzipMiddleware(req, res, next) {
+    if (typeof res.vary === 'function') res.vary('Accept-Encoding');
+    if (!req.acceptsEncodings || !req.acceptsEncodings('gzip')) return next();
+
+    var originalSend = res.send;
+    res.send = function (body) {
+        if (res.headersSent) return originalSend.call(res, body);
+
+        var isBuffer = Buffer.isBuffer(body);
+        var isString = typeof body === 'string';
+        if (!isBuffer && !isString && typeof body === 'object' && body !== null) {
+            body = JSON.stringify(body);
+            isString = true;
+            if (!res.getHeader('Content-Type')) {
+                res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            }
+        } else if (isString && !res.getHeader('Content-Type')) {
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        }
+
+        var byteLength = isBuffer ? body.length : (isString ? Buffer.byteLength(body) : 0);
+        if (byteLength < 1024) {
+            return originalSend.call(res, body);
+        }
+
+        var contentType = String(res.getHeader('Content-Type') || '');
+        if (!/json|text|javascript|css|xml|html/i.test(contentType)) {
+            return originalSend.call(res, body);
+        }
+
+        zlib.gzip(body, function (err, compressed) {
+            if (err) return originalSend.call(res, body);
+            res.removeHeader('Content-Length');
+            res.setHeader('Content-Encoding', 'gzip');
+            originalSend.call(res, compressed);
+        });
+    };
+    next();
+}
+
+createApp.gzipMiddleware = gzipMiddleware;
 
 module.exports = createApp;
