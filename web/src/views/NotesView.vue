@@ -173,6 +173,7 @@
               class="batch-btn batch-close-btn"
               title="Clear selection (Esc)"
               aria-label="Clear selection"
+              :disabled="isBatchMutating"
               @click="handleClearSelection"
             >
               ✕
@@ -181,6 +182,7 @@
             <button
               type="button"
               class="batch-text-btn"
+              :disabled="isBatchMutating"
               @click="selectedIds.size === things.length ? handleClearSelection() : handleSelectAll()"
             >
               {{ selectedIds.size === things.length ? 'Deselect all' : 'Select all' }}
@@ -198,7 +200,7 @@
                 aria-label="Change color for selected notes"
                 aria-haspopup="true"
                 :aria-expanded="showBatchColorPicker"
-                :disabled="isBatchColorSaving"
+                :disabled="isBatchMutating"
                 @click="showBatchColorPicker = !showBatchColorPicker"
               >
                 🎨
@@ -217,6 +219,7 @@
                   :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
                   :title="c.name"
                   :aria-label="c.name"
+                  :disabled="isBatchMutating"
                   @click="handleBatchColor(c.key)"
                 ></button>
               </div>
@@ -228,6 +231,7 @@
               class="batch-btn"
               title="Toggle pin for selected notes"
               aria-label="Toggle pin for selected notes"
+              :disabled="isBatchMutating"
               @click="handleBatchPin"
             >
               📌
@@ -239,6 +243,7 @@
               class="batch-btn"
               :title="isArchived ? 'Restore selected notes' : 'Archive selected notes'"
               :aria-label="isArchived ? 'Restore selected notes' : 'Archive selected notes'"
+              :disabled="isBatchMutating"
               @click="handleBatchArchive"
             >
               {{ isArchived ? '↩️' : '📦' }}
@@ -250,6 +255,7 @@
               class="batch-btn batch-delete-btn"
               title="Delete selected notes"
               aria-label="Delete selected notes"
+              :disabled="isBatchMutating"
               @click="showBatchDeleteConfirm = true"
             >
               🗑️
@@ -485,9 +491,14 @@ const isSelectionMode = computed(() => selectedIds.value.size > 0);
 const showBatchDeleteConfirm = ref(false);
 const isBatchDeleting = ref(false);
 const isBatchColorSaving = ref(false);
+const isBatchUpdating = ref(false);
+const isBatchMutating = computed(
+  () => isBatchDeleting.value || isBatchColorSaving.value || isBatchUpdating.value
+);
 const showBatchColorPicker = ref(false);
 
 function handleToggleSelect(thing: Thing) {
+  if (isBatchMutating.value) return;
   const next = new Set(selectedIds.value);
   if (next.has(thing._id)) {
     next.delete(thing._id);
@@ -498,66 +509,109 @@ function handleToggleSelect(thing: Thing) {
 }
 
 function handleSelectAll() {
+  if (isBatchMutating.value) return;
   selectedIds.value = new Set(things.value.map((t) => t._id));
 }
 
 function handleClearSelection() {
+  if (isBatchMutating.value) return;
   selectedIds.value = new Set();
   showBatchColorPicker.value = false;
 }
 
 async function handleBatchColor(color: NoteColor) {
-  if (isBatchColorSaving.value || selectedIds.value.size === 0) return;
+  if (isBatchMutating.value || selectedIds.value.size === 0) return;
   isBatchColorSaving.value = true;
-  const ids = Array.from(selectedIds.value);
-  const res = await batchUpdateNotes(ids, { color });
-  isBatchColorSaving.value = false;
-  showBatchColorPicker.value = false;
-  if (res.success) {
-    showToast(`Updated color for ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
-    handleClearSelection();
-  } else {
-    showToast('Failed to update color for some notes', 'info');
+  try {
+    const ids = Array.from(selectedIds.value);
+    const res = await batchUpdateNotes(ids, { color });
+    showBatchColorPicker.value = false;
+    for (const id of res.successfulIds) {
+      selectedIds.value.delete(id);
+    }
+    selectedIds.value = new Set(selectedIds.value);
+    if (res.success) {
+      showToast(`Updated color for ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
+    } else {
+      showToast(`Updated ${res.updatedCount} notes. ${res.failedIds.length} failed.`, 'info');
+    }
+  } finally {
+    isBatchColorSaving.value = false;
   }
 }
 
 async function handleBatchPin() {
-  if (selectedIds.value.size === 0) return;
-  const ids = Array.from(selectedIds.value);
-  const selectedNotes = things.value.filter((t) => selectedIds.value.has(t._id));
-  const shouldPin = selectedNotes.some((t) => !t.sticky);
-  const res = await batchUpdateNotes(ids, { sticky: shouldPin });
-  if (res.success) {
-    showToast(`${shouldPin ? 'Pinned' : 'Unpinned'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
-    handleClearSelection();
+  if (isBatchMutating.value || selectedIds.value.size === 0) return;
+  isBatchUpdating.value = true;
+  try {
+    const ids = Array.from(selectedIds.value);
+    const selectedNotes = things.value.filter((t) => selectedIds.value.has(t._id));
+    const shouldPin = selectedNotes.some((t) => !t.sticky);
+    const res = await batchUpdateNotes(ids, { sticky: shouldPin });
+    for (const id of res.successfulIds) {
+      selectedIds.value.delete(id);
+    }
+    selectedIds.value = new Set(selectedIds.value);
+    if (res.success) {
+      showToast(`${shouldPin ? 'Pinned' : 'Unpinned'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
+    } else {
+      showToast(`${shouldPin ? 'Pinned' : 'Unpinned'} ${res.updatedCount} notes. ${res.failedIds.length} failed.`, 'info');
+    }
+  } finally {
+    isBatchUpdating.value = false;
   }
 }
 
 async function handleBatchArchive() {
-  if (selectedIds.value.size === 0) return;
-  const ids = Array.from(selectedIds.value);
-  const shouldArchive = !isArchived.value;
-  const res = await batchUpdateNotes(ids, { archived: shouldArchive });
-  if (res.success) {
-    showToast(`${shouldArchive ? 'Archived' : 'Restored'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
-    handleClearSelection();
+  if (isBatchMutating.value || selectedIds.value.size === 0) return;
+  isBatchUpdating.value = true;
+  try {
+    const ids = Array.from(selectedIds.value);
+    const shouldArchive = !isArchived.value;
+    const res = await batchUpdateNotes(ids, { archived: shouldArchive });
+    for (const id of res.successfulIds) {
+      selectedIds.value.delete(id);
+    }
+    selectedIds.value = new Set(selectedIds.value);
+    if (res.success) {
+      showToast(`${shouldArchive ? 'Archived' : 'Restored'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
+    } else {
+      showToast(`${shouldArchive ? 'Archived' : 'Restored'} ${res.updatedCount} notes. ${res.failedIds.length} failed.`, 'info');
+    }
+  } finally {
+    isBatchUpdating.value = false;
   }
 }
 
 async function handleBatchDelete() {
-  if (isBatchDeleting.value || selectedIds.value.size === 0) return;
+  if (isBatchMutating.value || selectedIds.value.size === 0) return;
   isBatchDeleting.value = true;
-  const ids = Array.from(selectedIds.value);
-  const res = await batchDeleteNotes(ids);
-  isBatchDeleting.value = false;
-  showBatchDeleteConfirm.value = false;
-  if (res.success) {
-    showToast(`Deleted ${res.deletedCount} note${res.deletedCount > 1 ? 's' : ''}`);
-    handleClearSelection();
-  } else {
-    showToast('Failed to delete some notes', 'info');
+  try {
+    const ids = Array.from(selectedIds.value);
+    const res = await batchDeleteNotes(ids);
+    showBatchDeleteConfirm.value = false;
+    for (const id of res.successfulIds) {
+      selectedIds.value.delete(id);
+    }
+    selectedIds.value = new Set(selectedIds.value);
+    if (res.success) {
+      showToast(`Deleted ${res.deletedCount} note${res.deletedCount > 1 ? 's' : ''}`);
+    } else {
+      showToast(`Deleted ${res.deletedCount} notes. ${res.failedIds.length} failed.`, 'info');
+    }
+  } finally {
+    isBatchDeleting.value = false;
   }
 }
+
+watch(things, (current) => {
+  if (selectedIds.value.size === 0) return;
+  const validIds = new Set(current.map((t) => t._id));
+  const next = new Set([...selectedIds.value].filter((id) => validIds.has(id)));
+  if (next.size !== selectedIds.value.size) {
+    selectedIds.value = next;
+  }
+});
 
 function handleGlobalKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {

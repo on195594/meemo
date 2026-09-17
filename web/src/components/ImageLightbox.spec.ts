@@ -80,4 +80,25 @@ describe('ImageLightbox', () => {
     expect(wrapper.emitted('close')).toHaveLength(2);
     wrapper.unmount();
   });
+
+  it('restores body overflow when closed or when initialIndex changes', async () => {
+    document.body.style.overflow = 'visible';
+    const wrapper = mount(ImageLightbox, {
+      props: {
+        open: true,
+        images: sampleImages,
+        initialIndex: 0,
+      },
+    });
+
+    expect(document.body.style.overflow).toBe('hidden');
+
+    // Changing initialIndex while open must not corrupt saved overflow
+    await wrapper.setProps({ initialIndex: 1 });
+    expect(document.body.style.overflow).toBe('hidden');
+
+    await wrapper.setProps({ open: false });
+    expect(document.body.style.overflow).toBe('visible');
+    wrapper.unmount();
+  });
 });

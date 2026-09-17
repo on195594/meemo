@@ -3,6 +3,7 @@
     <Transition name="lightbox-fade">
       <div
         v-if="open && currentImage"
+        ref="dialogRef"
         class="lightbox-overlay"
         role="dialog"
         aria-modal="true"
@@ -30,6 +31,7 @@
               ↗
             </a>
             <button
+              ref="closeBtnRef"
               type="button"
               class="lightbox-btn close-btn"
               title="Close preview (Esc)"
@@ -86,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue';
 
 export interface LightboxImage {
   src: string;
@@ -109,20 +111,39 @@ const emit = defineEmits<{
   (e: 'close'): void;
 }>();
 
+const dialogRef = ref<HTMLElement | null>(null);
+const closeBtnRef = ref<HTMLButtonElement | null>(null);
 const currentIndex = ref(props.initialIndex);
 let originalOverflow = '';
+let previousActiveElement: HTMLElement | null = null;
 
 watch(
-  () => [props.open, props.initialIndex],
+  () => props.open,
+  (isOpen) => {
+    if (typeof document === 'undefined') return;
+    if (isOpen) {
+      previousActiveElement = document.activeElement as HTMLElement | null;
+      originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      window.addEventListener('keydown', handleKeydown);
+      nextTick(() => {
+        closeBtnRef.value?.focus();
+      });
+    } else {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeydown);
+      previousActiveElement?.focus();
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => [props.open, props.initialIndex, props.images.length],
   ([isOpen, newIndex]) => {
     if (isOpen) {
       const idx = typeof newIndex === 'number' ? newIndex : 0;
       currentIndex.value = Math.max(0, Math.min(idx, props.images.length - 1));
-      lockScroll(true);
-      window.addEventListener('keydown', handleKeydown);
-    } else {
-      lockScroll(false);
-      window.removeEventListener('keydown', handleKeydown);
     }
   },
   { immediate: true }
@@ -164,21 +185,31 @@ function handleKeydown(event: KeyboardEvent) {
   } else if (event.key === 'ArrowRight') {
     event.preventDefault();
     next();
-  }
-}
-
-function lockScroll(lock: boolean) {
-  if (typeof document === 'undefined') return;
-  if (lock) {
-    originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-  } else {
-    document.body.style.overflow = originalOverflow;
+  } else if (event.key === 'Tab' && dialogRef.value) {
+    const focusableEls = dialogRef.value.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusableEls.length === 0) return;
+    const firstEl = focusableEls[0];
+    const lastEl = focusableEls[focusableEls.length - 1];
+    if (event.shiftKey) {
+      if (document.activeElement === firstEl) {
+        event.preventDefault();
+        lastEl.focus();
+      }
+    } else {
+      if (document.activeElement === lastEl) {
+        event.preventDefault();
+        firstEl.focus();
+      }
+    }
   }
 }
 
 onUnmounted(() => {
-  lockScroll(false);
+  if (typeof document !== 'undefined' && props.open) {
+    document.body.style.overflow = originalOverflow;
+  }
   if (typeof window !== 'undefined') {
     window.removeEventListener('keydown', handleKeydown);
   }

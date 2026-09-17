@@ -4,8 +4,20 @@
     <div v-else-if="error" class="error-banner">{{ error }}</div>
 
     <main v-else-if="thing" class="shared-note-content">
-      <NoteCard :thing="thing" :can-edit="false" @wikilink-click="handleWikilinkClick" />
+      <NoteCard
+        :thing="thing"
+        :can-edit="false"
+        @wikilink-click="handleWikilinkClick"
+        @image-click="handleImageClick"
+      />
     </main>
+
+    <ImageLightbox
+      :open="isLightboxOpen"
+      :images="lightboxImages"
+      :initial-index="lightboxIndex"
+      @close="isLightboxOpen = false"
+    />
   </div>
 </template>
 
@@ -14,6 +26,7 @@ import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, type Thing } from '../api/client';
 import NoteCard from '../components/NoteCard.vue';
+import ImageLightbox, { type LightboxImage } from '../components/ImageLightbox.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -21,6 +34,16 @@ const thingId = String(route.params.thingId);
 
 function handleWikilinkClick(target: string) {
   router.push({ path: '/', query: { q: target } });
+}
+
+const isLightboxOpen = ref(false);
+const lightboxImages = ref<LightboxImage[]>([]);
+const lightboxIndex = ref(0);
+
+function handleImageClick(images: LightboxImage[], index: number) {
+  lightboxImages.value = images;
+  lightboxIndex.value = index;
+  isLightboxOpen.value = true;
 }
 
 const thing = ref<Thing | null>(null);

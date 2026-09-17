@@ -266,7 +266,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onUnmounted } from 'vue';
+import { ref, computed, nextTick, onUnmounted, getCurrentInstance } from 'vue';
 import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import { renderMarkdown, highlightKeyword, toggleTaskItem } from '../utils/markdown';
@@ -509,14 +509,18 @@ function openLightbox(src: string) {
   emit('imageClick', images, index >= 0 ? index : 0);
 }
 
+const instance = getCurrentInstance();
+const hasImageClickListener = computed(() => Boolean(instance?.vnode.props?.onImageClick));
+const isTaskSaving = ref(false);
+
 function handleAttachmentClick(event: MouseEvent, att: AttachmentDescriptor) {
-  if (isImageAttachment(att) && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
+  if (hasImageClickListener.value && isImageAttachment(att) && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
     event.preventDefault();
     openLightbox(attachmentUrl(att));
   }
 }
 
-function handleBodyClick(event: MouseEvent) {
+async function handleBodyClick(event: MouseEvent) {
   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
 
   const targetEl = event.target as HTMLElement | null;
@@ -526,7 +530,7 @@ function handleBodyClick(event: MouseEvent) {
   const checkbox = targetEl.closest<HTMLInputElement>('.task-list-item-checkbox');
   if (checkbox) {
     event.stopPropagation();
-    if (!props.canEdit) {
+    if (!props.canEdit || isTaskSaving.value) {
       event.preventDefault();
       return;
     }
@@ -537,19 +541,34 @@ function handleBodyClick(event: MouseEvent) {
 
     const currentContent = props.thing.content || '';
     const updatedContent = toggleTaskItem(currentContent, taskIndex);
-    if (updatedContent !== currentContent) {
+    if (updatedContent === currentContent) return;
+
+    const wasChecked = !checkbox.checked;
+    isTaskSaving.value = true;
+    actionError.value = null;
+
+    try {
       if (props.onSaveEdit) {
-        props.onSaveEdit(props.thing._id, { content: updatedContent });
+        const result = await props.onSaveEdit(props.thing._id, { content: updatedContent });
+        if (!result.success) {
+          checkbox.checked = wasChecked;
+          actionError.value = result.error || 'Failed to update task';
+        }
       } else {
         emit('update', props.thing._id, { content: updatedContent });
       }
+    } catch (err: any) {
+      checkbox.checked = wasChecked;
+      actionError.value = err.message || 'Failed to update task';
+    } finally {
+      isTaskSaving.value = false;
     }
     return;
   }
 
   // 2. Image click inside markdown body (lightbox preview)
   const imgTarget = targetEl.closest('img');
-  if (imgTarget) {
+  if (imgTarget && hasImageClickListener.value) {
     const anchor = imgTarget.closest('a');
     if (!anchor) {
       event.preventDefault();
@@ -1212,5 +1231,12 @@ async function confirmDelete() {
 
 :deep(.markdown-body img:hover) {
   transform: scale(1.01);
+}
+
+@media (hover: none) {
+  .card-select-btn {
+    opacity: 0.85;
+    transform: scale(1);
+  }
 }
 </style>

@@ -252,13 +252,15 @@ describe('NoteCard behavior', () => {
     expect(wrapper.find('.inline-edit-form').exists()).toBe(false);
   });
 
-  it('emits imageClick when clicking an image in markdown or image attachment', async () => {
+  it('emits imageClick when clicking an image in markdown or image attachment if listener provided', async () => {
+    const onImageClick = vi.fn();
     const wrapper = mount(NoteCard, {
       props: {
         thing: note({
           content: '![Diagram](/api/files/user-1/note-1/diagram.png)',
           attachments: [{ identifier: 'photo-1', fileName: 'sunset.jpg', size: 1024, type: 'image' }],
         }),
+        onImageClick,
       },
     });
 
@@ -274,6 +276,42 @@ describe('NoteCard behavior', () => {
     const attachmentLink = wrapper.find('.attachment-link');
     await attachmentLink.trigger('click');
     expect(wrapper.emitted('imageClick')).toHaveLength(2);
+  });
+
+  it('does not prevent default on attachment link if no onImageClick listener is bound', () => {
+    const wrapper = mount(NoteCard, {
+      props: {
+        thing: note({
+          attachments: [{ identifier: 'photo-1', fileName: 'sunset.jpg', size: 1024, type: 'image' }],
+        }),
+      },
+    });
+
+    const attachmentLink = wrapper.find('.attachment-link');
+    const clickEvent = new MouseEvent('click', { cancelable: true, bubbles: true });
+    attachmentLink.element.dispatchEvent(clickEvent);
+    expect(clickEvent.defaultPrevented).toBe(false);
+    expect(wrapper.emitted('imageClick')).toBeUndefined();
+  });
+
+  it('reverts checkbox state and shows error when task toggle save fails', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: false, error: 'Task save failed' });
+    const wrapper = mount(NoteCard, {
+      props: {
+        thing: note({ content: '- [ ] Todo' }),
+        onSaveEdit,
+      },
+    });
+
+    const checkbox = wrapper.find<HTMLInputElement>('.task-list-item-checkbox');
+    expect(checkbox.element.checked).toBe(false);
+
+    await checkbox.trigger('click');
+    await flushPromises();
+
+    expect(onSaveEdit).toHaveBeenCalledTimes(1);
+    expect(checkbox.element.checked).toBe(false);
+    expect(wrapper.get('.action-error').text()).toBe('Task save failed');
   });
 
   it('emits toggleSelect when selection button is clicked', async () => {

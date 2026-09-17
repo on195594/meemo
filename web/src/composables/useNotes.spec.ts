@@ -178,8 +178,28 @@ describe('useNotes behavior', () => {
     const result = await store.batchUpdateNotes(['n1', 'n2'], { color: 'coral' });
     expect(result.success).toBe(true);
     expect(result.updatedCount).toBe(2);
+    expect(result.successfulIds).toEqual(['n1', 'n2']);
+    expect(result.failedIds).toEqual([]);
     expect(apiMock.update).toHaveBeenCalledTimes(2);
     expect(store.things.value.every((t) => t.color === 'coral')).toBe(true);
+  });
+
+  it('handles partial failure in batch update', async () => {
+    const n1 = note('n1', { color: 'default' });
+    const n2 = note('n2', { color: 'default' });
+    apiMock.list.mockResolvedValue({ things: [n1, n2] });
+    apiMock.update.mockImplementation((id, payload) => {
+      if (id === 'n2') return Promise.reject(new Error('Update failed'));
+      return Promise.resolve({ thing: note(id, payload) });
+    });
+    const store = useNotes();
+    await store.fetchNotes();
+
+    const result = await store.batchUpdateNotes(['n1', 'n2'], { color: 'coral' });
+    expect(result.success).toBe(false);
+    expect(result.updatedCount).toBe(1);
+    expect(result.successfulIds).toEqual(['n1']);
+    expect(result.failedIds).toEqual(['n2']);
   });
 
   it('batch deletes multiple notes', async () => {
@@ -194,6 +214,8 @@ describe('useNotes behavior', () => {
     const result = await store.batchDeleteNotes(['n1', 'n2']);
     expect(result.success).toBe(true);
     expect(result.deletedCount).toBe(2);
+    expect(result.successfulIds).toEqual(['n1', 'n2']);
+    expect(result.failedIds).toEqual([]);
     expect(apiMock.delete).toHaveBeenCalledTimes(2);
     expect(store.things.value.map((t) => t._id)).toEqual(['n3']);
   });

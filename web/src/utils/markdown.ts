@@ -187,7 +187,9 @@ export function renderMarkdown(content: string): string {
 export function toggleTaskItem(content: string, targetIndex: number): string {
   if (!content) return '';
   let inFence = false;
+  let inList = false;
   let currentIndex = 0;
+  const taskRegex = /^([ \t]*(?:>[ \t]*)*(?:[-*+]|\d+[.)])\s*\[)([ xX])(\]\s+)/;
   const lines = content.split('\n');
   const newLines = lines.map((line) => {
     const trimmed = line.trim();
@@ -197,15 +199,37 @@ export function toggleTaskItem(content: string, targetIndex: number): string {
     }
     if (inFence) return line;
 
-    return line.replace(/^([ \t]*(?:[-*+]|\d+[.)])\s*\[)([ xX])(\]\s+)/, (match, prefix, status, suffix) => {
-      if (currentIndex === targetIndex) {
+    if (!trimmed) {
+      inList = false;
+      return line;
+    }
+
+    // Indented code blocks (4+ spaces after non-list context)
+    if (!inList && /^ {4,}\S/.test(line)) {
+      return line;
+    }
+
+    const match = line.match(taskRegex);
+    if (match) {
+      inList = true;
+      return line.replace(taskRegex, (m, prefix, status, suffix) => {
+        if (currentIndex === targetIndex) {
+          currentIndex++;
+          const nextStatus = status === ' ' ? 'x' : ' ';
+          return prefix + nextStatus + suffix;
+        }
         currentIndex++;
-        const nextStatus = status === ' ' ? 'x' : ' ';
-        return prefix + nextStatus + suffix;
-      }
-      currentIndex++;
-      return match;
-    });
+        return m;
+      });
+    }
+
+    if (/^[ \t]*(?:>[ \t]*)*(?:[-*+]|\d+[.)])\s+/.test(line)) {
+      inList = true;
+    } else if (!line.startsWith(' ') && !line.startsWith('\t')) {
+      inList = false;
+    }
+
+    return line;
   });
   return newLines.join('\n');
 }

@@ -240,44 +240,64 @@ export function useNotes() {
   async function batchUpdateNotes(
     ids: string[],
     updates: Partial<Thing>
-  ): Promise<{ success: boolean; updatedCount: number; errors?: Record<string, string> }> {
+  ): Promise<{
+    success: boolean;
+    updatedCount: number;
+    successfulIds: string[];
+    failedIds: string[];
+    errors?: Record<string, string>;
+  }> {
     const errors: Record<string, string> = {};
-    let updatedCount = 0;
+    const successfulIds: string[] = [];
+    const failedIds: string[] = [];
     await Promise.all(
       ids.map(async (id) => {
         const res = await updateNote(id, updates);
         if (res.success) {
-          updatedCount++;
-        } else if (res.error) {
-          errors[id] = res.error;
+          successfulIds.push(id);
+        } else {
+          failedIds.push(id);
+          if (res.error) errors[id] = res.error;
         }
       })
     );
     return {
-      success: Object.keys(errors).length === 0,
-      updatedCount,
+      success: failedIds.length === 0,
+      updatedCount: successfulIds.length,
+      successfulIds,
+      failedIds,
       errors: Object.keys(errors).length > 0 ? errors : undefined,
     };
   }
 
   async function batchDeleteNotes(
     ids: string[]
-  ): Promise<{ success: boolean; deletedCount: number; errors?: Record<string, string> }> {
+  ): Promise<{
+    success: boolean;
+    deletedCount: number;
+    successfulIds: string[];
+    failedIds: string[];
+    errors?: Record<string, string>;
+  }> {
     const errors: Record<string, string> = {};
-    let deletedCount = 0;
+    const successfulIds: string[] = [];
+    const failedIds: string[] = [];
     await Promise.all(
       ids.map(async (id) => {
         const res = await deleteNote(id);
         if (res.success) {
-          deletedCount++;
-        } else if (res.error) {
-          errors[id] = res.error;
+          successfulIds.push(id);
+        } else {
+          failedIds.push(id);
+          if (res.error) errors[id] = res.error;
         }
       })
     );
     return {
-      success: Object.keys(errors).length === 0,
-      deletedCount,
+      success: failedIds.length === 0,
+      deletedCount: successfulIds.length,
+      successfulIds,
+      failedIds,
       errors: Object.keys(errors).length > 0 ? errors : undefined,
     };
   }

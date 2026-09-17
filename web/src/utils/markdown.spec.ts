@@ -100,6 +100,21 @@ describe('toggleTaskItem', () => {
     expect(toggleTaskItem('', 0)).toBe('');
     expect(toggleTaskItem('Just plain text', 0)).toBe('Just plain text');
   });
+
+  it('toggles task items inside blockquotes', () => {
+    const input = '> - [ ] Blockquote task\n> - [x] Done in quote';
+    const output = toggleTaskItem(input, 0);
+    expect(output).toBe('> - [x] Blockquote task\n> - [x] Done in quote');
+
+    const output2 = toggleTaskItem(output, 1);
+    expect(output2).toBe('> - [x] Blockquote task\n> - [ ] Done in quote');
+  });
+
+  it('ignores tasks inside indented 4-space code blocks', () => {
+    const input = 'Normal paragraph\n\n    - [ ] Indented code\n\n- [ ] Actual task';
+    const output = toggleTaskItem(input, 0);
+    expect(output).toBe('Normal paragraph\n\n    - [ ] Indented code\n\n- [x] Actual task');
+  });
 });
 
 describe('highlightKeyword', () => {
