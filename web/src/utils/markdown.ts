@@ -87,12 +87,29 @@ md.renderer.rules.wikilink = function (tokens, idx, _options, _env, self) {
   return `<a${attrs}>${md.utils.escapeHtml(token.content)}</a>`;
 };
 
+const markdownCache = new Map<string, string>();
+const MAX_MARKDOWN_CACHE_SIZE = 500;
+
+export function clearMarkdownCache(): void {
+  markdownCache.clear();
+}
+
 export function renderMarkdown(content: string): string {
   if (!content) return '';
+  const cached = markdownCache.get(content);
+  if (cached !== undefined) return cached;
+
   const rawHtml = md.render(content);
-  return DOMPurify.sanitize(rawHtml, {
+  const sanitized = DOMPurify.sanitize(rawHtml, {
     ADD_ATTR: ['target', 'rel', 'loading', 'decoding', 'data-wikilink'],
   });
+
+  if (markdownCache.size >= MAX_MARKDOWN_CACHE_SIZE) {
+    const oldestKey = markdownCache.keys().next().value;
+    if (oldestKey !== undefined) markdownCache.delete(oldestKey);
+  }
+  markdownCache.set(content, sanitized);
+  return sanitized;
 }
 
 // Highlight search terms in already-sanitized HTML, touching only text nodes.

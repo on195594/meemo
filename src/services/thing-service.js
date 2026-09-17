@@ -11,105 +11,137 @@ var TYPE_IMAGE = 'image';
 var TYPE_UNKNOWN = 'unknown';
 var PRETTY_URL_LENGTH = 40;
 var markdown = require('markdown-it')({ breaks: true, html: true, linkify: true });
+markdown.renderer.rules.link_open = function (tokens, idx, options, env) {
+    if (tokens[idx].markup !== 'linkify') return '';
+    var href = tokens[idx].attrs[tokens[idx].attrIndex('href')][1];
+    if (href && env && env.urls) env.urls.push(href);
+    return '';
+};
 
-function extractURLs(content) {
-    var urls = [];
-    markdown.renderer.rules.link_open = function (tokens, idx) {
-        if (tokens[idx].markup !== 'linkify') return '';
-        var href = tokens[idx].attrs[tokens[idx].attrIndex('href')][1];
-        if (href) urls.push(href);
-        return '';
-    };
-    markdown.render(content);
-    return urls.filter(function (item, pos, self) { return self.indexOf(item) === pos; });
-}
+var tagMarkdown = require('markdown-it')().use(require('markdown-it-hashtag'), {
+    hashtagRegExp: '[\\u00C0-\\u017Fa-zA-Z0-9\\u4e00-\\u9fa5\\u3040-\\u309f\\u30a0-\\u30ff\\uac00-\\ud7af_]+',
+    preceding: ''
+});
+tagMarkdown.renderer.rules.hashtag_open = function (tokens, idx, options, env) {
+    if (env && env.tags) env.tags.push(tokens[idx].content.toLowerCase());
+    return '';
+};
 
 var escapeRegExp = search.escapeRegExp;
 
-function extractTags(content) {
-    var tagObjects = [];
-    extractURLs(content).forEach(function (url) {
-        content = content.replace(new RegExp(escapeRegExp(url), 'gmi'), ' --URL_PLACEHOLDER-- ');
-    });
+function extractURLs(content) {
+    if (!content || typeof content !== 'string') return [];
+    if (content.indexOf('http://') === -1 && content.indexOf('https://') === -1 && content.indexOf('www.') === -1) {
+        return [];
+    }
+    var env = { urls: [] };
+    markdown.render(content, env);
+    return Array.from(new Set(env.urls));
+}
 
-    var tagMarkdown = require('markdown-it')().use(require('markdown-it-hashtag'), {
-        hashtagRegExp: '[\\u00C0-\\u017Fa-zA-Z0-9\\u4e00-\\u9fa5\\u3040-\\u309f\\u30a0-\\u30ff\\uac00-\\ud7af_]+',
-        preceding: ''
-    });
-    tagMarkdown.renderer.rules.hashtag_open = function (tokens, idx) {
-        tagObjects.push(tokens[idx].content.toLowerCase());
-        return '';
-    };
-    tagMarkdown.render(content);
-    return tagObjects;
+function extractTags(content) {
+    if (!content || typeof content !== 'string' || content.indexOf('#') === -1) return [];
+
+    var urls = extractURLs(content);
+    if (urls.length) {
+        for (var u = 0; u < urls.length; u++) {
+            content = content.replace(new RegExp(escapeRegExp(urls[u]), 'gmi'), ' --URL_PLACEHOLDER-- ');
+        }
+    }
+
+    var env = { tags: [] };
+    tagMarkdown.render(content, env);
+    return env.tags;
 }
 
 function extractExternalContent(content, callback) {
     return nodeify(ssrf.enrichUrls(extractURLs(content)), callback);
 }
 
-function facelift(userId, thing, callback) {
-    var promise = Promise.resolve().then(async function () {
-        var data = thing.content;
-        var tagObjects = thing.tags;
-        var externalContent = Array.isArray(thing.externalContent) ? thing.externalContent : [];
-        var attachments = thing.attachments || [];
-        thing.externalContent = externalContent;
+function faceliftSync(userId, thing) {
+    if (!thing || !thing.content) return '';
+    var data = thing.content;
+    var tagObjects = thing.tags || [];
+    var externalContent = Array.isArray(thing.externalContent) ? thing.externalContent : [];
+    var attachments = thing.attachments || [];
+    thing.externalContent = externalContent;
 
-        var wikilinks = [];
+    // Fast path: notes without tags, links, attachments, or placeholders require no string replacement
+    if (!tagObjects.length && !externalContent.length && !attachments.length &&
+        data.indexOf('[[') === -1 && data.indexOf('#') === -1) {
+        return data;
+    }
+
+    var wikilinks = [];
+    if (data.indexOf('[[') !== -1) {
         data = data.replace(/\[\[[^\]\n]+\]\]/g, function (match) {
             wikilinks.push(match);
             return '@@WIKILINK_PLACEHOLDER_' + (wikilinks.length - 1) + '@@';
         });
+    }
 
-        tagObjects.forEach(function (tag) {
-            data = data.replace(new RegExp('#' + tag + '(#|\\s|$)', 'gmi'), '[#' + tag + '](#search?#' + tag + ')$1').trim();
-        });
-        externalContent.forEach(function (item) {
-            if (item.type === TYPE_IMAGE) {
-                data = data.replace(new RegExp(escapeRegExp(item.url), 'gmi'), '![' + item.url + '](' + item.url + ')');
-                return;
+    for (var i = 0; i < tagObjects.length; i++) {
+        var tag = tagObjects[i];
+        data = data.replace(new RegExp('#' + escapeRegExp(tag) + '(#|\\s|$)', 'gmi'), '[#' + tag + '](#search?#' + tag + ')$1').trim();
+    }
+
+    for (var j = 0; j < externalContent.length; j++) {
+        var item = externalContent[j];
+        if (item.type === TYPE_IMAGE) {
+            data = data.replace(new RegExp(escapeRegExp(item.url), 'gmi'), '![' + item.url + '](' + item.url + ')');
+            continue;
+        }
+
+        var pretty = item.url;
+        try {
+            var parsed = new URL(item.url);
+            if (parsed.protocol) {
+                pretty = item.url.slice(parsed.protocol.length + 2);
+                if (pretty.length > PRETTY_URL_LENGTH) pretty = pretty.slice(0, PRETTY_URL_LENGTH) + '...';
             }
+        } catch (error) {}
+        data = data.replace(new RegExp(escapeRegExp(item.url), 'gmi'), '[' + pretty + '](' + item.url + ')');
+    }
 
-            var pretty = item.url;
-            try {
-                var parsed = new URL(item.url);
-                if (parsed.protocol) {
-                    pretty = item.url.slice(parsed.protocol.length + 2);
-                    if (pretty.length > PRETTY_URL_LENGTH) pretty = pretty.slice(0, PRETTY_URL_LENGTH) + '...';
-                }
-            } catch (error) {}
-            data = data.replace(new RegExp(escapeRegExp(item.url), 'gmi'), '[' + pretty + '](' + item.url + ')');
-        });
-        attachments.forEach(function (attachment) {
-            if (!attachment || !attachment.fileName) return;
-            var escapedName = escapeRegExp(attachment.fileName);
-            if (attachment.type === TYPE_IMAGE) {
-                data = data.replace(new RegExp('\\[' + escapedName + '\\]', 'gmi'), '![/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
-            } else {
-                data = data.replace(new RegExp('\\[' + escapedName + '\\]', 'gmi'), '[' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
-            }
-        });
+    for (var k = 0; k < attachments.length; k++) {
+        var attachment = attachments[k];
+        if (!attachment || !attachment.fileName) continue;
+        var escapedName = escapeRegExp(attachment.fileName);
+        if (attachment.type === TYPE_IMAGE) {
+            data = data.replace(new RegExp('\\[' + escapedName + '\\]', 'gmi'), '![/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
+        } else {
+            data = data.replace(new RegExp('\\[' + escapedName + '\\]', 'gmi'), '[' + attachment.identifier + '](/api/files/' + userId + '/' + thing._id + '/' + attachment.identifier + ')');
+        }
+    }
 
+    if (wikilinks.length) {
         data = data.replace(/@@WIKILINK_PLACEHOLDER_(\d+)@@/g, function (match, index) {
             return wikilinks[Number(index)] || match;
         });
-        return data;
+    }
+    return data;
+}
+
+function facelift(userId, thing, callback) {
+    var promise = Promise.resolve().then(function () {
+        return faceliftSync(userId, thing);
     });
     return nodeify(promise, callback);
 }
 
-async function addRichContent(userId, result) {
-    await Promise.all((result || []).map(async function (thing) {
+function addRichContent(userId, result) {
+    if (!result) return [];
+    for (var i = 0; i < result.length; i++) {
+        var thing = result[i];
         try {
-            thing.richContent = await facelift(userId, thing);
+            thing.richContent = faceliftSync(userId, thing);
         } catch (error) {
             console.error('Failed to facelift:', error);
             thing.richContent = thing.content;
         }
         thing.attachments = thing.attachments || [];
-    }));
-    return result || [];
+    }
+    return result;
 }
 
 function getAll(userId, query, skip, limit, callback) {
@@ -129,9 +161,9 @@ function getAllLean(userId, callback) {
 }
 
 function get(userId, thingId, callback) {
-    var promise = things.get(userId, thingId).then(async function (result) {
+    var promise = things.get(userId, thingId).then(function (result) {
         try {
-            result.richContent = await facelift(userId, result);
+            result.richContent = faceliftSync(userId, result);
         } catch (error) {
             console.error('Failed to facelift:', error);
             result.richContent = result.content;

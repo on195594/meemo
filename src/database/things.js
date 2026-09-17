@@ -87,10 +87,14 @@ function ensureIndexes(callback) {
     var promise = Promise.resolve().then(function () {
         if (!config.db) throw new Error('MongoDB database is not connected');
         var collection = config.db.collection('things');
-        return createIndex(collection, { ownerId: 1, modifiedAt: -1 })
-            .then(function () { return createIndex(collection, { ownerId: 1, sticky: -1, modifiedAt: -1 }); })
-            .then(function () { return createIndex(collection, { ownerId: 1, archived: 1, modifiedAt: -1 }); })
-            .then(function () { return createIndex(collection, { ownerId: 1, tags: 1 }); });
+        return Promise.all([
+            createIndex(collection, { ownerId: 1, modifiedAt: -1 }),
+            createIndex(collection, { ownerId: 1, sticky: -1, modifiedAt: -1 }),
+            createIndex(collection, { ownerId: 1, archived: 1, modifiedAt: -1 }),
+            createIndex(collection, { ownerId: 1, tags: 1 }),
+            createIndex(collection, { ownerId: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
+            createIndex(collection, { ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 })
+        ]);
     }).then(function () {
         indexesCreated = true;
     });
@@ -142,6 +146,7 @@ function getTagUsage(userId, callback) {
 
     var promise = getUnifiedCollection().aggregate([
         { $match: { ownerId: userId } },
+        { $project: { tags: 1, _id: 0 } },
         { $unwind: '$tags' },
         { $group: { _id: '$tags', usage: { $sum: 1 } } },
         { $sort: { usage: -1, _id: 1 } }

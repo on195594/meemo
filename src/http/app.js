@@ -6,6 +6,7 @@ var express = require('express'),
     cors = require('cors'),
     path = require('path'),
     serveStatic = require('serve-static'),
+    zlib = require('zlib'),
     createRouter = require('./router.js'),
     responses = require('./responses.js'),
     logger = require('./middleware/logger.js'),
@@ -27,6 +28,45 @@ function createApp(options) {
     var uploads = createUploads();
     var structuredLogger = options.logger || logger.defaultLogger;
     app.use(structuredLogger.middleware);
+
+    app.use(function (req, res, next) {
+        var acceptEncoding = req.headers['accept-encoding'] || '';
+        if (!acceptEncoding.includes('gzip')) return next();
+
+        var originalSend = res.send;
+        res.send = function (body) {
+            if (res.headersSent) return originalSend.call(res, body);
+
+            var isBuffer = Buffer.isBuffer(body);
+            var isString = typeof body === 'string';
+            if (!isBuffer && !isString && typeof body === 'object' && body !== null) {
+                body = JSON.stringify(body);
+                isString = true;
+                if (!res.getHeader('Content-Type')) {
+                    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                }
+            }
+
+            var byteLength = isBuffer ? body.length : (isString ? Buffer.byteLength(body) : 0);
+            if (byteLength < 1024) {
+                return originalSend.call(res, body);
+            }
+
+            var contentType = String(res.getHeader('Content-Type') || '');
+            if (contentType && !/json|text|javascript|css|xml|html/i.test(contentType)) {
+                return originalSend.call(res, body);
+            }
+
+            zlib.gzip(body, function (err, compressed) {
+                if (err) return originalSend.call(res, body);
+                res.removeHeader('Content-Length');
+                res.setHeader('Content-Encoding', 'gzip');
+                res.setHeader('Vary', 'Accept-Encoding');
+                originalSend.call(res, compressed);
+            });
+        };
+        next();
+    });
 
     var trustProxyEnv = process.env.TRUST_PROXY;
     if (trustProxyEnv === 'true' || trustProxyEnv === '1') {

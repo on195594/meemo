@@ -197,8 +197,19 @@ const {
   toggleArchive,
 } = useNotes();
 
-const pinnedThings = computed(() => things.value.filter((t) => t.sticky));
-const otherThings = computed(() => things.value.filter((t) => !t.sticky));
+const categorizedThings = computed(() => {
+  const pinned: Thing[] = [];
+  const other: Thing[] = [];
+  const list = things.value;
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (item.sticky) pinned.push(item);
+    else other.push(item);
+  }
+  return { pinned, other };
+});
+const pinnedThings = computed(() => categorizedThings.value.pinned);
+const otherThings = computed(() => categorizedThings.value.other);
 
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
