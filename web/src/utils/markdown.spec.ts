@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { highlightKeyword, renderMarkdown } from './markdown';
+import { highlightKeyword, renderMarkdown, toggleTaskItem } from './markdown';
 
 describe('renderMarkdown', () => {
   it('renders standard markdown elements', () => {
@@ -52,6 +52,53 @@ describe('renderMarkdown', () => {
     expect(html).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">Open</a>');
     const wikilink = html.match(/<a class="wikilink"[^>]*>/)?.[0] || '';
     expect(wikilink).not.toContain('target="_blank"');
+  });
+
+  it('renders interactive task lists with checkboxes', () => {
+    const markdown = '- [ ] Todo item\n- [x] Done item';
+    const html = renderMarkdown(markdown);
+    expect(html).toContain('class="task-list"');
+    expect(html).toContain('class="task-list-item"');
+    expect(html).toContain('class="task-list-item is-completed"');
+    expect(html).toContain('data-task-index="0"');
+    expect(html).toContain('data-task-index="1"');
+    expect(html).toContain('checked');
+    expect(html).toContain('Todo item');
+    expect(html).toContain('Done item');
+  });
+});
+
+describe('toggleTaskItem', () => {
+  it('toggles unchecked item to checked', () => {
+    const input = '- [ ] First\n- [ ] Second';
+    const output = toggleTaskItem(input, 0);
+    expect(output).toBe('- [x] First\n- [ ] Second');
+  });
+
+  it('toggles checked item to unchecked', () => {
+    const input = '- [x] First\n- [ ] Second';
+    const output = toggleTaskItem(input, 0);
+    expect(output).toBe('- [ ] First\n- [ ] Second');
+  });
+
+  it('toggles subsequent items correctly', () => {
+    const input = '- [ ] First\n- [x] Second\n- [ ] Third';
+    const output = toggleTaskItem(input, 1);
+    expect(output).toBe('- [ ] First\n- [ ] Second\n- [ ] Third');
+
+    const output2 = toggleTaskItem(output, 2);
+    expect(output2).toBe('- [ ] First\n- [ ] Second\n- [x] Third');
+  });
+
+  it('ignores checkboxes inside fenced code blocks', () => {
+    const input = '```markdown\n- [ ] In code block\n```\n- [ ] Real item';
+    const output = toggleTaskItem(input, 0);
+    expect(output).toBe('```markdown\n- [ ] In code block\n```\n- [x] Real item');
+  });
+
+  it('handles empty or non-task markdown gracefully', () => {
+    expect(toggleTaskItem('', 0)).toBe('');
+    expect(toggleTaskItem('Just plain text', 0)).toBe('Just plain text');
   });
 });
 

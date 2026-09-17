@@ -85,12 +85,16 @@
                 :key="thing._id"
                 :thing="thing"
                 :can-edit="true"
+                :selectable="isSelectionMode"
+                :selected="selectedIds.has(thing._id)"
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
                 :on-delete-confirm="handleDeleteNote"
                 @toggle-sticky="handleToggleSticky"
                 @toggle-public="handleTogglePublic"
                 @toggle-archive="handleToggleArchive"
+                @toggle-select="handleToggleSelect"
+                @image-click="handleImageClick"
                 @tag-click="handleTagClick"
                 @wikilink-click="handleWikilinkClick"
               />
@@ -106,12 +110,16 @@
                 :key="thing._id"
                 :thing="thing"
                 :can-edit="true"
+                :selectable="isSelectionMode"
+                :selected="selectedIds.has(thing._id)"
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
                 :on-delete-confirm="handleDeleteNote"
                 @toggle-sticky="handleToggleSticky"
                 @toggle-public="handleTogglePublic"
                 @toggle-archive="handleToggleArchive"
+                @toggle-select="handleToggleSelect"
+                @image-click="handleImageClick"
                 @tag-click="handleTagClick"
                 @wikilink-click="handleWikilinkClick"
               />
@@ -155,6 +163,142 @@
           </button>
         </div>
       </main>
+
+      <!-- Floating Batch Action Bar -->
+      <Transition name="batch-bar-slide">
+        <aside v-if="isSelectionMode" class="batch-action-bar" role="toolbar" aria-label="Batch actions">
+          <div class="batch-bar-leading">
+            <button
+              type="button"
+              class="batch-btn batch-close-btn"
+              title="Clear selection (Esc)"
+              aria-label="Clear selection"
+              @click="handleClearSelection"
+            >
+              ✕
+            </button>
+            <span class="batch-count">{{ selectedIds.size }} selected</span>
+            <button
+              type="button"
+              class="batch-text-btn"
+              @click="selectedIds.size === things.length ? handleClearSelection() : handleSelectAll()"
+            >
+              {{ selectedIds.size === things.length ? 'Deselect all' : 'Select all' }}
+            </button>
+          </div>
+
+          <div class="batch-bar-actions">
+            <!-- Color Picker Popover -->
+            <div class="batch-color-wrapper">
+              <button
+                type="button"
+                class="batch-btn"
+                :class="{ active: showBatchColorPicker }"
+                title="Change color for selected notes"
+                aria-label="Change color for selected notes"
+                aria-haspopup="true"
+                :aria-expanded="showBatchColorPicker"
+                :disabled="isBatchColorSaving"
+                @click="showBatchColorPicker = !showBatchColorPicker"
+              >
+                🎨
+              </button>
+              <div
+                v-if="showBatchColorPicker"
+                class="batch-color-palette"
+                role="group"
+                aria-label="Select color for all"
+              >
+                <button
+                  v-for="c in NOTE_COLORS"
+                  :key="c.key"
+                  type="button"
+                  class="batch-swatch"
+                  :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
+                  :title="c.name"
+                  :aria-label="c.name"
+                  @click="handleBatchColor(c.key)"
+                ></button>
+              </div>
+            </div>
+
+            <!-- Pin / Unpin Toggle -->
+            <button
+              type="button"
+              class="batch-btn"
+              title="Toggle pin for selected notes"
+              aria-label="Toggle pin for selected notes"
+              @click="handleBatchPin"
+            >
+              📌
+            </button>
+
+            <!-- Archive / Restore Toggle -->
+            <button
+              type="button"
+              class="batch-btn"
+              :title="isArchived ? 'Restore selected notes' : 'Archive selected notes'"
+              :aria-label="isArchived ? 'Restore selected notes' : 'Archive selected notes'"
+              @click="handleBatchArchive"
+            >
+              {{ isArchived ? '↩️' : '📦' }}
+            </button>
+
+            <!-- Delete Button -->
+            <button
+              type="button"
+              class="batch-btn batch-delete-btn"
+              title="Delete selected notes"
+              aria-label="Delete selected notes"
+              @click="showBatchDeleteConfirm = true"
+            >
+              🗑️
+            </button>
+          </div>
+        </aside>
+      </Transition>
+
+      <!-- Batch Delete Confirmation Modal -->
+      <div
+        v-if="showBatchDeleteConfirm"
+        class="batch-delete-modal-overlay"
+        @click.self="showBatchDeleteConfirm = false"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Confirm batch delete"
+      >
+        <div class="batch-delete-card">
+          <h3>Delete {{ selectedIds.size }} Notes?</h3>
+          <p>Are you sure you want to permanently delete these {{ selectedIds.size }} notes? This action cannot be undone.</p>
+          <div class="batch-delete-actions">
+            <button
+              type="button"
+              class="btn-modal cancel"
+              :disabled="isBatchDeleting"
+              @click="showBatchDeleteConfirm = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn-modal confirm-delete"
+              :disabled="isBatchDeleting"
+              @click="handleBatchDelete"
+            >
+              <span v-if="isBatchDeleting">Deleting...</span>
+              <span v-else>Delete All Permanently</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fullscreen Image Lightbox -->
+      <ImageLightbox
+        :open="isLightboxOpen"
+        :images="lightboxImages"
+        :initial-index="lightboxIndex"
+        @close="isLightboxOpen = false"
+      />
     </template>
   </div>
 </template>
@@ -165,9 +309,11 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
 import { useNotes } from '../composables/useNotes';
 import { useSettings } from '../composables/useSettings';
-import type { Thing } from '../api/client';
+import type { Thing, NoteColor } from '../api/client';
+import { NOTE_COLORS } from '../constants/noteColors';
 import NoteComposer from '../components/NoteComposer.vue';
 import NoteCard from '../components/NoteCard.vue';
+import ImageLightbox, { type LightboxImage } from '../components/ImageLightbox.vue';
 
 const { isAuthenticated, isLoading: authLoading, isFirstUser } = useAuth();
 const { settings } = useSettings();
@@ -192,6 +338,8 @@ const {
   createNote,
   updateNote,
   deleteNote,
+  batchUpdateNotes,
+  batchDeleteNotes,
   toggleSticky,
   togglePublic,
   toggleArchive,
@@ -320,6 +468,109 @@ function setupIntersectionObserver() {
   }
 }
 
+// Fullscreen Image Lightbox
+const isLightboxOpen = ref(false);
+const lightboxImages = ref<LightboxImage[]>([]);
+const lightboxIndex = ref(0);
+
+function handleImageClick(images: LightboxImage[], index: number) {
+  lightboxImages.value = images;
+  lightboxIndex.value = index;
+  isLightboxOpen.value = true;
+}
+
+// Batch Selection & Operations
+const selectedIds = ref<Set<string>>(new Set());
+const isSelectionMode = computed(() => selectedIds.value.size > 0);
+const showBatchDeleteConfirm = ref(false);
+const isBatchDeleting = ref(false);
+const isBatchColorSaving = ref(false);
+const showBatchColorPicker = ref(false);
+
+function handleToggleSelect(thing: Thing) {
+  const next = new Set(selectedIds.value);
+  if (next.has(thing._id)) {
+    next.delete(thing._id);
+  } else {
+    next.add(thing._id);
+  }
+  selectedIds.value = next;
+}
+
+function handleSelectAll() {
+  selectedIds.value = new Set(things.value.map((t) => t._id));
+}
+
+function handleClearSelection() {
+  selectedIds.value = new Set();
+  showBatchColorPicker.value = false;
+}
+
+async function handleBatchColor(color: NoteColor) {
+  if (isBatchColorSaving.value || selectedIds.value.size === 0) return;
+  isBatchColorSaving.value = true;
+  const ids = Array.from(selectedIds.value);
+  const res = await batchUpdateNotes(ids, { color });
+  isBatchColorSaving.value = false;
+  showBatchColorPicker.value = false;
+  if (res.success) {
+    showToast(`Updated color for ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
+    handleClearSelection();
+  } else {
+    showToast('Failed to update color for some notes', 'info');
+  }
+}
+
+async function handleBatchPin() {
+  if (selectedIds.value.size === 0) return;
+  const ids = Array.from(selectedIds.value);
+  const selectedNotes = things.value.filter((t) => selectedIds.value.has(t._id));
+  const shouldPin = selectedNotes.some((t) => !t.sticky);
+  const res = await batchUpdateNotes(ids, { sticky: shouldPin });
+  if (res.success) {
+    showToast(`${shouldPin ? 'Pinned' : 'Unpinned'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
+    handleClearSelection();
+  }
+}
+
+async function handleBatchArchive() {
+  if (selectedIds.value.size === 0) return;
+  const ids = Array.from(selectedIds.value);
+  const shouldArchive = !isArchived.value;
+  const res = await batchUpdateNotes(ids, { archived: shouldArchive });
+  if (res.success) {
+    showToast(`${shouldArchive ? 'Archived' : 'Restored'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
+    handleClearSelection();
+  }
+}
+
+async function handleBatchDelete() {
+  if (isBatchDeleting.value || selectedIds.value.size === 0) return;
+  isBatchDeleting.value = true;
+  const ids = Array.from(selectedIds.value);
+  const res = await batchDeleteNotes(ids);
+  isBatchDeleting.value = false;
+  showBatchDeleteConfirm.value = false;
+  if (res.success) {
+    showToast(`Deleted ${res.deletedCount} note${res.deletedCount > 1 ? 's' : ''}`);
+    handleClearSelection();
+  } else {
+    showToast('Failed to delete some notes', 'info');
+  }
+}
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    if (showBatchDeleteConfirm.value) {
+      showBatchDeleteConfirm.value = false;
+    } else if (showBatchColorPicker.value) {
+      showBatchColorPicker.value = false;
+    } else if (isSelectionMode.value && !isLightboxOpen.value) {
+      handleClearSelection();
+    }
+  }
+}
+
 watch(isAuthenticated, (authenticated) => {
   if (!authenticated) return;
   syncRouteFilters();
@@ -328,6 +579,7 @@ watch(isAuthenticated, (authenticated) => {
 watch(
   () => [route.query.q, route.query.tag, route.query.archived],
   () => {
+    handleClearSelection();
     if (isAuthenticated.value) syncRouteFilters();
   },
 );
@@ -346,6 +598,7 @@ function handleImportEvent() {
 onMounted(() => {
   setupIntersectionObserver();
   window.addEventListener('meemo:imported', handleImportEvent);
+  window.addEventListener('keydown', handleGlobalKeydown);
 });
 
 onUnmounted(() => {
@@ -356,6 +609,7 @@ onUnmounted(() => {
     clearTimeout(toastTimer);
   }
   window.removeEventListener('meemo:imported', handleImportEvent);
+  window.removeEventListener('keydown', handleGlobalKeydown);
 });
 </script>
 
@@ -652,5 +906,200 @@ onUnmounted(() => {
 .clear-filters-btn:hover {
   box-shadow: var(--md-sys-elevation-1);
   opacity: 0.9;
+}
+
+/* Floating Batch Action Bar */
+.batch-action-bar {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  background-color: var(--md-sys-color-surface-container-highest, #e6e0e9);
+  color: var(--md-sys-color-on-surface, #1d1b20);
+  padding: 0.5rem 1rem;
+  border-radius: var(--md-sys-shape-corner-full, 9999px);
+  box-shadow: var(--md-sys-elevation-3, 0 4px 14px rgba(0, 0, 0, 0.25));
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.12));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  max-width: 90vw;
+}
+
+.batch-bar-leading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.batch-count {
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.batch-text-btn {
+  background: none;
+  border: none;
+  color: var(--md-sys-color-primary, #6750a4);
+  font-size: 0.825rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.batch-text-btn:hover {
+  text-decoration: underline;
+}
+
+.batch-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.batch-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--md-sys-color-on-surface, #1d1b20);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.batch-btn:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.batch-btn.active {
+  background-color: rgba(0, 0, 0, 0.12);
+}
+
+.batch-close-btn {
+  font-size: 0.95rem;
+  width: 32px;
+  height: 32px;
+}
+
+.batch-delete-btn:hover {
+  background-color: rgba(220, 53, 69, 0.15);
+}
+
+/* Batch Color Picker */
+.batch-color-wrapper {
+  position: relative;
+}
+
+.batch-color-palette {
+  position: absolute;
+  bottom: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--md-sys-color-surface-container-highest, #e6e0e9);
+  padding: 8px;
+  border-radius: 16px;
+  display: grid;
+  grid-template-columns: repeat(4, 28px);
+  gap: 8px;
+  box-shadow: var(--md-sys-elevation-3, 0 4px 14px rgba(0, 0, 0, 0.25));
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.12));
+  z-index: 600;
+}
+
+.batch-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.2));
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.batch-swatch:hover {
+  transform: scale(1.15);
+}
+
+/* Transitions */
+.batch-bar-slide-enter-active,
+.batch-bar-slide-leave-active {
+  transition: transform 0.25s cubic-bezier(0.1, 0.9, 0.2, 1), opacity 0.2s ease;
+}
+
+.batch-bar-slide-enter-from,
+.batch-bar-slide-leave-to {
+  transform: translate(-50%, 100%);
+  opacity: 0;
+}
+
+/* Batch Delete Confirmation Modal */
+.batch-delete-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.batch-delete-card {
+  background: var(--md-sys-color-surface-container-high, #ffffff);
+  border-radius: var(--md-sys-shape-corner-2xl, 28px);
+  padding: 1.75rem;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: var(--md-sys-elevation-3);
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
+}
+
+.batch-delete-card h3 {
+  font-size: 1.25rem;
+  color: var(--md-sys-color-error, #e53e3e);
+  margin-bottom: 0.75rem;
+}
+
+.batch-delete-card p {
+  font-size: 0.95rem;
+  color: var(--md-sys-color-on-surface-variant, #4a5568);
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+}
+
+.batch-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .batch-action-bar {
+    bottom: 1rem;
+    padding: 0.4rem 0.75rem;
+    gap: 0.5rem;
+    max-width: 95vw;
+  }
+
+  .batch-count {
+    font-size: 0.8rem;
+  }
+
+  .batch-btn {
+    width: 34px;
+    height: 34px;
+    font-size: 1rem;
+  }
 }
 </style>

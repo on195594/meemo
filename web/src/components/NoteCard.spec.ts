@@ -230,4 +230,67 @@ describe('NoteCard behavior', () => {
 
     expect(wrapper.find('.card-actions').exists()).toBe(false);
   });
+
+  it('toggles interactive checklist checkbox on click without entering edit mode', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteCard, {
+      props: {
+        thing: note({ content: '- [ ] Buy groceries\n- [x] Read book' }),
+        onSaveEdit,
+      },
+    });
+
+    const checkboxes = wrapper.findAll('.task-list-item-checkbox');
+    expect(checkboxes).toHaveLength(2);
+
+    await checkboxes[0].trigger('click');
+    await flushPromises();
+
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', {
+      content: '- [x] Buy groceries\n- [x] Read book',
+    });
+    expect(wrapper.find('.inline-edit-form').exists()).toBe(false);
+  });
+
+  it('emits imageClick when clicking an image in markdown or image attachment', async () => {
+    const wrapper = mount(NoteCard, {
+      props: {
+        thing: note({
+          content: '![Diagram](/api/files/user-1/note-1/diagram.png)',
+          attachments: [{ identifier: 'photo-1', fileName: 'sunset.jpg', size: 1024, type: 'image' }],
+        }),
+      },
+    });
+
+    const img = wrapper.find('.markdown-body img');
+    expect(img.exists()).toBe(true);
+    await img.trigger('click');
+
+    expect(wrapper.emitted('imageClick')).toHaveLength(1);
+    const eventPayload = wrapper.emitted('imageClick')![0] as [any[], number];
+    expect(eventPayload[0]).toHaveLength(2);
+    expect(eventPayload[1]).toBe(0);
+
+    const attachmentLink = wrapper.find('.attachment-link');
+    await attachmentLink.trigger('click');
+    expect(wrapper.emitted('imageClick')).toHaveLength(2);
+  });
+
+  it('emits toggleSelect when selection button is clicked', async () => {
+    const thing = note();
+    const wrapper = mount(NoteCard, {
+      props: {
+        thing,
+        selectable: true,
+        selected: false,
+      },
+    });
+
+    const selectBtn = wrapper.find('.card-select-btn');
+    expect(selectBtn.exists()).toBe(true);
+    expect(selectBtn.classes()).toContain('is-visible');
+
+    await selectBtn.trigger('click');
+    expect(wrapper.emitted('toggleSelect')).toEqual([[thing]]);
+  });
 });

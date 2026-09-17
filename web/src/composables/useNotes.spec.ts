@@ -164,4 +164,37 @@ describe('useNotes behavior', () => {
     expect(apiMock.delete).toHaveBeenCalledWith('delete');
     expect(store.things.value.map((thing) => thing._id)).toEqual(['keep']);
   });
+
+  it('batch updates multiple notes', async () => {
+    const n1 = note('n1', { color: 'default' });
+    const n2 = note('n2', { color: 'default' });
+    apiMock.list.mockResolvedValue({ things: [n1, n2] });
+    apiMock.update.mockImplementation((id, payload) =>
+      Promise.resolve({ thing: note(id, payload) })
+    );
+    const store = useNotes();
+    await store.fetchNotes();
+
+    const result = await store.batchUpdateNotes(['n1', 'n2'], { color: 'coral' });
+    expect(result.success).toBe(true);
+    expect(result.updatedCount).toBe(2);
+    expect(apiMock.update).toHaveBeenCalledTimes(2);
+    expect(store.things.value.every((t) => t.color === 'coral')).toBe(true);
+  });
+
+  it('batch deletes multiple notes', async () => {
+    const n1 = note('n1');
+    const n2 = note('n2');
+    const n3 = note('n3');
+    apiMock.list.mockResolvedValue({ things: [n1, n2, n3] });
+    apiMock.delete.mockResolvedValue(undefined);
+    const store = useNotes();
+    await store.fetchNotes();
+
+    const result = await store.batchDeleteNotes(['n1', 'n2']);
+    expect(result.success).toBe(true);
+    expect(result.deletedCount).toBe(2);
+    expect(apiMock.delete).toHaveBeenCalledTimes(2);
+    expect(store.things.value.map((t) => t._id)).toEqual(['n3']);
+  });
 });

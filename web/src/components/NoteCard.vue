@@ -4,10 +4,25 @@
     :class="{
       'is-sticky': thing.sticky,
       'is-archived': thing.archived,
-      'is-editing': isEditing
+      'is-editing': isEditing,
+      'is-selected': selected
     }"
     :style="{ backgroundColor: 'var(--note-color-' + (thing.color || 'default') + ')' }"
   >
+    <!-- Selection Checkbox Button -->
+    <button
+      v-if="canEdit && !isEditing"
+      type="button"
+      class="card-select-btn"
+      :class="{ 'is-selected': selected, 'is-visible': selectable || selected }"
+      :title="selected ? 'Deselect note' : 'Select note'"
+      :aria-label="selected ? 'Deselect note' : 'Select note'"
+      :aria-pressed="selected"
+      @click.stop="$emit('toggleSelect', thing)"
+    >
+      <span class="select-check-icon">{{ selected ? '✓' : '' }}</span>
+    </button>
+
     <!-- Card Header / Meta & Action Buttons -->
     <header class="card-header">
       <div class="header-meta">
@@ -132,7 +147,7 @@
 
     <!-- Normal View: Markdown Content -->
     <template v-if="!isEditing">
-      <div class="card-body markdown-body" v-html="renderedBody" @click="handleBodyClick"></div>
+      <div ref="cardBodyRef" class="card-body markdown-body" v-html="renderedBody" @click="handleBodyClick"></div>
 
       <!-- Attachments Display -->
       <div v-if="thing.attachments && thing.attachments.length > 0" class="card-attachments">
@@ -146,6 +161,7 @@
             target="_blank"
             rel="noopener"
             class="attachment-link"
+            @click="handleAttachmentClick($event, att)"
           >
             <span class="attachment-icon">{{ isImageAttachment(att) ? '🖼️' : '📎' }}</span>
             <span class="attachment-name">{{ att.fileName || att.identifier }}</span>
@@ -253,7 +269,8 @@
 import { ref, computed, nextTick, onUnmounted } from 'vue';
 import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
-import { renderMarkdown, highlightKeyword } from '../utils/markdown';
+import { renderMarkdown, highlightKeyword, toggleTaskItem } from '../utils/markdown';
+import type { LightboxImage } from './ImageLightbox.vue';
 
 const showColorPicker = ref(false);
 const isColorSaving = ref(false);
@@ -349,12 +366,16 @@ const props = withDefaults(
   defineProps<{
     thing: Thing;
     canEdit?: boolean;
+    selectable?: boolean;
+    selected?: boolean;
     highlightQuery?: string;
     onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; error?: string }>;
     onDeleteConfirm?: (id: string) => Promise<{ success: boolean; error?: string }>;
   }>(),
   {
     canEdit: true,
+    selectable: false,
+    selected: false,
     highlightQuery: '',
   }
 );
@@ -365,6 +386,8 @@ const emit = defineEmits<{
   (e: 'toggleSticky', thing: Thing): void;
   (e: 'togglePublic', thing: Thing): void;
   (e: 'toggleArchive', thing: Thing): void;
+  (e: 'toggleSelect', thing: Thing): void;
+  (e: 'imageClick', images: LightboxImage[], initialIndex: number): void;
   (e: 'update', id: string, updates: Partial<Thing>): void;
   (e: 'delete', id: string): void;
 }>();
@@ -445,10 +468,99 @@ function cancelEdit() {
   editError.value = null;
 }
 
+const cardBodyRef = ref<HTMLElement | null>(null);
+
+function collectImages(): LightboxImage[] {
+  const images: LightboxImage[] = [];
+  if (cardBodyRef.value) {
+    const imgs = cardBodyRef.value.querySelectorAll<HTMLImageElement>('img');
+    imgs.forEach((img) => {
+      const src = img.getAttribute('src');
+      if (src) {
+        images.push({
+          src,
+          alt: img.getAttribute('alt') || '',
+          title: img.getAttribute('title') || img.getAttribute('alt') || '',
+        });
+      }
+    });
+  }
+  if (props.thing.attachments && props.thing.attachments.length > 0) {
+    for (const att of props.thing.attachments) {
+      if (isImageAttachment(att)) {
+        const src = attachmentUrl(att);
+        if (!images.some((i) => i.src === src)) {
+          images.push({
+            src,
+            alt: att.fileName || att.identifier,
+            title: att.fileName || att.identifier,
+          });
+        }
+      }
+    }
+  }
+  return images;
+}
+
+function openLightbox(src: string) {
+  const images = collectImages();
+  if (images.length === 0) return;
+  const index = images.findIndex((img) => img.src === src);
+  emit('imageClick', images, index >= 0 ? index : 0);
+}
+
+function handleAttachmentClick(event: MouseEvent, att: AttachmentDescriptor) {
+  if (isImageAttachment(att) && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
+    event.preventDefault();
+    openLightbox(attachmentUrl(att));
+  }
+}
+
 function handleBodyClick(event: MouseEvent) {
   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
 
-  const target = (event.target as HTMLElement)?.closest('a');
+  const targetEl = event.target as HTMLElement | null;
+  if (!targetEl) return;
+
+  // 1. Task list item checkbox click (interactive checklist)
+  const checkbox = targetEl.closest<HTMLInputElement>('.task-list-item-checkbox');
+  if (checkbox) {
+    event.stopPropagation();
+    if (!props.canEdit) {
+      event.preventDefault();
+      return;
+    }
+    const rawIndex = checkbox.dataset.taskIndex;
+    if (rawIndex === undefined) return;
+    const taskIndex = parseInt(rawIndex, 10);
+    if (isNaN(taskIndex)) return;
+
+    const currentContent = props.thing.content || '';
+    const updatedContent = toggleTaskItem(currentContent, taskIndex);
+    if (updatedContent !== currentContent) {
+      if (props.onSaveEdit) {
+        props.onSaveEdit(props.thing._id, { content: updatedContent });
+      } else {
+        emit('update', props.thing._id, { content: updatedContent });
+      }
+    }
+    return;
+  }
+
+  // 2. Image click inside markdown body (lightbox preview)
+  const imgTarget = targetEl.closest('img');
+  if (imgTarget) {
+    const anchor = imgTarget.closest('a');
+    if (!anchor) {
+      event.preventDefault();
+      event.stopPropagation();
+      openLightbox(imgTarget.getAttribute('src') || '');
+      return;
+    }
+  }
+
+  // 3. Anchor links (wikilinks or tag searches)
+  const target = targetEl.closest('a');
   if (!target) return;
 
   if (target.classList.contains('wikilink') || target.dataset.wikilink) {
@@ -1010,5 +1122,95 @@ async function confirmDelete() {
 
 .btn-modal.confirm-delete:hover:not(:disabled) {
   opacity: 0.9;
+}
+
+/* Card Selection Checkbox */
+.card-select-btn {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--md-sys-color-outline, #79747e);
+  background-color: var(--md-sys-color-surface, #fff);
+  color: var(--md-sys-color-on-primary, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+  z-index: 5;
+  box-shadow: var(--md-sys-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.2));
+  padding: 0;
+}
+
+.note-card:hover .card-select-btn,
+.card-select-btn.is-visible,
+.card-select-btn:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.card-select-btn.is-selected {
+  opacity: 1;
+  transform: scale(1);
+  background-color: var(--md-sys-color-primary, #6750a4);
+  border-color: var(--md-sys-color-primary, #6750a4);
+}
+
+.note-card.is-selected {
+  outline: 2px solid var(--md-sys-color-primary, #6750a4);
+  outline-offset: 1px;
+}
+
+.select-check-icon {
+  font-size: 13px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+/* Task List Interactive Checkbox Styles */
+:deep(.task-list) {
+  list-style: none;
+  padding-left: 0.25rem;
+  margin: 0.5rem 0;
+}
+
+:deep(.task-list-item) {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 0.35rem;
+  line-height: 1.5;
+}
+
+:deep(.task-list-item.is-completed) {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
+:deep(.task-list-item-checkbox) {
+  appearance: auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: 0.55rem;
+  margin-top: 0.2rem;
+  cursor: pointer;
+  accent-color: var(--md-sys-color-primary, #6750a4);
+  flex-shrink: 0;
+}
+
+/* Markdown Image Lightbox Cursor */
+:deep(.markdown-body img) {
+  cursor: zoom-in;
+  border-radius: 6px;
+  max-width: 100%;
+  transition: transform 0.15s ease;
+}
+
+:deep(.markdown-body img:hover) {
+  transform: scale(1.01);
 }
 </style>

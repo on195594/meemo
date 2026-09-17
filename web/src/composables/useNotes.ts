@@ -237,6 +237,51 @@ export function useNotes() {
     return updateNote(thing._id, { archived: !thing.archived });
   }
 
+  async function batchUpdateNotes(
+    ids: string[],
+    updates: Partial<Thing>
+  ): Promise<{ success: boolean; updatedCount: number; errors?: Record<string, string> }> {
+    const errors: Record<string, string> = {};
+    let updatedCount = 0;
+    await Promise.all(
+      ids.map(async (id) => {
+        const res = await updateNote(id, updates);
+        if (res.success) {
+          updatedCount++;
+        } else if (res.error) {
+          errors[id] = res.error;
+        }
+      })
+    );
+    return {
+      success: Object.keys(errors).length === 0,
+      updatedCount,
+      errors: Object.keys(errors).length > 0 ? errors : undefined,
+    };
+  }
+
+  async function batchDeleteNotes(
+    ids: string[]
+  ): Promise<{ success: boolean; deletedCount: number; errors?: Record<string, string> }> {
+    const errors: Record<string, string> = {};
+    let deletedCount = 0;
+    await Promise.all(
+      ids.map(async (id) => {
+        const res = await deleteNote(id);
+        if (res.success) {
+          deletedCount++;
+        } else if (res.error) {
+          errors[id] = res.error;
+        }
+      })
+    );
+    return {
+      success: Object.keys(errors).length === 0,
+      deletedCount,
+      errors: Object.keys(errors).length > 0 ? errors : undefined,
+    };
+  }
+
   return {
     // State
     things,
@@ -263,6 +308,8 @@ export function useNotes() {
     createNote,
     updateNote,
     deleteNote,
+    batchUpdateNotes,
+    batchDeleteNotes,
     toggleSticky,
     togglePublic,
     toggleArchive,
