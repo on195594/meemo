@@ -8,10 +8,12 @@ Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It
 - Attachments, archive, sticky notes, and public sharing
 - Public feeds and RSS
 - JSON archive import and export
+- High-performance MongoDB compound ESR indexes and tag aggregation
 - Local username/password accounts with bcrypt password hashes
 - MongoDB unified collection model with stable user identity decoupling
 - Read-only retirement preflight and historical v1-to-v2 migration tooling
-- Docker Compose deployment
+- Docker Compose deployment and single-command `./deploy.sh` hot-restart
+- Production-ready reverse proxy template offloading compression and caching to Nginx
 
 ## Quick start
 
@@ -83,9 +85,10 @@ npm --prefix web test
 npm run build
 npm test
 ./localdevelopment
+./deploy.sh                    # build image and hot-restart production deployment
 ```
 
-`npm run build` compiles modern Vue 3 web source in `web/` into the ignored `public/` directory. Frontend behavior tests use Vitest; backend and contract tests use Mocha through `npm test`, which starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application.
+`npm run build` compiles modern Vue 3 web source in `web/` into the ignored `public/` directory. Frontend behavior tests use Vitest; backend and contract tests use Mocha through `npm test`, which starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application. `./deploy.sh` builds `meemo:latest` and restarts the production compose container in one command.
 
 To run only the Node.js process, provide MongoDB separately and use `npm start`.
 

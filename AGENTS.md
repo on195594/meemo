@@ -26,7 +26,8 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `docs/DEPENDENCY_SECURITY.md`: production dependency security audit and vulnerability remediation map.
 - `docs/RELEASE_CHECKLIST.md`: release candidate validation, deployment, and rollback checklist.
 - `docs/openapi.yaml`: authoritative OpenAPI 3.0 specification.
-- `Dockerfile`, `docker-compose.yml`: deployment and packaging.
+- `docs/nginx-reverse-proxy.conf`: reference Nginx reverse proxy configuration for caching and compression offloading.
+- `Dockerfile`, `docker-compose.yml`, `deploy.sh`: deployment, packaging, and hot-restart automation.
 
 ## Working rules
 
@@ -62,6 +63,7 @@ npm run api:generate           # generate TypeScript types from docs/openapi.yam
 npm --prefix web run typecheck # typecheck Vue 3 frontend
 npm --prefix web test          # run frontend behavior tests with Vitest
 docker compose up --build -d
+./deploy.sh                    # build image and hot-restart production container
 ```
 
 `npm test`, local development, and Compose require Docker. Do not replace the lockfile or upgrade dependencies unless dependency work is part of the request.
