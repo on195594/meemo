@@ -146,6 +146,36 @@ describe('NoteDetailModal', () => {
     wrapper.unmount();
   });
 
+  it('keeps newer input when an older save resolves', async () => {
+    let resolveSave!: (value: { success: boolean; thing: Thing }) => void;
+    const onSaveEdit = vi.fn(() => new Promise<{ success: boolean; thing: Thing }>((resolve) => {
+      resolveSave = resolve;
+    }));
+    const wrapper = mount(NoteDetailModal, {
+      props: {
+        open: true,
+        thing: note(),
+        initialMode: 'edit',
+        onSaveEdit,
+      },
+    });
+
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'Saved A';
+    textarea.dispatchEvent(new Event('input'));
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
+    await flushPromises();
+
+    textarea.value = 'Newer B';
+    textarea.dispatchEvent(new Event('input'));
+    resolveSave({ success: true, thing: note({ content: 'Saved A', revision: 2 }) });
+    await flushPromises();
+
+    expect(textarea.value).toBe('Newer B');
+    expect(wrapper.emitted('close')).toBeUndefined();
+    wrapper.unmount();
+  });
+
   it('closes without saving if content was not changed', async () => {
     const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
     const wrapper = mount(NoteDetailModal, {
