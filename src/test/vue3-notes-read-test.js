@@ -23,6 +23,15 @@ describe('Vue 3 Notes Read Path (RF-503)', function () {
         expect(src).to.contain('IntersectionObserver');
     });
 
+    it('provides a stable authenticated note route by Thing ID', function () {
+        var routerSrc = fs.readFileSync(path.join(webDir, 'src/router/index.ts'), 'utf8');
+        var privateSrc = fs.readFileSync(path.join(webDir, 'src/views/PrivateNoteView.vue'), 'utf8');
+
+        expect(routerSrc).to.contain("path: '/note/:thingId'");
+        expect(privateSrc).to.contain('api.things.get(id)');
+        expect(privateSrc).to.contain(':can-edit="false"');
+    });
+
     it('reuses NoteCard component in PublicStreamView and SharedNoteView', function () {
         var publicSrc = fs.readFileSync(path.join(webDir, 'src/views/PublicStreamView.vue'), 'utf8');
         expect(publicSrc).to.contain('NoteCard');
