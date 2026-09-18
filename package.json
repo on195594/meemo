@@ -10,7 +10,10 @@
     "build:web": "npm --prefix web run build",
     "start": "node app.js",
     "test": "./runTests",
-    "api:generate": "openapi-typescript docs/openapi.yaml --default-non-nullable false -o types/generated/api-types.ts"
+    "api:generate": "openapi-typescript docs/openapi.yaml --default-non-nullable false -o types/generated/api-types.ts",
+    "verify:quality": "node scripts/verify.js --quality",
+    "verify:integration": "bash scripts/verify-integration.sh",
+    "verify": "node scripts/verify.js"
   },
   "repository": {
     "type": "git",

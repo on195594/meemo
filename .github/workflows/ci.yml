@@ -19,7 +19,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -28,18 +28,8 @@ jobs:
         run: |
           npm ci
           npm --prefix web ci
-      - name: Verify generated API types
-        run: |
-          npm run api:generate
-          git diff --exit-code -- types/generated/api-types.ts
-      - name: Type-check frontend
-        run: npm --prefix web run typecheck
-      - name: Test frontend behavior
-        run: npm --prefix web test
-      - name: Build frontend
-        run: npm run build
-      - name: Run tests
-        run: npm test
+      - name: Verify quality baseline
+        run: npm run verify:quality
 
   integration:
     runs-on: ubuntu-latest
@@ -50,87 +40,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Start Compose stack
-        run: docker compose up --build -d
-      - name: Smoke-test release paths
-        shell: bash
-        run: |
-          set -euo pipefail
-          base=http://127.0.0.1:3000
-          work="${RUNNER_TEMP}/meemo-smoke"
-          mkdir -p "$work"
-
-          for i in {1..60}; do
-            if curl --fail --silent "$base/api/health/ready" >/dev/null; then
-              break
-            fi
-            if [ "$i" -eq 60 ]; then
-              docker compose logs
-              exit 1
-            fi
-            sleep 2
-          done
-
-          docker compose exec -T meemo sh -c 'test "$AUTH_USER_SOURCE" = mongo'
-
-          curl --fail --silent --show-error \
-            -H 'Content-Type: application/json' \
-            -d '{"username":"ci-user","password":"ci-password","email":"ci@example.invalid","displayName":"CI User"}' \
-            "$base/api/register" >/dev/null
-          curl --fail --silent --show-error -c "$work/cookies" \
-            -H 'Content-Type: application/json' \
-            -d '{"username":"ci-user","password":"ci-password"}' \
-            "$base/api/login" >/dev/null
-          docker compose exec -T mongodb mongosh --quiet meemo --eval \
-            'quit(db.users.countDocuments({usernameNorm:"ci-user"}) === 1 ? 0 : 2)'
-
-          profile=$(curl --fail --silent --show-error -b "$work/cookies" "$base/api/profile")
-          user_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["user"]["id"])' <<<"$profile")
-
-          printf 'release smoke attachment\n' > "$work/attachment.txt"
-          attachment=$(curl --fail --silent --show-error -b "$work/cookies" \
-            -F "file=@$work/attachment.txt" "$base/api/files")
-          attachment_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["identifier"])' <<<"$attachment")
-
-          create_body=$(python3 -c 'import json,sys; print(json.dumps({"content":"RC smoke note #release","attachments":[json.load(sys.stdin)]}))' <<<"$attachment")
-          thing=$(curl --fail --silent --show-error -b "$work/cookies" \
-            -H 'Content-Type: application/json' -d "$create_body" "$base/api/things")
-          thing_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["thing"]["_id"])' <<<"$thing")
-
-          curl --fail --silent --show-error -b "$work/cookies" "$base/api/things" >/dev/null
-          curl --fail --silent --show-error -b "$work/cookies" \
-            -X PUT -H 'Content-Type: application/json' \
-            -d "$(python3 -c 'import json,sys; print(json.dumps({"content":"RC smoke note updated #release","attachments":[json.load(sys.stdin)],"public":True,"shared":True}))' <<<"$attachment")" \
-            "$base/api/things/$thing_id" >/dev/null
-          curl --fail --silent --show-error "$base/api/public/$user_id/things/$thing_id" >/dev/null
-          curl --fail --silent --show-error "$base/public/$user_id" >/dev/null
-          curl --fail --silent --show-error "$base/api/files/$user_id/$thing_id/$attachment_id" >/dev/null
-
-          curl --fail --silent --show-error -b "$work/cookies" \
-            "$base/api/export" -o "$work/export.tar"
-          test -s "$work/export.tar"
-
-          curl --fail --silent --show-error -b "$work/cookies" \
-            -X DELETE "$base/api/things/$thing_id" >/dev/null
-
-          curl --fail --silent --show-error \
-            -H 'Content-Type: application/json' \
-            -d '{"username":"ci-import","password":"ci-password","email":"ci-import@example.invalid","displayName":"CI Import"}' \
-            "$base/api/register" >/dev/null
-          curl --fail --silent --show-error -c "$work/import-cookies" \
-            -H 'Content-Type: application/json' \
-            -d '{"username":"ci-import","password":"ci-password"}' \
-            "$base/api/login" >/dev/null
-          curl --fail --silent --show-error -b "$work/import-cookies" \
-            -F "file=@$work/export.tar" "$base/api/import" >/dev/null
-          imported=$(curl --fail --silent --show-error -b "$work/import-cookies" "$base/api/things")
-          python3 -c 'import json,sys; assert any("RC smoke note updated" in x["content"] for x in json.load(sys.stdin)["things"])' <<<"$imported"
-      - name: Show Compose logs on failure
-        if: failure()
-        run: docker compose logs
-      - name: Stop Compose stack
-        if: always()
-        run: docker compose down -v
+      - name: Run integration verification
+        run: npm run verify:integration
 
   docker:
     runs-on: ubuntu-latest

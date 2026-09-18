@@ -58,6 +58,7 @@ npm ci                         # install locked dependencies
 npm --prefix web ci            # install locked web dependencies
 npm run build                  # compile web/ into public/
 npm test                       # run tests using a temporary MongoDB container
+npm run verify                  # run the complete quality and isolated Compose checks
 ./localdevelopment             # run the app with a development MongoDB container
 npm start                      # run only Node; MongoDB must already be available
 npm run api:generate           # generate TypeScript types from docs/openapi.yaml

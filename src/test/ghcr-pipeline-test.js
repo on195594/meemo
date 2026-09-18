@@ -41,20 +41,25 @@ describe('RC release gate and multi-arch pipeline (RF-717)', function () {
             expect(config.on).to.have.property('workflow_call');
         });
 
-        it('runs clean install, API generation, typecheck, build, and tests', function () {
-            var quality = jobCommands(config.jobs.quality);
-            ['npm ci', 'npm --prefix web ci', 'npm run api:generate',
-                'npm --prefix web run typecheck', 'npm run build', 'npm test']
+        it('runs clean install and the unified quality verification', function () {
+            var quality = jobCommands(config.jobs.quality),
+                verify = fs.readFileSync(path.join(rootDir, 'scripts/verify.js'), 'utf8');
+            ['npm ci', 'npm --prefix web ci', 'npm run verify:quality']
                 .forEach(function (command) { expect(quality).to.contain(command); });
+            ['npm(\'run\', \'api:generate\')', 'npm(\'--prefix\', \'web\', \'run\', \'typecheck\')',
+                'npm(\'run\', \'build\')', 'npm(\'test\')']
+                .forEach(function (command) { expect(verify).to.contain(command); });
             expect(packageJson.scripts.typecheck).to.be('vue-tsc --noEmit');
         });
 
-        it('smoke-tests every RC release path through Compose', function () {
-            var integration = jobCommands(config.jobs.integration);
-            ['docker compose up --build -d', '/api/health/ready', '/api/register', '/api/login',
+        it('smoke-tests every RC release path through the isolated integration verifier', function () {
+            var integration = jobCommands(config.jobs.integration),
+                smoke = fs.readFileSync(path.join(rootDir, 'scripts/verify-integration.sh'), 'utf8');
+            expect(integration).to.contain('npm run verify:integration');
+            ['docker compose', '/api/health/ready', '/api/register', '/api/login',
                 '/api/profile', '/api/things', '/api/files', '/api/public/', '/public/',
-                '/api/export', '/api/import', 'docker compose down -v']
-                .forEach(function (value) { expect(integration).to.contain(value); });
+                '/api/export', '/api/import', 'down --volumes --remove-orphans']
+                .forEach(function (value) { expect(smoke).to.contain(value); });
         });
 
         it('builds both supported image architectures without publishing', function () {

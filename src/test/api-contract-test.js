@@ -67,9 +67,11 @@ describe('API Contract and Progressive Types (RF-305)', function () {
         expect(packageJson.scripts['api:generate']).to.contain('docs/openapi.yaml');
         expect(packageJson.scripts['api:generate']).to.contain('types/generated/api-types.ts');
 
-        var workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/ci.yml'), 'utf8');
-        expect(workflow).to.contain('npm run api:generate');
-        expect(workflow).to.contain('git diff --exit-code -- types/generated/api-types.ts');
+        var verifyScript = fs.readFileSync(path.resolve(__dirname, '../../scripts/verify.js'), 'utf8');
+        expect(packageJson.scripts.verify).to.contain('scripts/verify.js');
+        expect(packageJson.scripts['verify:quality']).to.contain('--quality');
+        expect(verifyScript).to.contain("npm('run', 'api:generate')");
+        expect(verifyScript).to.contain("['diff', '--exit-code', '--', 'types/generated/api-types.ts']");
 
         var indexPath = path.resolve(__dirname, '../../types/index.d.ts');
         expect(fs.existsSync(indexPath)).to.be(true);

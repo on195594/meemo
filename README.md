@@ -84,6 +84,7 @@ npm --prefix web run typecheck
 npm --prefix web test
 npm run build
 npm test
+npm run verify              # unified quality + isolated Compose smoke checks
 ./localdevelopment
 ./deploy.sh                    # build image and hot-restart production deployment
 ```

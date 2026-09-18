@@ -2,8 +2,9 @@
 
 set -eu
 
-CONTAINER_NAME="mongo-server-meemo-test"
-USERS_FILE_PATH="/tmp/meemo-users-test-$$.json"
+TEST_RUN_ID="${MEEMO_TEST_RUN_ID:-$$}"
+CONTAINER_NAME="mongo-server-meemo-test-${TEST_RUN_ID}-$$"
+USERS_FILE_PATH="/tmp/meemo-users-test-${TEST_RUN_ID}-$$.json"
 
 cleanup() {
     rm -f "${USERS_FILE_PATH}"
