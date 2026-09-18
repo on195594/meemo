@@ -54,6 +54,7 @@ export type CreateThingResponse = JsonResponse<paths['/api/things']['post'], 201
 export type GetThingResponse = JsonResponse<paths['/api/things/{id}']['get'], 200>;
 export type UpdateThingResponse = JsonResponse<paths['/api/things/{id}']['put'], 201>;
 export type DeleteThingResponse = JsonResponse<paths['/api/things/{id}']['delete'], 200>;
+export type RestoreThingResponse = JsonResponse<paths['/api/things/{id}/restore']['post'], 200>;
 export type ListTagsResponse = JsonResponse<paths['/api/tags']['get'], 200>;
 export type UploadFileResponse = JsonResponse<paths['/api/files']['post'], 201>;
 export type GetSettingsResponse = JsonResponse<paths['/api/settings']['get'], 200>;

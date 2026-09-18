@@ -6,6 +6,7 @@ const apiMock = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
+  restore: vi.fn(),
 }));
 
 vi.mock('../api/client', () => ({
@@ -194,6 +195,20 @@ describe('useNotes behavior', () => {
     apiMock.update.mockResolvedValueOnce({ thing: { ...sticky, archived: true } });
     await store.toggleArchive(sticky);
     expect(store.things.value.map((thing) => thing._id)).toEqual(['first']);
+  });
+
+  it('restores a note from the trash list', async () => {
+    const deleted = note('deleted', { deletedAt: 2 });
+    apiMock.list.mockResolvedValue({ things: [deleted] });
+    apiMock.restore.mockResolvedValue({ thing: note('deleted', { revision: 2 }) });
+    const store = useNotes();
+    await store.setFilters({ search: '', tag: null, archived: false, deleted: true });
+
+    const result = await store.restoreNote('deleted');
+
+    expect(result.success).toBe(true);
+    expect(apiMock.restore).toHaveBeenCalledWith('deleted', 1);
+    expect(store.things.value).toEqual([]);
   });
 
   it('deletes a note from the visible list', async () => {

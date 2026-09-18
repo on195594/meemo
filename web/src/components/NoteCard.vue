@@ -45,6 +45,16 @@
         </span>
       </div>
 
+      <button
+        v-if="onRestore && !isEditing"
+        type="button"
+        class="action-btn"
+        title="Restore note"
+        @click.stop="onRestore(thing)"
+      >
+        ↩️
+      </button>
+
       <!-- Action Buttons (when editable and not in edit mode) -->
       <div v-if="canEdit && !isEditing" class="card-actions">
         <!-- Color Picker Popover -->
@@ -241,8 +251,8 @@
       aria-modal="true"
     >
       <div class="delete-modal-card">
-        <h3>Delete Note?</h3>
-        <p>Are you sure you want to permanently delete this note? This action cannot be undone.</p>
+        <h3>Move note to trash?</h3>
+        <p>This note can be restored from Trash.</p>
         <div class="delete-modal-actions">
           <button
             type="button"
@@ -259,7 +269,7 @@
             @click="confirmDelete"
           >
             <span v-if="isDeleting">Deleting...</span>
-            <span v-else>Delete Permanently</span>
+            <span v-else>Move to Trash</span>
           </button>
         </div>
       </div>
@@ -373,6 +383,7 @@ const props = withDefaults(
     highlightQuery?: string;
     onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; error?: string }>;
     onDeleteConfirm?: (id: string) => Promise<{ success: boolean; error?: string }>;
+    onRestore?: (thing: Thing) => void | Promise<void>;
   }>(),
   {
     canEdit: true,

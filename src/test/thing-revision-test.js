@@ -43,6 +43,25 @@ describe('Thing revision CAS and migration (M1)', function () {
         var current = await things.get(owner, created._id);
         expect(current.revision).to.equal(2);
         await things.del(owner, created._id, current.revision);
+        await things.purge(owner, created._id, current.revision + 1);
+    });
+
+    it('moves deleted notes out of active reads and restores them with a new revision', async function () {
+        var created = await things.insertFull(owner, '#trash-me', ['trash-me'], [], [], 1, 1);
+        var deleted = await things.put(owner, created._id, '#trash-me', ['trash-me'], [], [], true, true, false, false, undefined, created.revision);
+        await things.del(owner, created._id, deleted.revision);
+
+        expect(await things.getAll(owner, {}, 0, 10)).to.have.length(0);
+        var trash = await things.getAll(owner, { deletedAt: { $exists: true } }, 0, 10);
+        expect(trash).to.have.length(1);
+        expect(trash[0].public).to.be(false);
+        expect(await things.getTagUsage(owner)).to.eql([]);
+
+        var restored = await things.restore(owner, created._id, trash[0].revision);
+        expect(restored.revision).to.equal(trash[0].revision + 1);
+        expect(restored.deletedAt).to.be(undefined);
+        expect(restored.public).to.be(false);
+        expect((await things.getAll(owner, {}, 0, 10)).length).to.equal(1);
     });
 
     it('backfills only missing revisions and is safe to rerun', async function () {

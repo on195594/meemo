@@ -201,6 +201,8 @@ export interface paths {
                     sticky?: components["parameters"]["StickyQuery"];
                     /** @description Filter by archived flag */
                     archived?: components["parameters"]["ArchivedQuery"];
+                    /** @description Return notes in trash instead of active notes */
+                    deleted?: components["parameters"]["DeletedQuery"];
                     /** @description Number of records to skip */
                     skip?: components["parameters"]["SkipQuery"];
                     /** @description Maximum records to return */
@@ -341,8 +343,43 @@ export interface paths {
                 500: components["responses"]["InternalError"];
             };
         };
-        post?: never;
-        /** Delete a note */
+        /** Restore a note from trash */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 24-character hexadecimal ObjectId of the Thing */
+                    id: components["parameters"]["ThingIdPath"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DeleteThingRequest"];
+                };
+            };
+            responses: {
+                /** @description Note restored successfully */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            thing: components["schemas"]["Thing"];
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                428: components["responses"]["PreconditionRequired"];
+                500: components["responses"]["InternalError"];
+            };
+        };
+        /** Move a note to trash */
         delete: {
             parameters: {
                 query?: never;
@@ -359,7 +396,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Note deleted successfully */
+                /** @description Note moved to trash successfully */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1203,6 +1240,11 @@ export interface components {
              */
             revision: number;
             /**
+             * @description Server timestamp when the note was moved to trash
+             * @example 1694000000000
+             */
+            deletedAt?: number;
+            /**
              * @example [
              *       "meeting"
              *     ]
@@ -1435,6 +1477,8 @@ export interface components {
         StickyQuery: boolean;
         /** @description Filter by archived flag */
         ArchivedQuery: boolean;
+        /** @description Return notes in trash instead of active notes */
+        DeletedQuery: boolean;
         /** @description Number of records to skip */
         SkipQuery: number;
         /** @description Maximum records to return */

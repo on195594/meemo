@@ -186,6 +186,14 @@ function queryHasText(query) {
     return false;
 }
 
+function queryHasDeleted(query) {
+    if (!query || typeof query !== 'object') return false;
+    if (Object.prototype.hasOwnProperty.call(query, 'deletedAt')) return true;
+    if (Array.isArray(query.$and)) return query.$and.some(queryHasDeleted);
+    if (Array.isArray(query.$or)) return query.$or.some(queryHasDeleted);
+    return false;
+}
+
 function postProcess(userId, thing) {
     if (!thing) return;
     thing._id = String(thing._id);
@@ -203,7 +211,11 @@ function getAll(userId, query, skip, limit, callback) {
     assert.strictEqual(typeof query, 'object');
 
     var ownerCondition = { ownerId: userId };
-    var unifiedQuery = Object.keys(query).length ? { $and: [ownerCondition, query] } : ownerCondition;
+    var activeCondition = queryHasDeleted(query) ? {} : { deletedAt: { $exists: false } };
+    var conditions = [ownerCondition];
+    if (Object.keys(activeCondition).length) conditions.push(activeCondition);
+    if (Object.keys(query).length) conditions.push(query);
+    var unifiedQuery = conditions.length === 1 ? conditions[0] : { $and: conditions };
     var hasText = queryHasText(unifiedQuery);
     var cursor = getUnifiedCollection().find(unifiedQuery);
 
@@ -227,7 +239,7 @@ function getAll(userId, query, skip, limit, callback) {
 function getAllLean(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
 
-    var promise = getUnifiedCollection().find({ ownerId: userId })
+    var promise = getUnifiedCollection().find({ ownerId: userId, deletedAt: { $exists: false } })
         .sort({ modifiedAt: -1, _id: -1 })
         .toArray().then(function (result) {
         (result || []).forEach(postProcess.bind(null, userId));
@@ -240,7 +252,7 @@ function getTagUsage(userId, callback) {
     assert.strictEqual(typeof userId, 'string');
 
     var promise = getUnifiedCollection().aggregate([
-        { $match: { ownerId: userId } },
+        { $match: { ownerId: userId, deletedAt: { $exists: false } } },
         { $project: { tags: 1, _id: 0 } },
         { $unwind: '$tags' },
         { $group: { _id: '$tags', usage: { $sum: 1 } } },
@@ -260,7 +272,7 @@ function get(userId, thingId, callback) {
     var promise = Promise.resolve().then(async function () {
         if (!ObjectId.isValid(thingId)) throw new Error('not found');
         var id = new ObjectId(thingId);
-        var result = await getUnifiedCollection().findOne({ _id: id, ownerId: userId });
+        var result = await getUnifiedCollection().findOne({ _id: id, ownerId: userId, deletedAt: { $exists: false } });
         if (!result) throw new Error('not found');
         postProcess(userId, result);
         return result;
@@ -382,7 +394,7 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
         var id = new ObjectId(thingId);
         var collection = getUnifiedCollection();
         var result = await collection.findOneAndUpdate(
-            { _id: id, ownerId: userId, revision: expectedRevision },
+            { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: false } },
             { $set: data, $inc: { revision: 1 } },
             { returnDocument: 'after', includeResultMetadata: false }
         );
@@ -410,11 +422,74 @@ function del(userId, thingId, expectedRevision, callback) {
         await checkNotFrozen();
         var id = new ObjectId(thingId);
         var collection = getUnifiedCollection();
-        var result = await collection.deleteOne({ _id: id, ownerId: userId, revision: expectedRevision });
-        if (result.deletedCount === 0) {
-            var existing = await collection.findOne({ _id: id, ownerId: userId }, { projection: { _id: 1 } });
+        var result = await collection.updateOne(
+            { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: false } },
+            {
+                $set: {
+                    deletedAt: Date.now(),
+                    modifiedAt: Date.now(),
+                    public: false,
+                    shared: false,
+                    sticky: false
+                },
+                $inc: { revision: 1 }
+            }
+        );
+        if (result.modifiedCount === 0) {
+            var existing = await collection.findOne({ _id: id, ownerId: userId, deletedAt: { $exists: false } }, { projection: { _id: 1 } });
             throw existing ? conflictError() : notFoundError();
         }
+    });
+    return nodeify(promise, callback);
+}
+
+function restore(userId, thingId, expectedRevision, callback) {
+    if (typeof expectedRevision === 'function') {
+        callback = expectedRevision;
+        expectedRevision = undefined;
+    }
+    assert.strictEqual(typeof userId, 'string');
+    assert.strictEqual(typeof thingId, 'string');
+    if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(notFoundError()), callback);
+
+    var promise = Promise.resolve().then(async function () {
+        requireRevision(expectedRevision, true);
+        await checkNotFrozen();
+        var id = new ObjectId(thingId);
+        var collection = getUnifiedCollection();
+        var result = await collection.findOneAndUpdate(
+            { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: true } },
+            {
+                $unset: { deletedAt: '' },
+                $set: { modifiedAt: Date.now(), public: false, shared: false },
+                $inc: { revision: 1 }
+            },
+            { returnDocument: 'after', includeResultMetadata: false }
+        );
+        if (!result) {
+            var existing = await collection.findOne({ _id: id, ownerId: userId }, { projection: { _id: 1, deletedAt: 1 } });
+            throw existing ? conflictError() : notFoundError();
+        }
+        postProcess(userId, result);
+        return result;
+    });
+    return nodeify(promise, callback);
+}
+
+function purge(userId, thingId, expectedRevision, callback) {
+    if (typeof expectedRevision === 'function') {
+        callback = expectedRevision;
+        expectedRevision = undefined;
+    }
+    assert.strictEqual(typeof userId, 'string');
+    assert.strictEqual(typeof thingId, 'string');
+    if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(notFoundError()), callback);
+
+    var promise = Promise.resolve().then(async function () {
+        requireRevision(expectedRevision, false);
+        await checkNotFrozen();
+        var result = await getUnifiedCollection().deleteOne({ _id: new ObjectId(thingId), ownerId: userId, revision: expectedRevision });
+        if (!result.deletedCount) throw notFoundError();
     });
     return nodeify(promise, callback);
 }
@@ -430,6 +505,8 @@ module.exports = {
     insertFull: insertFull,
     put: put,
     del: del,
+    restore: restore,
+    purge: purge,
     acquireWriteFreeze: acquireWriteFreeze,
     releaseWriteFreeze: releaseWriteFreeze,
     requireWriteFreeze: requireWriteFreeze,

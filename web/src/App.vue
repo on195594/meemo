@@ -113,6 +113,14 @@
                 type="button"
                 class="dropdown-item"
                 role="menuitem"
+                @click="handleToggleDeletedFromMenu"
+              >
+                {{ isDeleted ? 'Active Notes' : 'Trash' }}
+              </button>
+              <button
+                type="button"
+                class="dropdown-item"
+                role="menuitem"
                 @click="openCheatsheet"
               >
                 Cheatsheet
@@ -228,6 +236,7 @@ const router = useRouter();
 const route = useRoute();
 
 const isArchived = computed(() => route.query.archived === '1' || route.query.archived === 'true');
+const isDeleted = computed(() => route.query.deleted === '1' || route.query.deleted === 'true');
 
 const headerSearchQuery = ref('');
 const isSearchFocused = ref(false);
@@ -273,13 +282,20 @@ function handleHeaderSearchClear() {
 }
 
 function handleToggleArchiveView() {
-  const query = { ...route.query, archived: isArchived.value ? undefined : 'true' };
+  const query = { ...route.query, archived: isArchived.value ? undefined : 'true', deleted: undefined };
   if (route.path !== '/') router.push({ path: '/', query });
   else router.replace({ query });
 }
 
 function handleToggleArchiveFromMenu() {
   handleToggleArchiveView();
+  closeUserMenu();
+}
+
+function handleToggleDeletedFromMenu() {
+  const query = { ...route.query, deleted: isDeleted.value ? undefined : 'true', archived: undefined };
+  if (route.path !== '/') router.push({ path: '/', query });
+  else router.replace({ query });
   closeUserMenu();
 }
 

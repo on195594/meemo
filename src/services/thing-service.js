@@ -239,6 +239,32 @@ function del(userId, thingId, expectedRevision, callback) {
     return nodeify(things.del(userId, thingId, expectedRevision), callback);
 }
 
+function restore(userId, thingId, expectedRevision, callback) {
+    if (typeof expectedRevision === 'function') {
+        callback = expectedRevision;
+        expectedRevision = undefined;
+    }
+    var promise = things.restore(userId, thingId, expectedRevision).then(function (result) {
+        try {
+            result.richContent = faceliftSync(userId, result);
+        } catch (error) {
+            console.error('Failed to facelift:', error);
+            result.richContent = result.content;
+        }
+        result.attachments = result.attachments || [];
+        return result;
+    });
+    return nodeify(promise, callback);
+}
+
+function purge(userId, thingId, expectedRevision, callback) {
+    if (typeof expectedRevision === 'function') {
+        callback = expectedRevision;
+        expectedRevision = undefined;
+    }
+    return nodeify(things.purge(userId, thingId, expectedRevision), callback);
+}
+
 function getTags(userId, callback) {
     return nodeify(things.getTagUsage(userId), callback);
 }
@@ -253,7 +279,7 @@ function cleanupTags(callback) {
         });
 
         var thingsCol = things.getUnifiedCollection();
-        var allThings = await thingsCol.find({}).toArray();
+        var allThings = await thingsCol.find({ deletedAt: { $exists: false } }).toArray();
         for (var thing of allThings) {
             if (typeof thing.ownerId !== 'string' || typeof thing.content !== 'string') {
                 throw new Error('Thing owner or content prevents exact tag reconstruction');
@@ -269,6 +295,7 @@ function cleanupTags(callback) {
         }
 
         var aggregated = await thingsCol.aggregate([
+            { $match: { deletedAt: { $exists: false } } },
             { $unwind: '$tags' },
             { $group: { _id: { ownerId: '$ownerId', name: '$tags' }, usage: { $sum: 1 } } },
             { $sort: { '_id.ownerId': 1, '_id.name': 1 } }
@@ -305,6 +332,8 @@ module.exports = {
     add: add,
     put: put,
     del: del,
+    restore: restore,
+    purge: purge,
     getTags: getTags,
     extractURLs: extractURLs,
     extractTags: extractTags,

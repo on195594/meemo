@@ -45,6 +45,7 @@ var listQuery = z.object({
     mode: z.enum(['regex', 'text']).optional().default('regex'),
     sticky: validation.queryBoolean.optional().default(false),
     archived: validation.queryBoolean.optional().default(false),
+    deleted: validation.queryBoolean.optional().default(false),
     skip: validation.pagination.skip,
     limit: validation.pagination.limit
 });
@@ -102,6 +103,20 @@ async function del(req, res, next) {
     }
 }
 
+async function restore(req, res, next) {
+    try {
+        var result = await things.restore(req.user.id, req.params.id,
+            requireExpectedRevision(req.body.expectedRevision));
+        next(new HttpSuccess(200, { thing: result }));
+    } catch (error) {
+        if (error.code === 'revision_conflict' || error.code === 'revision_overflow') {
+            throw new HttpError(409, error.message, error.code);
+        }
+        if (error.message === 'not found') throw new HttpError(404, 'not found');
+        throw error;
+    }
+}
+
 async function getTags(req, res, next) {
     next(new HttpSuccess(200, { tags: await things.getTags(req.user.id) }));
 }
@@ -112,6 +127,7 @@ function registerRoutes(router, auth) {
     router.get('/api/things/:id', auth, validate({ params: idParams }), asyncHandler(get));
     router.put('/api/things/:id', auth, validate({ params: idParams, body: updateBody }), asyncHandler(put));
     router.delete('/api/things/:id', auth, validate({ params: idParams, body: deleteBody }), asyncHandler(del));
+    router.post('/api/things/:id/restore', auth, validate({ params: idParams, body: deleteBody }), asyncHandler(restore));
     router.get('/api/tags', auth, asyncHandler(getTags));
 }
 
@@ -122,6 +138,7 @@ module.exports = {
     add: add,
     put: put,
     del: del,
+    restore: restore,
     getTags: getTags,
     schemas: {
         create: createBody,

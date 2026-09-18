@@ -41,9 +41,9 @@ Routes are registered by `src/http/router.js` from `src/http/app.js`:
 
 - `/api/register`, `/api/login`, `/api/logout`: local authentication and session management
 - `/api/profile`: authenticated user identity and settings
-- `/api/things`, `/api/files`, `/api/tags`, `/api/settings`: authenticated application API
+- `/api/things`, `/api/things/:id/restore`, `/api/files`, `/api/tags`, `/api/settings`: authenticated application API; Thing revisions use CAS and deletes move notes to reversible trash
 - `/api/import`, `/api/export`: archive transfer with size limits and path traversal protection
-- `/api/public/*`, `/api/rss/*`, `/public/*`, `/shared/*`: public streams, RSS feeds with canonical note URLs, and shared notes
+- `/api/public/*`, `/api/rss/*`, `/public/*`, `/shared/*`: public streams, RSS feeds with canonical note URLs, and shared notes; `/note/:thingId` is an authenticated stable private link
 - `/api/health/live`, `/api/health/ready`, `/api/healthcheck`: container and orchestration health probes
 
 The authoritative OpenAPI 3.0 specification is maintained in `docs/openapi.yaml`, and progressive TypeScript declarations for core domain models and API contracts reside in `types/api.d.ts`.
@@ -56,6 +56,7 @@ Meemo keeps v1-to-v2 migration tools for upgrades and rollback evidence; they ar
 
 - `scripts/migrate-users-to-mongo.js`: Migrates legacy file-based accounts to MongoDB `users` with `--dry-run`, `--apply`, and `--verify`.
 - `scripts/migrate-data-to-v2.js`: Migrates dynamic legacy `<user>_*` collections into unified `things`, `tags`, and `settings` collections partitioned by `ownerId` with `--dry-run`, `--apply`, and `--verify`; every mode requires an exact expected database name, and apply/verify bind it into the independently reviewed source artifact.
+- `scripts/migrate-thing-revisions.js`: Backfills only missing Thing revisions, refuses invalid values, and requires an exact target database name.
 - `scripts/preflight-legacy-retirement.js`: Performs a read-only, fail-closed check of environment/database binding, user identity mapping, migration state, and legacy collection ownership before operators retire compatibility data.
 - `scripts/verify-production-readiness.js`: Performs end-to-end fail-closed verification of production readiness, source artifact binding, session revocation, tag integrity, attachment resolution, and authenticated readback.
 - `scripts/gc-attachments.js`: Identifies and removes unreferenced orphan attachments from filesystem storage.

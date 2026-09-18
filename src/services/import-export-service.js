@@ -205,7 +205,7 @@ async function rollbackImportedData(userId, state) {
     for (var i = state.thingIds.length - 1; i >= 0; i--) {
         try {
             var thingId = String(state.thingIds[i]);
-            await things.del(userId, thingId, state.thingRevisions[thingId] || 1);
+            await things.purge(userId, thingId, state.thingRevisions[thingId] || 1);
         } catch (error) {
             failures.push({ operation: 'remove imported thing', target: String(state.thingIds[i]), error: error });
         }

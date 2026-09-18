@@ -12,6 +12,7 @@ const error = ref<string | null>(null);
 const searchQuery = ref('');
 const selectedTag = ref<string | null>(null);
 const isArchived = ref(false);
+const isDeleted = ref(false);
 
 const skip = ref(0);
 const limit = ref(15);
@@ -41,6 +42,7 @@ export function resetNotesState(): void {
   searchQuery.value = '';
   selectedTag.value = null;
   isArchived.value = false;
+  isDeleted.value = false;
   skip.value = 0;
 }
 
@@ -52,7 +54,7 @@ const activeFilter = computed(() => {
 });
 
 const hasActiveFilter = computed(() => {
-  return !!activeFilter.value || isArchived.value;
+  return !!activeFilter.value || isArchived.value || isDeleted.value;
 });
 
 export function useNotes() {
@@ -88,12 +90,14 @@ export function useNotes() {
 
     try {
       const filter = activeFilter.value || undefined;
-      const res = await api.things.list({
+      const listParams: Parameters<typeof api.things.list>[0] = {
         filter,
         archived: isArchived.value,
         skip: skip.value,
         limit: limit.value,
-      });
+      };
+      if (isDeleted.value) listParams.deleted = true;
+      const res = await api.things.list(listParams);
 
       if (generation !== userGeneration || requestGeneration !== notesRequestGeneration) return;
 
@@ -125,10 +129,11 @@ export function useNotes() {
     await fetchNotes(false);
   }
 
-  async function setFilters(filters: { search: string; tag: string | null; archived: boolean }): Promise<void> {
+  async function setFilters(filters: { search: string; tag: string | null; archived: boolean; deleted?: boolean }): Promise<void> {
     searchQuery.value = filters.search;
     selectedTag.value = filters.tag;
     isArchived.value = filters.archived;
+    isDeleted.value = filters.deleted === true;
     await fetchNotes(true);
   }
 
@@ -154,7 +159,7 @@ export function useNotes() {
       }
       const res = await api.things.create(payload);
       if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-      if (!isArchived.value) {
+      if (!isArchived.value && !isDeleted.value) {
         if (res.thing.sticky) {
           things.value.unshift(res.thing);
         } else {
@@ -240,6 +245,30 @@ export function useNotes() {
     }).catch((err: any) => ({
       success: false,
       error: err.message || 'Failed to update note',
+      code: err.code,
+    }));
+  }
+
+  async function restoreNote(id: string): Promise<NoteMutationResult> {
+    const generation = userGeneration;
+    return enqueueNoteMutation(id, generation, async () => {
+      const existing = things.value.find((t) => t._id === id);
+      if (!existing) return { success: false, error: 'Note is no longer available', code: 'not_found' };
+      try {
+        const res = await api.things.restore(id, existing.revision);
+        if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+        things.value = things.value.filter((t) => t._id !== id);
+        return { success: true, thing: res.thing };
+      } catch (err: any) {
+        if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+        const error = err.code === 'revision_conflict'
+          ? 'This note changed elsewhere. Reload before restoring.'
+          : (err.message || 'Failed to restore note');
+        return { success: false, error, code: err.code };
+      }
+    }).catch((err: any) => ({
+      success: false,
+      error: err.message || 'Failed to restore note',
       code: err.code,
     }));
   }
@@ -356,6 +385,7 @@ export function useNotes() {
     searchQuery,
     selectedTag,
     isArchived,
+    isDeleted,
     activeFilter,
     hasActiveFilter,
 
@@ -371,6 +401,7 @@ export function useNotes() {
     createNote,
     updateNote,
     deleteNote,
+    restoreNote,
     batchUpdateNotes,
     batchDeleteNotes,
     toggleSticky,

@@ -624,7 +624,7 @@ describe('Import Safety and Consistency (RF-106)', function () {
             var fileRollbackError = new Error('forced file rollback failure');
             var tempCleanupError = new Error('forced temporary cleanup failure');
             var originalCopyAttachment = storage.copyAttachment;
-            var originalDelete = things.del;
+            var originalDelete = things.purge;
             var promiseFs = fs.promises;
             var originalRm = promiseFs.rm;
             var copiedIdentifiers = [];
@@ -636,7 +636,7 @@ describe('Import Safety and Consistency (RF-106)', function () {
                 if (identifier === existingFile) return Promise.reject(primaryError);
                 return originalCopyAttachment(userId, sourcePath, identifier);
             };
-            things.del = function (userId, thingId, expectedRevision) {
+            things.purge = function (userId, thingId, expectedRevision) {
                 deletedIds.push(thingId);
                 if (deletedIds.length === 1) return Promise.reject(rollbackError);
                 return originalDelete(userId, thingId, expectedRevision);
@@ -672,7 +672,7 @@ describe('Import Safety and Consistency (RF-106)', function () {
                 ]);
             } finally {
                 storage.copyAttachment = originalCopyAttachment;
-                things.del = originalDelete;
+                things.purge = originalDelete;
                 promiseFs.rm = originalRm;
                 if (tempTarget) fs.rmSync(tempTarget, { recursive: true, force: true });
             }

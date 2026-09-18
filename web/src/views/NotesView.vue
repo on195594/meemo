@@ -45,6 +45,10 @@
           Archived View
           <button type="button" class="chip-remove" @click="handleViewSwitch(false)">&times;</button>
         </span>
+        <span v-if="isDeleted" class="filter-chip archive-chip">
+          Trash
+          <button type="button" class="chip-remove" @click="handleDeletedView(false)">&times;</button>
+        </span>
         <button type="button" class="clear-all-link" @click="clearRouteFilters">
           Reset all filters
         </button>
@@ -64,7 +68,7 @@
       <main class="stream-column">
         <!-- Note Composer (visible in active notes view) -->
         <NoteComposer
-          v-if="!isArchived"
+          v-if="!isArchived && !isDeleted"
           :on-save="createNote"
           @created="onNoteCreated"
         />
@@ -84,12 +88,13 @@
                 v-for="thing in pinnedThings"
                 :key="thing._id"
                 :thing="thing"
-                :can-edit="true"
+                :can-edit="!isDeleted"
                 :selectable="isSelectionMode"
                 :selected="selectedIds.has(thing._id)"
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
                 :on-delete-confirm="handleDeleteNote"
+                :on-restore="isDeleted ? handleRestoreNote : undefined"
                 @open-detail="openNoteModal"
                 @toggle-sticky="handleToggleSticky"
                 @toggle-public="handleTogglePublic"
@@ -110,12 +115,13 @@
                 v-for="thing in otherThings"
                 :key="thing._id"
                 :thing="thing"
-                :can-edit="true"
+                :can-edit="!isDeleted"
                 :selectable="isSelectionMode"
                 :selected="selectedIds.has(thing._id)"
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
                 :on-delete-confirm="handleDeleteNote"
+                :on-restore="isDeleted ? handleRestoreNote : undefined"
                 @open-detail="openNoteModal"
                 @toggle-sticky="handleToggleSticky"
                 @toggle-public="handleTogglePublic"
@@ -148,11 +154,13 @@
 
         <!-- Empty Results State -->
         <div v-else class="empty-state">
-          <div class="empty-icon">{{ isArchived ? '📦' : '📝' }}</div>
-          <h3 v-if="hasActiveFilter">No notes found matching your filter</h3>
+          <div class="empty-icon">{{ isDeleted ? '🗑️' : (isArchived ? '📦' : '📝') }}</div>
+          <h3 v-if="hasActiveFilter && !isDeleted">No notes found matching your filter</h3>
+          <h3 v-else-if="isDeleted">Trash is empty</h3>
           <h3 v-else-if="isArchived">No archived notes</h3>
           <h3 v-else>No notes found</h3>
-          <p v-if="hasActiveFilter">Try adjusting your search terms or clearing tag filters.</p>
+          <p v-if="hasActiveFilter && !isDeleted">Try adjusting your search terms or clearing tag filters.</p>
+          <p v-else-if="isDeleted">Deleted notes can be restored from here.</p>
           <p v-else-if="isArchived">Notes you archive will appear here.</p>
           <p v-else>Type a note in the composer above to begin!</p>
           <button
@@ -277,7 +285,7 @@
       >
         <div class="batch-delete-card">
           <h3>Delete {{ selectedIds.size }} Notes?</h3>
-          <p>Are you sure you want to permanently delete these {{ selectedIds.size }} notes? This action cannot be undone.</p>
+          <p>These notes can be restored from Trash.</p>
           <div class="batch-delete-actions">
             <button
               type="button"
@@ -294,7 +302,7 @@
               @click="handleBatchDelete"
             >
               <span v-if="isBatchDeleting">Deleting...</span>
-              <span v-else>Delete All Permanently</span>
+              <span v-else>Move All to Trash</span>
             </button>
           </div>
         </div>
@@ -312,7 +320,7 @@
       <NoteDetailModal
         :open="isNoteModalOpen"
         :thing="activeModalNote"
-        :can-edit="true"
+        :can-edit="!isDeleted"
         :initial-mode="modalInitialMode"
         :highlight-query="activeFilter || ''"
         :on-save-edit="updateNote"
@@ -358,6 +366,7 @@ const {
   selectedTag,
   activeFilter,
   isArchived,
+  isDeleted,
   hasActiveFilter,
   fetchNotes,
   fetchMore,
@@ -367,6 +376,7 @@ const {
   deleteNote,
   batchUpdateNotes,
   batchDeleteNotes,
+  restoreNote,
   toggleSticky,
   togglePublic,
   toggleArchive,
@@ -436,9 +446,15 @@ async function handleToggleArchive(thing: Thing) {
 async function handleDeleteNote(id: string) {
   const result = await deleteNote(id);
   if (result.success) {
-    showToast('Note permanently deleted');
+    showToast('Note moved to trash');
   }
   return result;
+}
+
+async function handleRestoreNote(thing: Thing) {
+  const result = await restoreNote(thing._id);
+  if (result.success) showToast('Note restored');
+  else if (result.error) showToast(result.error);
 }
 
 const isNoteModalOpen = ref(false);
@@ -475,7 +491,11 @@ function handleQueryRemove() {
 }
 
 function handleViewSwitch(archived: boolean) {
-  router.replace({ query: { ...route.query, archived: archived ? 'true' : undefined } });
+  router.replace({ query: { ...route.query, archived: archived ? 'true' : undefined, deleted: undefined } });
+}
+
+function handleDeletedView(deleted: boolean) {
+  router.replace({ query: { ...route.query, deleted: deleted ? 'true' : undefined, archived: undefined } });
 }
 
 function handleTagClick(tag: string) {
@@ -500,7 +520,8 @@ function syncRouteFilters() {
   const q = typeof route.query.q === 'string' ? route.query.q : '';
   const tag = typeof route.query.tag === 'string' ? route.query.tag : null;
   const archived = route.query.archived === '1' || route.query.archived === 'true';
-  setFilters({ search: q, tag, archived });
+  const deleted = route.query.deleted === '1' || route.query.deleted === 'true';
+  setFilters({ search: q, tag, archived, deleted });
 }
 
 function setupIntersectionObserver() {
@@ -643,9 +664,9 @@ async function handleBatchDelete() {
     }
     selectedIds.value = new Set(selectedIds.value);
     if (res.success) {
-      showToast(`Deleted ${res.deletedCount} note${res.deletedCount > 1 ? 's' : ''}`);
+      showToast(`Moved ${res.deletedCount} note${res.deletedCount > 1 ? 's' : ''} to Trash`);
     } else {
-      showToast(`Deleted ${res.deletedCount} notes. ${res.failedIds.length} failed.`, 'info');
+      showToast(`Moved ${res.deletedCount} notes to Trash. ${res.failedIds.length} failed.`, 'info');
     }
   } finally {
     isBatchDeleting.value = false;
@@ -679,7 +700,7 @@ watch(isAuthenticated, (authenticated) => {
 }, { immediate: true });
 
 watch(
-  () => [route.query.q, route.query.tag, route.query.archived],
+  () => [route.query.q, route.query.tag, route.query.archived, route.query.deleted],
   () => {
     handleClearSelection();
     if (isAuthenticated.value) syncRouteFilters();

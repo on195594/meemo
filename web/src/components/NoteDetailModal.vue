@@ -248,8 +248,8 @@
               <button
                 type="button"
                 class="action-btn delete-btn"
-                title="Delete note permanently"
-                aria-label="Delete note permanently"
+                title="Move note to trash"
+                aria-label="Move note to trash"
                 @click="showDeleteConfirm = true"
               >
                 🗑️
@@ -282,8 +282,8 @@
             @click.self="showDeleteConfirm = false"
           >
             <div class="delete-confirm-card">
-              <h3>Delete note?</h3>
-              <p>Are you sure you want to permanently delete this note? This action cannot be undone.</p>
+              <h3>Move note to trash?</h3>
+              <p>This note can be restored from Trash.</p>
               <div class="delete-confirm-actions">
                 <button
                   type="button"
@@ -300,7 +300,7 @@
                   @click="confirmDelete"
                 >
                   <span v-if="isDeleting">Deleting...</span>
-                  <span v-else>Delete Permanently</span>
+                  <span v-else>Move to Trash</span>
                 </button>
               </div>
             </div>

@@ -6,7 +6,7 @@ Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It
 
 - Google Keep-inspired expanded note viewing and editing modal dialog with responsive backdrop, real-time 12-color theming, and auto-save
 - Markdown notes with tags, wikilinks, task lists, and MongoDB `$text` full-text search with relevance scoring
-- Attachments, archive, sticky notes, and public sharing
+- Attachments, archive, sticky notes, public sharing, stable private note links, and a reversible trash
 - Public feeds and RSS with canonical note URLs
 - JSON archive import and export
 - High-performance MongoDB compound ESR indexes, text indexing, and tag aggregation

@@ -138,6 +138,7 @@ export const api = {
       if (params?.mode) query.set('mode', params.mode);
       if (params?.sticky !== undefined) query.set('sticky', String(params.sticky));
       if (params?.archived !== undefined) query.set('archived', String(params.archived));
+      if (params?.deleted !== undefined) query.set('deleted', String(params.deleted));
       if (params?.skip !== undefined) query.set('skip', String(params.skip));
       if (params?.limit !== undefined) query.set('limit', String(params.limit));
       const qs = query.toString();
@@ -157,6 +158,11 @@ export const api = {
     delete: (id: string, expectedRevision: number) =>
       request<{}>(`/api/things/${id}`, {
         method: 'DELETE',
+        body: JSON.stringify({ expectedRevision }),
+      }),
+    restore: (id: string, expectedRevision: number) =>
+      request<UpdateThingResponse>(`/api/things/${id}/restore`, {
+        method: 'POST',
         body: JSON.stringify({ expectedRevision }),
       }),
     tags: () => request<ListTagsResponse>('/api/tags'),

@@ -455,6 +455,21 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
             .delete('/api/things/' + id)
             .send({ expectedRevision: updated.body.thing.revision })
             .expect(200);
+
+        var trash = await agentA
+            .get('/api/things?deleted=true')
+            .expect(200);
+        var deletedThing = trash.body.things.find(function (thing) { return thing._id === id; });
+        expect(deletedThing).to.be.ok();
+        expect(deletedThing.public).to.be(false);
+        await agentA.get('/api/things/' + id).expect(404);
+
+        var restored = await agentA
+            .post('/api/things/' + id + '/restore')
+            .send({ expectedRevision: deletedThing.revision })
+            .expect(200);
+        expect(restored.body.thing.revision).to.equal(deletedThing.revision + 1);
+        expect(restored.body.thing.public).to.be(false);
     });
 
     // 14. shared note lookup via /api/public/shared/things/:thingId

@@ -204,6 +204,10 @@ components:
           maximum: 9007199254740991
           description: Server-managed optimistic-concurrency revision
           example: 1
+        deletedAt:
+          type: integer
+          description: Server timestamp when the note was moved to trash
+          example: 1694000000000
         tags:
           type: array
           items:
@@ -522,6 +526,15 @@ components:
         type: boolean
         default: false
 
+    DeletedQuery:
+      name: deleted
+      in: query
+      required: false
+      description: Return notes in trash instead of active notes
+      schema:
+        type: boolean
+        default: false
+
     SkipQuery:
       name: skip
       in: query
@@ -714,6 +727,7 @@ paths:
         - $ref: '#/components/parameters/SearchModeQuery'
         - $ref: '#/components/parameters/StickyQuery'
         - $ref: '#/components/parameters/ArchivedQuery'
+        - $ref: '#/components/parameters/DeletedQuery'
         - $ref: '#/components/parameters/SkipQuery'
         - $ref: '#/components/parameters/LimitQuery'
       responses:
@@ -830,7 +844,7 @@ paths:
           $ref: '#/components/responses/InternalError'
     delete:
       tags: [things]
-      summary: Delete a note
+      summary: Move a note to trash
       security:
         - sessionCookie: []
       parameters:
@@ -843,11 +857,47 @@ paths:
               $ref: '#/components/schemas/DeleteThingRequest'
       responses:
         '200':
-          description: Note deleted successfully
+          description: Note moved to trash successfully
           content:
             application/json:
               schema:
                 type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [things]
+      summary: Restore a note from trash
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ThingIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteThingRequest'
+      responses:
+        '200':
+          description: Note restored successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [thing]
+                properties:
+                  thing:
+                    $ref: '#/components/schemas/Thing'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
