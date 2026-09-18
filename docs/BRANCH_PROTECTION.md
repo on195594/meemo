@@ -1,6 +1,8 @@
 # Master Branch Protection
 
-`master` is the release branch. Changes must enter through a pull request after the validation checks below succeed. Repository administration is an external operation; this runbook does not claim that the policy has been applied.
+`master` is the release branch. **Current repository workflow:** branch protection is disabled for the single-maintainer project; focused changes may be committed and pushed directly to `master` after the relevant checks pass. This document is an opt-in runbook for re-enabling or auditing GitHub protection, not a requirement for the current workflow.
+
+If protection is re-enabled, changes must enter through a pull request after the validation checks below succeed, and the release checklist must be interpreted against the observed repository state.
 
 ## Required checks
 

@@ -15,13 +15,12 @@ See the [Development](README.md#development) section in `README.md` for environm
 - Update `README.md`, `docs/ARCHITECTURE.md`, `docs/BACKUP_RESTORE.md`, or `docs/RELEASE_CHECKLIST.md` when behavior, deployment, runbooks, or architecture change.
 - Report vulnerabilities according to [SECURITY.md](SECURITY.md), not in a public issue.
 
-## Pull requests
+## Changes and pull requests
 
-1. Fork and clone `https://github.com/on195594/meemo`.
-2. Create a focused branch from `master`.
-3. Make one logically scoped change.
-4. Run `npm test`, `npm --prefix web test`, `npm run build`, `npm --prefix web run typecheck`, and `docker build .` when container behavior changes. If API contracts changed, run `npm run api:generate` and commit updated types.
-5. Use a short imperative commit subject; Conventional Commit prefixes such as `fix:`, `feat:`, and `docs:` are preferred.
-6. Open a pull request describing the problem, the solution, and the checks run.
+For the single-maintainer repository, make focused commits directly on `master` after the relevant checks pass. External contributors should fork the repository, create a focused branch, and open a pull request describing the problem, solution, and checks run. If branch protection is re-enabled, follow [`docs/BRANCH_PROTECTION.md`](docs/BRANCH_PROTECTION.md) instead.
 
-CI builds and tests images locally on pull requests. Push to `master` and published releases automatically publish multi-arch images to the GitHub Container Registry (`ghcr.io/on195594/meemo`).
+1. Make one logically scoped change.
+2. Run `npm test`, `npm --prefix web test`, `npm run build`, `npm --prefix web run typecheck`, and `docker build .` when container behavior changes. If API contracts changed, run `npm run api:generate` and commit updated types.
+3. Use a short imperative commit subject; Conventional Commit prefixes such as `fix:`, `feat:`, and `docs:` are preferred.
+
+CI builds and tests images locally on pull requests. Pushes to `master` and published releases automatically publish multi-arch images to the GitHub Container Registry (`ghcr.io/on195594/meemo`).

@@ -8,18 +8,18 @@ Pull-request approval, protected-branch status, CI success, and release/image pu
 
 ## Pre-release
 
-- [ ] The release commit is on protected `master`, arrived through a pull request, and the validation gate is green; see [`BRANCH_PROTECTION.md`](BRANCH_PROTECTION.md).
-- [ ] Fetch the protected branch after merge, record `git rev-parse master`, and prove the candidate was built and tested from that exact head; superseded PR-head evidence is not release evidence.
+- [ ] The release commit is on `master` and the validation gate is green. If branch protection is enabled, it must also have arrived through the required pull-request checks; see [`BRANCH_PROTECTION.md`](BRANCH_PROTECTION.md).
+- [ ] Fetch the current `master`, record `git rev-parse master`, and prove the candidate was built and tested from that exact head; superseded PR-head evidence is not release evidence.
 - [ ] `npm ci`, `npm --prefix web ci`, generated API types, frontend typecheck/Vitest/build, and backend Mocha tests pass.
 - [ ] Treat delegated evidence as `INCOMPLETE`, never as release-ready proof, when it reports `max_iterations` or truncation, is schema-invalid, or omits the command exit status, exact commit SHA, named artifact, or artifact hash. Reject summaries that cannot be bound to those originals.
-- [ ] Compose smoke covers health, register/login, Thing CRUD, attachment, public share/stream, export, and import.
+- [ ] Compose smoke covers health, register/login, Thing CRUD, CAS conflict, trash/restore visibility, attachment, public share/stream, export, and import.
 - [ ] Docker builds pass for `linux/amd64` and `linux/arm64`.
 - [ ] No credentials, data exports, user files, or attachment data are in the commit.
 - [ ] Record the candidate immutable image digest, previous running image ID/digest, and configuration identifiers.
 - [ ] Back up MongoDB and the complete Meemo data volume while writes are stopped or from a storage-consistent snapshot.
 - [ ] Follow [`BACKUP_RESTORE.md`](BACKUP_RESTORE.md) to retain the exact previous image artifact and restore the matched data backup with that image into an isolated stack.
 - [ ] Checksum and make the matched MongoDB archive, `/app/data` archive, exact previous image, Compose file, and metadata read-only as one immutable rollback set; readiness output is stored elsewhere.
-- [ ] In the isolated stack, verify readiness, login, representative Things, attachments, public shares, export, restart persistence, and the running image ID.
+- [ ] In the isolated stack, verify readiness, login, representative active and trashed Things, restore behavior, attachments, public shares, export, restart persistence, and the running image ID.
 - [ ] Inventory every legacy namespace and candidate backup; reject test, fixture, sample, and demo indicators.
 - [ ] Independently review the exact expected database name, namespace names, counts, canonical-EJSON fingerprints, and owner-map digest. Store them in a read-only expected-source artifact that the migration did not generate; bind `--dry-run`, `--apply`, and `--verify` to that database name and both write/readback modes to that same artifact.
 
@@ -62,4 +62,4 @@ Pull-request approval, protected-branch status, CI success, and release/image pu
 
 ## Release decision
 
-Release only when every item above passes and the restored backup has been exercised. Immediately before mutation, re-read protected `master`, record its exact head, and reject evidence produced for any other commit or image. Record the release tag, exact post-merge commit SHA, image digest, retained image-artifact SHA-256, immutable rollback-set digest, backup identifiers, redacted migration/preflight/business-verifier output, freeze start/end, production authorization reference, observation-window result, branch-protection read-back, operator, and UTC completion time in the release notes.
+Release only when every applicable item above passes and the restored backup has been exercised. Immediately before mutation, re-read `master`, record its exact head, and reject evidence produced for any other commit or image. Record the release tag, exact release commit SHA, image digest, retained image-artifact SHA-256, immutable rollback-set digest, backup identifiers, redacted migration/preflight/business-verifier output, freeze start/end, production authorization reference, observation-window result, observed branch-protection state, operator, and UTC completion time in the release notes.
