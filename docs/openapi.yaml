@@ -54,6 +54,9 @@ components:
             - forbidden
             - not_found
             - conflict
+            - revision_conflict
+            - revision_overflow
+            - precondition_required
             - payload_too_large
             - too_many_requests
             - internal_error
@@ -167,6 +170,7 @@ components:
         - richContent
         - createdAt
         - modifiedAt
+        - revision
         - tags
         - attachments
         - public
@@ -194,6 +198,12 @@ components:
           type: integer
           description: Unix timestamp in milliseconds of the latest complete note update
           example: 1694000000000
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Server-managed optimistic-concurrency revision
+          example: 1
         tags:
           type: array
           items:
@@ -312,6 +322,7 @@ components:
       type: object
       required:
         - content
+        - expectedRevision
       properties:
         content:
           type: string
@@ -340,6 +351,24 @@ components:
           allOf:
             - $ref: '#/components/schemas/NoteColor'
           example: coral
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Revision read from the same note snapshot being updated
+          example: 3
+
+    DeleteThingRequest:
+      type: object
+      required:
+        - expectedRevision
+      properties:
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Revision read from the same note snapshot being deleted
+          example: 3
 
     SaveSettingsRequest:
       type: object
@@ -540,7 +569,13 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Conflict:
-      description: Conflict with existing resource
+      description: Conflict with existing resource or stale Thing revision
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PreconditionRequired:
+      description: Optimistic-concurrency revision is required
       content:
         application/json:
           schema:
@@ -787,6 +822,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
@@ -796,6 +835,12 @@ paths:
         - sessionCookie: []
       parameters:
         - $ref: '#/components/parameters/ThingIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteThingRequest'
       responses:
         '200':
           description: Note deleted successfully
@@ -809,6 +854,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
         '500':
           $ref: '#/components/responses/InternalError'
 

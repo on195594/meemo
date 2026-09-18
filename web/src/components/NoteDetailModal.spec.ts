@@ -11,6 +11,7 @@ function note(overrides: Partial<Thing> = {}): Thing {
     richContent: '',
     createdAt: 1700000000000,
     modifiedAt: 1700000000000,
+    revision: 1,
     tags: ['work', 'project'],
     attachments: [
       { identifier: 'file-1', fileName: 'report.pdf', size: 2048 },

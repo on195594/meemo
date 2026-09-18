@@ -27,6 +27,7 @@ function note(owner: 'a' | 'b'): Thing {
     sticky: false,
     createdAt: 1,
     modifiedAt: 1,
+    revision: 1,
   };
 }
 

@@ -123,7 +123,6 @@
                 class="modal-textarea"
                 placeholder="Note content (Markdown supported)..."
                 rows="12"
-                :disabled="isSaving"
                 @keydown="handleTextareaKeydown"
                 @input="handleTextareaInput"
               ></textarea>
@@ -355,6 +354,7 @@ const currentNote = ref<Thing>({
   richContent: '',
   createdAt: Date.now(),
   modifiedAt: Date.now(),
+  revision: 1,
   tags: [],
   attachments: [],
   public: false,
@@ -371,6 +371,7 @@ const isDeleting = ref(false);
 const isColorSaving = ref(false);
 const isTaskSaving = ref(false);
 const actionError = ref<string | null>(null);
+let draftGeneration = 0;
 
 const showColorPicker = ref(false);
 const focusedColorIndex = ref(0);
@@ -607,6 +608,7 @@ function switchToEdit() {
 }
 
 function handleTextareaInput() {
+  draftGeneration++;
   actionError.value = null;
 }
 
@@ -634,6 +636,7 @@ async function saveContent(): Promise<boolean> {
 
   isSaving.value = true;
   actionError.value = null;
+  const saveGeneration = draftGeneration;
 
   try {
     if (props.onSaveEdit) {
@@ -641,7 +644,9 @@ async function saveContent(): Promise<boolean> {
       if (result.success) {
         if (result.thing) currentNote.value = { ...result.thing };
         else currentNote.value.content = trimmed;
-        editDraft.value = currentNote.value.content || '';
+        if (saveGeneration === draftGeneration) {
+          editDraft.value = currentNote.value.content || '';
+        }
         return true;
       } else {
         actionError.value = result.error || 'Failed to save note';
@@ -884,6 +889,7 @@ watch(
       if (props.thing) {
         currentNote.value = { ...props.thing };
         editDraft.value = props.thing.content || '';
+        draftGeneration = 0;
         currentMode.value = props.initialMode || 'view';
         if (currentMode.value === 'edit') {
           nextTick(() => textareaRef.value?.focus());

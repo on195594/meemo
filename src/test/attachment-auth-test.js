@@ -76,7 +76,7 @@ describe('Attachment Authorization (RF-104)', function () {
                                 if (err) return done(err);
                                 var t2Id = thing2._id.toString();
                                 // Make it public
-                                logic.put('alice', t2Id, 'Alice public note', pubAttach, true, false, false, false, function (err, updated) {
+                                logic.put('alice', t2Id, 'Alice public note', pubAttach, true, false, false, false, undefined, thing2.revision, function (err, updated) {
                                     if (err) return done(err);
                                     alicePublicThingId = t2Id;
 

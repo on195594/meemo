@@ -27,13 +27,18 @@ var createBody = z.object({
     color: z.enum(noteColors.NOTE_COLORS).optional().default('default')
 });
 
+var revision = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
+
 var updateBody = createBody.extend({
     public: z.boolean({ invalid_type_error: 'public must be a boolean' }).default(false),
     shared: z.boolean({ invalid_type_error: 'shared must be a boolean' }).default(false),
     archived: z.boolean({ invalid_type_error: 'archived must be a boolean' }).default(false),
     sticky: z.boolean({ invalid_type_error: 'sticky must be a boolean' }).default(false),
-    color: z.enum(noteColors.NOTE_COLORS).optional()
+    color: z.enum(noteColors.NOTE_COLORS).optional(),
+    expectedRevision: revision.optional()
 });
+
+var deleteBody = z.object({ expectedRevision: revision.optional() });
 
 var listQuery = z.object({
     filter: z.string().max(1000).optional(),
@@ -66,12 +71,20 @@ async function add(req, res, next) {
     next(new HttpSuccess(201, { thing: result }));
 }
 
+function requireExpectedRevision(value) {
+    if (value === undefined) throw new HttpError(428, 'expectedRevision is required', 'precondition_required');
+    return value;
+}
+
 async function put(req, res, next) {
     try {
         var result = await things.put(req.user.id, req.params.id, req.body.content, req.body.attachments,
-            req.body.public, req.body.shared, req.body.archived, req.body.sticky, req.body.color);
+            req.body.public, req.body.shared, req.body.archived, req.body.sticky, req.body.color,
+            requireExpectedRevision(req.body.expectedRevision));
         next(new HttpSuccess(201, { thing: result }));
     } catch (error) {
+        if (error.code === 'revision_conflict') throw new HttpError(409, error.message, error.code);
+        if (error.code === 'revision_overflow') throw new HttpError(409, error.message, error.code);
         if (error.message === 'not found') throw new HttpError(404, 'not found');
         throw error;
     }
@@ -79,9 +92,11 @@ async function put(req, res, next) {
 
 async function del(req, res, next) {
     try {
-        await things.del(req.user.id, req.params.id);
+        await things.del(req.user.id, req.params.id, requireExpectedRevision(req.body.expectedRevision));
         next(new HttpSuccess(200, {}));
     } catch (error) {
+        if (error.code === 'revision_conflict') throw new HttpError(409, error.message, error.code);
+        if (error.code === 'revision_overflow') throw new HttpError(409, error.message, error.code);
         if (error.message === 'not found') throw new HttpError(404, 'not found');
         throw error;
     }
@@ -96,7 +111,7 @@ function registerRoutes(router, auth) {
     router.get('/api/things', auth, validate({ query: listQuery }), asyncHandler(getAll));
     router.get('/api/things/:id', auth, validate({ params: idParams }), asyncHandler(get));
     router.put('/api/things/:id', auth, validate({ params: idParams, body: updateBody }), asyncHandler(put));
-    router.delete('/api/things/:id', auth, validate({ params: idParams }), asyncHandler(del));
+    router.delete('/api/things/:id', auth, validate({ params: idParams, body: deleteBody }), asyncHandler(del));
     router.get('/api/tags', auth, asyncHandler(getTags));
 }
 

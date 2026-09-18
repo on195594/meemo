@@ -60,8 +60,8 @@ describe('Tag integrity', function () {
             { ownerId: 'owner-a', name: 'same', usage: 2 }
         ]);
 
-        await thingService.put(
-            'owner-a', first._id, '#other', [], false, false, true, false
+        var updatedFirst = await thingService.put(
+            'owner-a', first._id, '#other', [], false, false, true, false, undefined, first.revision
         );
         expect(await thingService.getTags('owner-a')).to.eql([
             { ownerId: 'owner-a', name: 'other', usage: 1 }
@@ -70,7 +70,7 @@ describe('Tag integrity', function () {
             { ownerId: 'owner-b', name: 'same', usage: 1 }
         ]);
 
-        await thingService.del('owner-a', first._id);
+        await thingService.del('owner-a', first._id, updatedFirst.revision);
         expect(await thingService.getTags('owner-a')).to.eql([]);
     });
 
@@ -124,7 +124,7 @@ describe('Tag integrity', function () {
                     var res = await realToArray();
                     if (!injected) {
                         injected = true;
-                        await things.put('owner-a', created._id, '#new', ['new'], [], [], false, false, false, false);
+                        await things.put('owner-a', created._id, '#new', ['new'], [], [], false, false, false, false, undefined, created.revision);
                     }
                     return res;
                 };
@@ -216,15 +216,15 @@ describe('Tag integrity', function () {
 
     it('linearizes put and del operations atomically and throws not found on absent deletion', async function () {
         var created = await things.insertFull('owner-a', '#initial', ['initial'], [], [], 1, 1);
-        var updated = await things.put('owner-a', created._id, '#updated', ['updated'], [], [], false, false, false, false);
+        var updated = await things.put('owner-a', created._id, '#updated', ['updated'], [], [], false, false, false, false, undefined, created.revision);
         expect(updated.content).to.equal('#updated');
         expect(updated.tags).to.eql(['updated']);
 
-        await things.del('owner-a', created._id);
+        await things.del('owner-a', created._id, updated.revision);
 
         var delError;
         try {
-            await things.del('owner-a', created._id);
+            await things.del('owner-a', created._id, updated.revision);
         } catch (error) {
             delError = error;
         }

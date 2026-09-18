@@ -264,12 +264,14 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
             .expect(201);
 
         var publicNoteId = pubNoteRes.body.thing._id;
+        var publicNoteRevision = pubNoteRes.body.thing.revision;
 
         // Publish the note
         await agentA
             .put('/api/things/' + publicNoteId)
             .send({
                 content: 'Public announcement note',
+                expectedRevision: publicNoteRevision,
                 public: true,
                 shared: true
             })
@@ -400,7 +402,7 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
         var stickyId = stickyRes.body.thing._id;
         await agentA
             .put('/api/things/' + stickyId)
-            .send({ content: 'Sticky Note Alpha', sticky: true })
+            .send({ content: 'Sticky Note Alpha', expectedRevision: stickyRes.body.thing.revision, sticky: true })
             .expect(201);
 
         var normalRes = await agentA
@@ -419,8 +421,44 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
         expect(ids).not.to.contain(normalId);
     });
 
-    // 13. shared note lookup via /api/public/shared/things/:thingId
-    it('scenario 13: GET /api/public/shared/things/:thingId resolves note directly without user ID', async function () {
+    // 13. revision preconditions prevent stale Thing writes and deletes
+    it('scenario 13: rejects missing and stale Thing revisions', async function () {
+        var created = await agentA
+            .post('/api/things')
+            .send({ content: 'Revision protected note' })
+            .expect(201);
+        var id = created.body.thing._id;
+
+        var missing = await agentA
+            .put('/api/things/' + id)
+            .send({ content: 'Missing revision' })
+            .expect(428);
+        expect(missing.body.code).to.equal('precondition_required');
+
+        var updated = await agentA
+            .put('/api/things/' + id)
+            .send({ content: 'First revision', expectedRevision: created.body.thing.revision })
+            .expect(201);
+        expect(updated.body.thing.revision).to.equal(2);
+
+        var stale = await agentA
+            .put('/api/things/' + id)
+            .send({ content: 'Stale revision', expectedRevision: created.body.thing.revision })
+            .expect(409);
+        expect(stale.body.code).to.equal('revision_conflict');
+
+        await agentA
+            .delete('/api/things/' + id)
+            .send({ expectedRevision: created.body.thing.revision })
+            .expect(409);
+        await agentA
+            .delete('/api/things/' + id)
+            .send({ expectedRevision: updated.body.thing.revision })
+            .expect(200);
+    });
+
+    // 14. shared note lookup via /api/public/shared/things/:thingId
+    it('scenario 14: GET /api/public/shared/things/:thingId resolves note directly without user ID', async function () {
         var noteRes = await agentA
             .post('/api/things')
             .send({ content: 'Directly shared note content' })
@@ -435,7 +473,7 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
         // Mark as shared
         await agentA
             .put('/api/things/' + noteId)
-            .send({ content: 'Directly shared note content', shared: true })
+            .send({ content: 'Directly shared note content', expectedRevision: noteRes.body.thing.revision, shared: true })
             .expect(201);
 
         // Anonymous request via /shared alias succeeds
@@ -448,7 +486,7 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
     });
 
     // 14. Chinese search and hashtag query support
-    it('scenario 14: GET /api/things?filter=... accurately searches Chinese content, hashtags, and multi-word queries', async function () {
+    it('scenario 15: GET /api/things?filter=... accurately searches Chinese content, hashtags, and multi-word queries', async function () {
         var note1Res = await agentA
             .post('/api/things')
             .send({ content: '今天天气真好，在公园散步学习深度学习 #工作 #深度学习' })

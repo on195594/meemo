@@ -11,6 +11,7 @@ function note(overrides: Partial<Thing> = {}): Thing {
     richContent: '',
     createdAt: Date.now(),
     modifiedAt: Date.now(),
+    revision: 1,
     tags: ['work'],
     attachments: [],
     public: false,

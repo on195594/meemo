@@ -205,10 +205,15 @@ function add(userId, content, attachments, color, callback) {
     return nodeify(promise, callback);
 }
 
-function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, color, callback) {
+function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, color, expectedRevision, callback) {
+    if (typeof expectedRevision === 'function') {
+        callback = expectedRevision;
+        expectedRevision = undefined;
+    }
     if (typeof color === 'function') {
         callback = color;
         color = undefined;
+        expectedRevision = undefined;
     }
     var promise = Promise.resolve().then(async function () {
         var tagObjects = extractTags(content);
@@ -221,13 +226,17 @@ function put(userId, thingId, content, attachments, isPublic, isShared, isArchiv
         }
 
         return things.put(userId, thingId, content, tagObjects, attachments, externalContent,
-            isPublic, isShared, isArchived, isSticky, color);
+            isPublic, isShared, isArchived, isSticky, color, expectedRevision);
     });
     return nodeify(promise, callback);
 }
 
-function del(userId, thingId, callback) {
-    return nodeify(things.del(userId, thingId), callback);
+function del(userId, thingId, expectedRevision, callback) {
+    if (typeof expectedRevision === 'function') {
+        callback = expectedRevision;
+        expectedRevision = undefined;
+    }
+    return nodeify(things.del(userId, thingId, expectedRevision), callback);
 }
 
 function getTags(userId, callback) {
@@ -253,8 +262,8 @@ function cleanupTags(callback) {
             if (JSON.stringify(thing.tags) !== JSON.stringify(extracted)) {
                 // CAS: update only if content has not changed concurrently
                 await thingsCol.updateOne(
-                    { _id: thing._id, ownerId: thing.ownerId, content: thing.content },
-                    { $set: { tags: extracted } }
+                    { _id: thing._id, ownerId: thing.ownerId, content: thing.content, revision: thing.revision },
+                    { $set: { tags: extracted }, $inc: { revision: 1 } }
                 );
             }
         }

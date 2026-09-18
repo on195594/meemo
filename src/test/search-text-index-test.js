@@ -123,7 +123,7 @@ describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
 
             // noteDocSticky: sticky note with lower keyword density
             var stickyCreated = await thingService.add(testUserA, 'Sticky note mentioning benchmark once', []);
-            noteDocSticky = await thingService.put(testUserA, stickyCreated._id, stickyCreated.content, [], false, false, false, true, 'default');
+            noteDocSticky = await thingService.put(testUserA, stickyCreated._id, stickyCreated.content, [], false, false, false, true, 'default', stickyCreated.revision);
 
             // Note belonging to another user to verify owner isolation
             await thingService.add(testUserB, 'benchmark writes note by user b', []);

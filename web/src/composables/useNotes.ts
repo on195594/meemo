@@ -18,6 +18,14 @@ const limit = ref(15);
 let userGeneration = 0;
 let notesRequestGeneration = 0;
 let tagsRequestGeneration = 0;
+const noteMutationQueues = new Map<string, Promise<unknown>>();
+
+type NoteMutationResult = {
+  success: boolean;
+  thing?: Thing;
+  error?: string;
+  code?: string;
+};
 
 export function resetNotesState(): void {
   userGeneration++;
@@ -164,65 +172,93 @@ export function useNotes() {
     }
   }
 
+  function enqueueNoteMutation<T>(id: string, generation: number, mutation: () => Promise<T>): Promise<T> {
+    const previous = noteMutationQueues.get(id) || Promise.resolve();
+    const next = previous.catch(() => undefined).then(() => {
+      if (generation !== userGeneration) return Promise.reject(new Error('Session changed'));
+      return mutation();
+    });
+    const tracked = next.finally(() => {
+      if (noteMutationQueues.get(id) === tracked) noteMutationQueues.delete(id);
+    });
+    noteMutationQueues.set(id, tracked);
+    return tracked;
+  }
+
   async function updateNote(
     id: string,
     updates: Partial<Thing>
-  ): Promise<{ success: boolean; thing?: Thing; error?: string }> {
-    const existing = things.value.find((t) => t._id === id);
-    const content = updates.content !== undefined ? updates.content : existing?.content;
-    if (!content || !content.trim()) {
-      return { success: false, error: 'Content cannot be empty' };
-    }
-
-    const payload: any = {
-      content: content.trim(),
-      attachments: updates.attachments !== undefined ? updates.attachments : (existing?.attachments || []),
-      public: updates.public !== undefined ? updates.public : (existing?.public || false),
-      shared: updates.shared !== undefined ? updates.shared : (existing?.shared || false),
-      archived: updates.archived !== undefined ? updates.archived : (existing?.archived || false),
-      sticky: updates.sticky !== undefined ? updates.sticky : (existing?.sticky || false),
-    };
-    if (updates.color !== undefined) {
-      payload.color = updates.color;
-    }
-
+  ): Promise<NoteMutationResult> {
     const generation = userGeneration;
-    try {
-      const res = await api.things.update(id, payload);
-      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-      const updated = res.thing;
-
-      if (updated.archived !== isArchived.value) {
-        // Remove from current view if archived state no longer matches view
-        things.value = things.value.filter((t) => t._id !== id);
-      } else {
-        const index = things.value.findIndex((t) => t._id === id);
-        if (index !== -1) {
-          things.value.splice(index, 1, updated);
-          things.value.sort((a, b) => {
-            if (a.sticky !== b.sticky) return a.sticky ? -1 : 1;
-            return (b.modifiedAt || 0) - (a.modifiedAt || 0);
-          });
-        }
+    return enqueueNoteMutation(id, generation, async () => {
+      const existing = things.value.find((t) => t._id === id);
+      if (!existing) {
+        return { success: false, error: 'Note is no longer available', code: 'not_found' };
       }
-      return { success: true, thing: updated };
-    } catch (err: any) {
-      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-      return { success: false, error: err.message || 'Failed to update note' };
-    }
+      const content = updates.content !== undefined ? updates.content : existing.content;
+      if (!content || !content.trim()) {
+        return { success: false, error: 'Content cannot be empty' };
+      }
+
+      const payload: any = {
+        content: content.trim(),
+        attachments: updates.attachments !== undefined ? updates.attachments : (existing.attachments || []),
+        public: updates.public !== undefined ? updates.public : (existing.public || false),
+        shared: updates.shared !== undefined ? updates.shared : (existing.shared || false),
+        archived: updates.archived !== undefined ? updates.archived : (existing.archived || false),
+        sticky: updates.sticky !== undefined ? updates.sticky : (existing.sticky || false),
+        expectedRevision: existing.revision,
+      };
+      if (updates.color !== undefined) payload.color = updates.color;
+
+      try {
+        const res = await api.things.update(id, payload);
+        if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+        const updated = res.thing;
+
+        if (updated.archived !== isArchived.value) {
+          things.value = things.value.filter((t) => t._id !== id);
+        } else {
+          const index = things.value.findIndex((t) => t._id === id);
+          if (index !== -1) {
+            things.value.splice(index, 1, updated);
+            things.value.sort((a, b) => {
+              if (a.sticky !== b.sticky) return a.sticky ? -1 : 1;
+              return (b.modifiedAt || 0) - (a.modifiedAt || 0);
+            });
+          }
+        }
+        return { success: true, thing: updated };
+      } catch (err: any) {
+        if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+        return { success: false, error: err.message || 'Failed to update note', code: err.code };
+      }
+    }).catch((err: any) => ({
+      success: false,
+      error: err.message || 'Failed to update note',
+      code: err.code,
+    }));
   }
 
-  async function deleteNote(id: string): Promise<{ success: boolean; error?: string }> {
+  async function deleteNote(id: string): Promise<{ success: boolean; error?: string; code?: string }> {
     const generation = userGeneration;
-    try {
-      await api.things.delete(id);
-      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-      things.value = things.value.filter((t) => t._id !== id);
-      return { success: true };
-    } catch (err: any) {
-      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-      return { success: false, error: err.message || 'Failed to delete note' };
-    }
+    return enqueueNoteMutation(id, generation, async () => {
+      const existing = things.value.find((t) => t._id === id);
+      if (!existing) return { success: false, error: 'Note is no longer available', code: 'not_found' };
+      try {
+        await api.things.delete(id, existing.revision);
+        if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+        things.value = things.value.filter((t) => t._id !== id);
+        return { success: true };
+      } catch (err: any) {
+        if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+        return { success: false, error: err.message || 'Failed to delete note', code: err.code };
+      }
+    }).catch((err: any) => ({
+      success: false,
+      error: err.message || 'Failed to delete note',
+      code: err.code,
+    }));
   }
 
   async function toggleSticky(thing: Thing) {

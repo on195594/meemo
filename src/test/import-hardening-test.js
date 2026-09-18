@@ -636,10 +636,10 @@ describe('Import Safety and Consistency (RF-106)', function () {
                 if (identifier === existingFile) return Promise.reject(primaryError);
                 return originalCopyAttachment(userId, sourcePath, identifier);
             };
-            things.del = function (userId, thingId) {
+            things.del = function (userId, thingId, expectedRevision) {
                 deletedIds.push(thingId);
                 if (deletedIds.length === 1) return Promise.reject(rollbackError);
-                return originalDelete(userId, thingId);
+                return originalDelete(userId, thingId, expectedRevision);
             };
             promiseFs.rm = function (target) {
                 if (target === firstTarget) return Promise.reject(fileRollbackError);

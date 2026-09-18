@@ -260,6 +260,7 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
                         .put('/api/things/' + publicThingId)
                         .send({
                             content: 'Public note for world',
+                            expectedRevision: res.body.thing.revision,
                             attachments: [],
                             public: true,
                             shared: false,

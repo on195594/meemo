@@ -197,8 +197,8 @@
           v-model="editContent"
           class="edit-textarea"
           rows="5"
-          :disabled="isSaving"
           @keydown="handleEditKeyDown"
+          @input="editGeneration++"
         ></textarea>
 
         <div v-if="editError" class="edit-error" role="alert">
@@ -399,6 +399,7 @@ const isEditing = ref(false);
 const editContent = ref('');
 const isSaving = ref(false);
 const editError = ref<string | null>(null);
+let editGeneration = 0;
 const editTextareaRef = ref<HTMLTextAreaElement | null>(null);
 
 const showDeleteConfirm = ref(false);
@@ -466,6 +467,7 @@ function startEdit() {
     return;
   }
   editContent.value = props.thing.content || '';
+  editGeneration = 0;
   editError.value = null;
   isEditing.value = true;
   nextTick(() => {
@@ -653,11 +655,12 @@ async function saveEdit() {
 
   isSaving.value = true;
   editError.value = null;
+  const saveGeneration = editGeneration;
 
   if (props.onSaveEdit) {
     const result = await props.onSaveEdit(props.thing._id, { content: trimmed });
     if (result.success) {
-      isEditing.value = false;
+      if (saveGeneration === editGeneration) isEditing.value = false;
     } else {
       editError.value = result.error || 'Failed to save note';
     }

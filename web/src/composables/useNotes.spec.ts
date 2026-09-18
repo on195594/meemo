@@ -29,6 +29,7 @@ function note(id: string, overrides: Record<string, unknown> = {}): Thing {
     sticky: false,
     createdAt: 1,
     modifiedAt: 1,
+    revision: 1,
     ...overrides,
   } as unknown as Thing;
 }
@@ -121,6 +122,33 @@ describe('useNotes behavior', () => {
     expect(store.things.value).toEqual([updated]);
   });
 
+  it('serializes same-note writes from the latest returned revision', async () => {
+    const original = note('one');
+    const firstResponse = deferred<{ thing: Thing }>();
+    apiMock.list.mockResolvedValue({ things: [original] });
+    apiMock.update
+      .mockReturnValueOnce(firstResponse.promise)
+      .mockImplementationOnce((_id, payload) => Promise.resolve({
+        thing: note('one', { content: payload.content, revision: 3 }),
+      }));
+    const store = useNotes();
+    await store.fetchNotes();
+
+    const first = store.updateNote('one', { content: 'first' });
+    const second = store.updateNote('one', { content: 'second' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(apiMock.update).toHaveBeenCalledTimes(1);
+    firstResponse.resolve({ thing: note('one', { content: 'first', revision: 2 }) });
+    await Promise.all([first, second]);
+
+    expect(apiMock.update).toHaveBeenNthCalledWith(1, 'one', expect.objectContaining({
+      content: 'first', expectedRevision: 1,
+    }));
+    expect(apiMock.update).toHaveBeenNthCalledWith(2, 'one', expect.objectContaining({
+      content: 'second', expectedRevision: 2,
+    }));
+  });
+
   it('reorders the visible list after a color update changes modifiedAt', async () => {
     const first = note('first', { modifiedAt: 3 });
     const second = note('second', { modifiedAt: 2, color: 'default' });
@@ -161,7 +189,7 @@ describe('useNotes behavior', () => {
     const result = await store.deleteNote('delete');
 
     expect(result).toEqual({ success: true });
-    expect(apiMock.delete).toHaveBeenCalledWith('delete');
+    expect(apiMock.delete).toHaveBeenCalledWith('delete', 1);
     expect(store.things.value.map((thing) => thing._id)).toEqual(['keep']);
   });
 

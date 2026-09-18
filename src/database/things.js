@@ -9,8 +9,32 @@ var assert = require('assert'),
     noteColors = require('../note-colors.js');
 
 var indexesCreated = false;
+var MAX_REVISION = Number.MAX_SAFE_INTEGER;
 var WRITE_GATE_ID = 'thing-writes';
 var WRITE_GATE_COLLECTION = 'system_maintenance';
+
+function revisionError(code, message) {
+    var error = new Error(message);
+    error.code = code;
+    return error;
+}
+
+function requireRevision(expectedRevision, incrementsRevision) {
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
+        throw revisionError('precondition_required', 'expectedRevision is required');
+    }
+    if (incrementsRevision && expectedRevision >= MAX_REVISION) {
+        throw revisionError('revision_overflow', 'Thing revision limit reached');
+    }
+}
+
+function notFoundError() {
+    return new Error('not found');
+}
+
+function conflictError() {
+    return revisionError('revision_conflict', 'Thing revision conflict');
+}
 
 function writeGateCollection() {
     if (!config.db) throw new Error('MongoDB database is not connected');
@@ -166,6 +190,7 @@ function postProcess(userId, thing) {
     if (!thing) return;
     thing._id = String(thing._id);
     if (!thing.ownerId) thing.ownerId = userId;
+    if (!Number.isSafeInteger(thing.revision) || thing.revision < 1) thing.revision = 1;
     thing.public = !!thing.public;
     thing.shared = !!thing.shared;
     thing.archived = !!thing.archived;
@@ -297,6 +322,7 @@ function insertFull(userId, content, tags, attachments, externalContent, created
         content: content,
         createdAt: createdAt,
         modifiedAt: modifiedAt,
+        revision: 1,
         tags: tags,
         externalContent: externalContent,
         attachments: attachments,
@@ -318,20 +344,24 @@ function insertFull(userId, content, tags, attachments, externalContent, created
     return nodeify(promise, callback);
 }
 
-function put(userId, thingId, content, tags, attachments, externalContent, isPublic, isShared, isArchived, isSticky, color, callback) {
+function put(userId, thingId, content, tags, attachments, externalContent, isPublic, isShared, isArchived, isSticky, color, expectedRevision, callback) {
+    if (typeof expectedRevision === 'function') {
+        callback = expectedRevision;
+        expectedRevision = undefined;
+    }
     if (typeof color === 'function') {
         callback = color;
         color = undefined;
+        expectedRevision = undefined;
     }
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
-    if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(new Error('not found')), callback);
+    if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(notFoundError()), callback);
     if (color !== undefined && !noteColors.isValidNoteColor(color)) {
         return nodeify(Promise.reject(noteColors.invalidNoteColorError()), callback);
     }
 
     var data = {
-        ownerId: userId,
         content: content,
         tags: tags,
         modifiedAt: Date.now(),
@@ -347,30 +377,44 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
     }
 
     var promise = Promise.resolve().then(async function () {
+        requireRevision(expectedRevision, true);
         await checkNotFrozen();
         var id = new ObjectId(thingId);
-        var result = await getUnifiedCollection().findOneAndUpdate(
-            { _id: id, ownerId: userId },
-            { $set: data },
+        var collection = getUnifiedCollection();
+        var result = await collection.findOneAndUpdate(
+            { _id: id, ownerId: userId, revision: expectedRevision },
+            { $set: data, $inc: { revision: 1 } },
             { returnDocument: 'after', includeResultMetadata: false }
         );
-        if (!result) throw new Error('not found');
+        if (!result) {
+            var existing = await collection.findOne({ _id: id, ownerId: userId }, { projection: { _id: 1 } });
+            throw existing ? conflictError() : notFoundError();
+        }
         postProcess(userId, result);
         return result;
     });
     return nodeify(promise, callback);
 }
 
-function del(userId, thingId, callback) {
+function del(userId, thingId, expectedRevision, callback) {
+    if (typeof expectedRevision === 'function') {
+        callback = expectedRevision;
+        expectedRevision = undefined;
+    }
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
-    if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(new Error('not found')), callback);
+    if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(notFoundError()), callback);
 
     var promise = Promise.resolve().then(async function () {
+        requireRevision(expectedRevision, false);
         await checkNotFrozen();
         var id = new ObjectId(thingId);
-        var result = await getUnifiedCollection().deleteOne({ _id: id, ownerId: userId });
-        if (result.deletedCount === 0) throw new Error('not found');
+        var collection = getUnifiedCollection();
+        var result = await collection.deleteOne({ _id: id, ownerId: userId, revision: expectedRevision });
+        if (result.deletedCount === 0) {
+            var existing = await collection.findOne({ _id: id, ownerId: userId }, { projection: { _id: 1 } });
+            throw existing ? conflictError() : notFoundError();
+        }
     });
     return nodeify(promise, callback);
 }

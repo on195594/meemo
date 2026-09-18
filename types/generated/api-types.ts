@@ -336,6 +336,8 @@ export interface paths {
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                428: components["responses"]["PreconditionRequired"];
                 500: components["responses"]["InternalError"];
             };
         };
@@ -351,7 +353,11 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DeleteThingRequest"];
+                };
+            };
             responses: {
                 /** @description Note deleted successfully */
                 200: {
@@ -365,6 +371,8 @@ export interface paths {
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                428: components["responses"]["PreconditionRequired"];
                 500: components["responses"]["InternalError"];
             };
         };
@@ -1110,7 +1118,7 @@ export interface components {
              * @example invalid_request
              * @enum {string}
              */
-            code: "invalid_request" | "authentication_required" | "invalid_credentials" | "forbidden" | "not_found" | "conflict" | "payload_too_large" | "too_many_requests" | "internal_error" | "service_unavailable" | "request_failed";
+            code: "invalid_request" | "authentication_required" | "invalid_credentials" | "forbidden" | "not_found" | "conflict" | "revision_conflict" | "revision_overflow" | "precondition_required" | "payload_too_large" | "too_many_requests" | "internal_error" | "service_unavailable" | "request_failed";
             /** @example content must be a string */
             message: string;
         };
@@ -1190,6 +1198,11 @@ export interface components {
              */
             modifiedAt: number;
             /**
+             * @description Server-managed optimistic-concurrency revision
+             * @example 1
+             */
+            revision: number;
+            /**
              * @example [
              *       "meeting"
              *     ]
@@ -1262,6 +1275,18 @@ export interface components {
             sticky?: boolean;
             /** @example coral */
             color?: components["schemas"]["NoteColor"];
+            /**
+             * @description Revision read from the same note snapshot being updated
+             * @example 3
+             */
+            expectedRevision: number;
+        };
+        DeleteThingRequest: {
+            /**
+             * @description Revision read from the same note snapshot being deleted
+             * @example 3
+             */
+            expectedRevision: number;
         };
         SaveSettingsRequest: {
             /**
@@ -1338,8 +1363,17 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
-        /** @description Conflict with existing resource */
+        /** @description Conflict with existing resource or stale Thing revision */
         Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /** @description Optimistic-concurrency revision is required */
+        PreconditionRequired: {
             headers: {
                 [name: string]: unknown;
             };

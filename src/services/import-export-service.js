@@ -34,6 +34,9 @@ function validateThingsData(data) {
         if (thing.modifiedAt !== undefined && typeof thing.modifiedAt !== 'number' && typeof thing.modifiedAt !== 'string') {
             return 'Thing at index ' + i + ' has invalid modifiedAt';
         }
+        if (thing.revision !== undefined && (!Number.isSafeInteger(thing.revision) || thing.revision < 1)) {
+            return 'Thing at index ' + i + ' has invalid revision';
+        }
         if (thing.color !== undefined && !noteColors.isValidNoteColor(thing.color)) {
             return 'Thing at index ' + i + ' has invalid color';
         }
@@ -100,6 +103,7 @@ function exportData(userId, callback) {
                 return {
                     createdAt: thing.createdAt,
                     modifiedAt: thing.modifiedAt,
+                    revision: thing.revision || 1,
                     content: thing.content,
                     externalContent: thing.externalContent || [],
                     attachments: thing.attachments || [],
@@ -162,7 +166,7 @@ function importData(userId, data, callback) {
     var promise = Promise.resolve().then(async function () {
         var schemaError = validateThingsData(data);
         if (schemaError) throw new Error(schemaError);
-        var state = { thingIds: [] };
+        var state = { thingIds: [], thingRevisions: {} };
 
         try {
             await insertImportedData(userId, data, state);
@@ -191,6 +195,7 @@ async function insertImportedData(userId, data, state) {
             Array.isArray(thing.externalContent) ? thing.externalContent : [], createdAt, modifiedAt, color);
         if (!result || !result._id) throw new Error('no result returned');
         state.thingIds.push(result._id);
+        state.thingRevisions[String(result._id)] = result.revision || 1;
         await things.get(userId, result._id);
     }
 }
@@ -199,7 +204,8 @@ async function rollbackImportedData(userId, state) {
     var failures = [];
     for (var i = state.thingIds.length - 1; i >= 0; i--) {
         try {
-            await things.del(userId, String(state.thingIds[i]));
+            var thingId = String(state.thingIds[i]);
+            await things.del(userId, thingId, state.thingRevisions[thingId] || 1);
         } catch (error) {
             failures.push({ operation: 'remove imported thing', target: String(state.thingIds[i]), error: error });
         }
@@ -300,7 +306,7 @@ function importArchive(userId, filePath, callback) {
     var promise = Promise.resolve().then(async function () {
         var tempExtractDir = await files.mkdtemp(path.join(os.tmpdir(), 'meemo-import-'));
         var copiedFiles = [];
-        var state = { thingIds: [] };
+        var state = { thingIds: [], thingRevisions: {} };
         var result;
         var primaryError;
 

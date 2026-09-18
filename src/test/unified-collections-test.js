@@ -120,7 +120,7 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             var putError;
             try {
                 await things.put(testUserId, createdThingId, 'Invalid color update', [], [], [],
-                    false, false, false, false, 'red');
+                    false, false, false, false, 'red', 1);
             } catch (error) {
                 putError = error;
             }
@@ -145,12 +145,12 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
         });
 
         it('updates and deletes note in unified collection', function (done) {
-            things.put(testUserId, createdThingId, 'Updated unified content', ['unified'], [], [], false, false, false, false, 'sage', function (err, updated) {
+            things.put(testUserId, createdThingId, 'Updated unified content', ['unified'], [], [], false, false, false, false, 'sage', 1, function (err, updated) {
                 if (err) return done(err);
                 expect(updated.content).to.equal('Updated unified content');
                 expect(updated.color).to.equal('sage');
 
-                things.del(testUserId, createdThingId, function (err) {
+                things.del(testUserId, createdThingId, updated.revision, function (err) {
                     if (err) return done(err);
 
                     things.get(testUserId, createdThingId, function (err) {

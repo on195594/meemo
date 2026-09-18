@@ -91,6 +91,8 @@ npm run verify              # unified quality + isolated Compose smoke checks
 
 `npm run build` compiles modern Vue 3 web source in `web/` into the ignored `public/` directory. Frontend behavior tests use Vitest; backend and contract tests use Mocha through `npm test`, which starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application. `./deploy.sh` builds `meemo:latest` and restarts the production compose container in one command.
 
+Before enabling revision-protected writes on an existing database, stop all Thing writers and run `npm run migrate:thing-revisions -- --dry-run --mongo-url <url> --expect-database <name>`, then apply and verify with the same explicit database name. The migration only fills missing revisions with `1` and refuses invalid existing values.
+
 To run only the Node.js process, provide MongoDB separately and use `npm start`.
 
 Runtime tag lists are derived from each owner's `things.tags` arrays in real time, so add, edit/archive, delete, and import operate lock-free without cross-collection lease counters. The persisted `tags` collection is an offline maintenance projection. `thingService.cleanupTags` repairs Thing tag arrays using compare-and-set updates, aggregates fresh tag usage from `things`, and atomically swaps the projection over `tags` via MongoDB's atomic `renameCollection`. For offline maintenance and pre-cutover readiness verification (`verify-production-readiness.js`), a durable MongoDB write freeze gate (`things.acquireWriteFreeze` / `things.requireWriteFreeze`) blocks Thing mutations and fails closed when unverified.

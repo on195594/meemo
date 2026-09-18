@@ -154,9 +154,10 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify(data),
       }),
-    delete: (id: string) =>
+    delete: (id: string, expectedRevision: number) =>
       request<{}>(`/api/things/${id}`, {
         method: 'DELETE',
+        body: JSON.stringify({ expectedRevision }),
       }),
     tags: () => request<ListTagsResponse>('/api/tags'),
   },

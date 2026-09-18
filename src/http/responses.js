@@ -14,6 +14,7 @@ var ERROR_CODES = {
     409: 'conflict',
     413: 'payload_too_large',
     429: 'too_many_requests',
+    428: 'precondition_required',
     500: 'internal_error',
     503: 'service_unavailable'
 };

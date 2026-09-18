@@ -65,12 +65,14 @@ create_body=$(python3 -c 'import json,sys; print(json.dumps({"content":"RC smoke
 thing=$(curl --fail --silent --show-error -b "$work/cookies" \
     -H 'Content-Type: application/json' -d "$create_body" "$base/api/things")
 thing_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["thing"]["_id"])' <<<"$thing")
+thing_revision=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["thing"]["revision"])' <<<"$thing")
 
 curl --fail --silent --show-error -b "$work/cookies" "$base/api/things" >/dev/null
-curl --fail --silent --show-error -b "$work/cookies" \
+updated_thing=$(curl --fail --silent --show-error -b "$work/cookies" \
     -X PUT -H 'Content-Type: application/json' \
-    -d "$(python3 -c 'import json,sys; print(json.dumps({"content":"RC smoke note updated #release","attachments":[json.load(sys.stdin)],"public":True,"shared":True}))' <<<"$attachment")" \
-    "$base/api/things/$thing_id" >/dev/null
+    -d "$(python3 -c 'import json,sys; print(json.dumps({"content":"RC smoke note updated #release","attachments":[json.load(sys.stdin)],"expectedRevision":int(sys.argv[1]),"public":True,"shared":True}))' "$thing_revision" <<<"$attachment")" \
+    "$base/api/things/$thing_id")
+thing_revision=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["thing"]["revision"])' <<<"$updated_thing")
 curl --fail --silent --show-error "$base/api/public/$user_id/things/$thing_id" >/dev/null
 curl --fail --silent --show-error "$base/public/$user_id" >/dev/null
 curl --fail --silent --show-error "$base/api/files/$user_id/$thing_id/$attachment_id" >/dev/null
@@ -80,7 +82,9 @@ curl --fail --silent --show-error -b "$work/cookies" \
 test -s "$work/export.tar"
 
 curl --fail --silent --show-error -b "$work/cookies" \
-    -X DELETE "$base/api/things/$thing_id" >/dev/null
+    -X DELETE -H 'Content-Type: application/json' \
+    -d "{\"expectedRevision\":$thing_revision}" \
+    "$base/api/things/$thing_id" >/dev/null
 
 curl --fail --silent --show-error \
     -H 'Content-Type: application/json' \
