@@ -71,8 +71,8 @@ Meemo employs a multi-tiered performance strategy balancing database efficiency,
 
 1. **MongoDB Compound ESR and Full-Text Indexing**:
    Queries in `src/database/things.js` follow MongoDB's Equality-Sort-Range (ESR) guideline to eliminate in-memory sort stages:
-   - Default note list feed: `{ ownerId: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }` covers equality filtering on owner and archive state alongside stable compound sorting.
-   - Tag-filtered feed: `{ ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }` enables index-covered multikey tag lookups without collection scans.
+   - Default note list feed: `{ ownerId: 1, deletedAt: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }` covers the active/trash state, owner/archive filters, and stable compound sorting.
+   - Tag-filtered feed: `{ ownerId: 1, deletedAt: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }` enables owner/deletion/tag lookups with stable sorting.
    - Full-text search: `{ ownerId: 1, content: 'text', tags: 'text' }` (`owner_text_content_tags`, weighted `{ tags: 10, content: 5 }`) provides owner-isolated text searches with English Porter stemming and TF-IDF relevance scoring.
    - Secondary indexes (e.g. `publicId` and `modifiedAt`) are initialized concurrently using `Promise.all` at startup.
 

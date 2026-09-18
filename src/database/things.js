@@ -169,7 +169,9 @@ function ensureIndexes(callback) {
             createIndex(collection, { ownerId: 1, archived: 1, modifiedAt: -1 }),
             createIndex(collection, { ownerId: 1, tags: 1 }),
             createIndex(collection, { ownerId: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
-            createIndex(collection, { ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 })
+            createIndex(collection, { ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
+            createIndex(collection, { ownerId: 1, deletedAt: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
+            createIndex(collection, { ownerId: 1, deletedAt: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 })
         ]);
         await ensureTextIndex(collection);
     }).then(function () {
