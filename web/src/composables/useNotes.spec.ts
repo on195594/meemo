@@ -149,6 +149,22 @@ describe('useNotes behavior', () => {
     }));
   });
 
+  it('keeps a draft and reports an explicit conflict on stale writes', async () => {
+    apiMock.list.mockResolvedValue({ things: [note('one')] });
+    apiMock.update.mockRejectedValue({ code: 'revision_conflict', message: 'stale revision' });
+    const store = useNotes();
+    await store.fetchNotes();
+
+    const result = await store.updateNote('one', { content: 'draft kept' });
+
+    expect(result).toEqual({
+      success: false,
+      code: 'revision_conflict',
+      error: 'This note changed elsewhere. Your draft was kept; reload before retrying.',
+    });
+    expect(store.things.value[0].content).toBe('note one');
+  });
+
   it('reorders the visible list after a color update changes modifiedAt', async () => {
     const first = note('first', { modifiedAt: 3 });
     const second = note('second', { modifiedAt: 2, color: 'default' });

@@ -31,6 +31,7 @@ export function resetNotesState(): void {
   userGeneration++;
   notesRequestGeneration++;
   tagsRequestGeneration++;
+  noteMutationQueues.clear();
   things.value = [];
   tags.value = [];
   isLoading.value = false;
@@ -231,7 +232,10 @@ export function useNotes() {
         return { success: true, thing: updated };
       } catch (err: any) {
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-        return { success: false, error: err.message || 'Failed to update note', code: err.code };
+        const error = err.code === 'revision_conflict'
+          ? 'This note changed elsewhere. Your draft was kept; reload before retrying.'
+          : (err.message || 'Failed to update note');
+        return { success: false, error, code: err.code };
       }
     }).catch((err: any) => ({
       success: false,
@@ -252,7 +256,10 @@ export function useNotes() {
         return { success: true };
       } catch (err: any) {
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-        return { success: false, error: err.message || 'Failed to delete note', code: err.code };
+        const error = err.code === 'revision_conflict'
+          ? 'This note changed elsewhere. Reload before retrying deletion.'
+          : (err.message || 'Failed to delete note');
+        return { success: false, error, code: err.code };
       }
     }).catch((err: any) => ({
       success: false,
