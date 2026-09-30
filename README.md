@@ -85,10 +85,14 @@ npm --prefix web test
 npm run build
 npm test
 npm run verify              # unified quality + isolated Compose smoke checks
+npm run verify:restore      # explicit synthetic backup/restore exercise (Docker)
+npm run verify:search:relevance # isolated synthetic search labels (Docker)
 ./localdevelopment
 ```
 
-`npm run build` compiles Vue 3 source into ignored `web/dist/`, then copies it to ignored `public/` for Express. `npm run build:web` only produces `web/dist/`; it does not update the Express-served frontend. Frontend behavior tests use Vitest; backend and contract tests use Mocha through `npm test`, which starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application.
+`npm run build` compiles Vue 3 source into ignored `web/dist/` (disposable staging), then copies it to ignored `public/` (the Express runtime copy). `npm run build:web` only produces `web/dist/`; it does not update the Express-served frontend. Frontend behavior tests use Vitest; backend and contract tests use Mocha through `npm test`, which starts and removes a temporary MongoDB container and its anonymous data volumes. `./localdevelopment` starts a reusable development MongoDB container and the application.
+
+Recovery and search-quality checks are explicit entry points, separate from `npm run verify`. Both create their own temporary Docker resources and reject external database/volume arguments. See the [restore verification](docs/BACKUP_RESTORE.md#repeatable-synthetic-restore-verification) and [search sample](docs/SEARCH_BASELINE.md#synthetic-relevance-sample-m3-01) for scope and result semantics; a documented search miss is not a complete relevance pass.
 
 `./deploy.sh` is a host-specific production command, not a development step: it builds `meemo:latest` from this repository and runs Compose in `/home/lin/meemo`. That production Compose configuration must select `meemo:latest`; the repository's Compose file instead builds `meemo:local`. This recreates containers as needed, not a zero-downtime hot restart. Follow the [release checklist](docs/RELEASE_CHECKLIST.md) for production authorization, backup, image verification, and rollback.
 

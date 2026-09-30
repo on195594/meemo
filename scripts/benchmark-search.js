@@ -86,8 +86,8 @@ function mongoQuery(ownerId, query) {
     return Object.keys(query).length ? { $and: [{ ownerId: ownerId }, query] } : { ownerId: ownerId };
 }
 
-async function runApplicationScenario(ownerId, scenario, limit) {
-    return thingService.getAll(ownerId, search.buildQuery(scenario.options), 0, limit);
+async function runApplicationScenario(ownerId, scenario, limit, skip) {
+    return thingService.getAll(ownerId, search.buildQuery(scenario.options), skip || 0, limit);
 }
 
 async function benchmarkScenario(db, ownerId, scenario, warmupRuns, repetitions, limit) {
@@ -169,6 +169,16 @@ async function benchmarkDataset(db, options) {
 }
 
 async function main() {
+    var args = process.argv.slice(2);
+    if (args.some(function (value) { return value.startsWith('--relevance'); })) {
+        var relevance = await require('./search-relevance.js').main();
+        process.stdout.write(JSON.stringify({ ...relevance, cleanedUp: true }, null, 2) + '\n');
+        if (relevance.status === 'FAIL') process.exitCode = 1;
+        return;
+    }
+    if (args.some(function (value) { return !/^--(warmup|repetitions|size)=/.test(value); })) {
+        throw new Error('Unsupported benchmark argument');
+    }
     var warmupRuns = parseCount('warmup', 3);
     var repetitions = parseCount('repetitions', 10);
     var customSize = parseOptionalCount('size');
@@ -209,15 +219,16 @@ async function main() {
     }
 }
 
-if (require.main === module) {
-    main().catch(function (error) {
-        console.error(error);
-        process.exitCode = 1;
-    });
-}
-
 module.exports = {
     SCENARIOS: SCENARIOS,
     benchmarkDataset: benchmarkDataset,
-    fixture: fixture
+    fixture: fixture,
+    runApplicationScenario: runApplicationScenario
 };
+
+if (require.main === module) {
+    main().catch(function (error) {
+        console.error(error);
+        process.exitCode ||= 1;
+    });
+}

@@ -58,7 +58,6 @@ onUnauthorized((path: string) => {
 
 export function useAuth() {
   const isAuthenticated = computed(() => !!user.value);
-  const displayName = computed(() => user.value?.displayName || user.value?.username || '');
 
   async function checkFirstUser(): Promise<boolean> {
     try {
@@ -186,11 +185,9 @@ export function useAuth() {
     authError,
     sessionExpired,
     isFirstUser,
-    initialized,
 
     // Computed
     isAuthenticated,
-    displayName,
 
     // Actions
     init,

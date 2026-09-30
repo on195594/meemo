@@ -156,6 +156,5 @@ export function useSettings() {
     error,
     loadSettings,
     saveSettings,
-    reset: resetSettingsState,
   };
 }

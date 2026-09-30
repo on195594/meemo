@@ -16,8 +16,8 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `src/database/`: MongoDB access for things, tags, settings, and users.
 - `src/users.js`: account repository abstraction and bcrypt password handling.
 - `types/`: domain TypeScript definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`).
-- `scripts/`: build/verification entry points, offline migrations, retirement preflight, business-readiness verifier, benchmark, and attachment GC.
-- `src/test/`: Mocha server tests.
+- `scripts/`: build/verification entry points, offline migrations, retirement preflight, business-readiness verifier, isolated synthetic restore/search checks, performance benchmark, and attachment GC.
+- `src/test/`: Mocha server and verification-script regressions; frontend behavior tests live under `web/src/`.
 - `web/`: modern Vue 3 + Vite + TypeScript browser application.
 - `public/`, `web/dist/`: generated frontend output; never edit or commit it.
 - `docs/README.md`: documentation index and directory maintenance rules.
@@ -60,6 +60,8 @@ npm --prefix web ci            # install locked web dependencies
 npm run build                  # compile web/ into public/
 npm test                       # run tests using a temporary MongoDB container
 npm run verify                  # run the complete quality and isolated Compose checks
+npm run verify:restore          # opt-in synthetic recovery check; never targets production
+npm run verify:search:relevance # opt-in synthetic labeled queries; includes known gaps
 ./localdevelopment             # run the app with a development MongoDB container
 npm start                      # run only Node; MongoDB must already be available
 npm run api:generate           # generate TypeScript types from docs/openapi.yaml
@@ -76,10 +78,12 @@ docker compose up --build -d
 Run the narrowest checks that cover the change:
 
 - Documentation or metadata only: `git diff --check` and verify relative Markdown links.
-- Frontend changes: `npm run build`, `npm --prefix web run typecheck`, and `npm --prefix web test`.
+- Frontend changes: `npm run build`, `npm --prefix web run typecheck`, and `npm --prefix web test`. Prefer behavior tests under `web/src/`; do not duplicate build/file-existence assertions in server tests.
 - API contract changes: `npm run api:generate` and verify `types/generated/api-types.ts` is in sync.
 - Server, authentication, persistence, import/export, or API changes: `npm test`.
 - Docker or deployment changes: `docker build .`; use the Compose health/login flow when behavior spans services.
+
+- Verification scripts: retain ownership, anonymous-volume cleanup, interruption, request-deadline, and image-archive regressions. Run the full `verify:restore` / `verify:search:relevance` commands separately when changing those tools; their complete runs are not part of `npm run verify`. Synthetic passes and pending-human labels are not production recovery or relevance acceptance.
 
 Add or update a focused test under `src/test/` for non-trivial server behavior. Do not add a new test framework.
 

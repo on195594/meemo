@@ -23,7 +23,6 @@ describe('Vue 3 Auth Shell & Session Handling (RF-502)', function () {
         expect(src).to.contain('const sessionExpired = ref(false)');
         expect(src).to.contain('const isFirstUser = ref(false)');
         expect(src).to.contain('const isAuthenticated = computed(');
-        expect(src).to.contain('const displayName = computed(');
         expect(src).to.contain('async function init(');
         expect(src).to.contain('async function login(');
         expect(src).to.contain('async function register(');
@@ -86,11 +85,5 @@ describe('Vue 3 Auth Shell & Session Handling (RF-502)', function () {
         expect(src).to.contain('first-user-hero');
         expect(src).to.contain('login-hero');
         expect(src).to.contain('triggerAuthModal');
-    });
-
-    it('bundles Vue 3 auth components into web/dist without errors', function () {
-        expect(fs.existsSync(path.join(webDir, 'dist/index.html'))).to.be(true);
-        var distIndex = fs.readFileSync(path.join(webDir, 'dist/index.html'), 'utf8');
-        expect(distIndex).to.contain('<div id="app"></div>');
     });
 });

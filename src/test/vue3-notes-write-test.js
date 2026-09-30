@@ -31,10 +31,4 @@ describe('Vue 3 Notes Write Path (RF-504)', function () {
         var sharedSrc = fs.readFileSync(path.join(webDir, 'src/views/SharedNoteView.vue'), 'utf8');
         expect(sharedSrc).to.contain(':can-edit="false"');
     });
-
-    it('bundles Vue 3 notes write path into web/dist without errors', function () {
-        expect(fs.existsSync(path.join(webDir, 'dist/index.html'))).to.be(true);
-        var distIndex = fs.readFileSync(path.join(webDir, 'dist/index.html'), 'utf8');
-        expect(distIndex).to.contain('<div id="app"></div>');
-    });
 });

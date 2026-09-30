@@ -41,10 +41,4 @@ describe('Vue 3 Notes Read Path (RF-503)', function () {
         expect(sharedSrc).to.contain('NoteCard');
         expect(sharedSrc).to.contain(':thing="thing"');
     });
-
-    it('bundles Vue 3 notes read path into web/dist without errors', function () {
-        expect(fs.existsSync(path.join(webDir, 'dist/index.html'))).to.be(true);
-        var distIndex = fs.readFileSync(path.join(webDir, 'dist/index.html'), 'utf8');
-        expect(distIndex).to.contain('<div id="app"></div>');
-    });
 });

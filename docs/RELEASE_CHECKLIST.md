@@ -13,6 +13,7 @@ Pull-request approval, protected-branch status, CI success, and release/image pu
 - [ ] `npm ci`, `npm --prefix web ci`, generated API types, frontend typecheck/Vitest/build, and backend Mocha tests pass.
 - [ ] Treat delegated evidence as `INCOMPLETE`, never as release-ready proof, when it reports `max_iterations` or truncation, is schema-invalid, or omits the command exit status, exact commit SHA, named artifact, or artifact hash. Reject summaries that cannot be bound to those originals.
 - [ ] Compose smoke covers health, register/login, Thing CRUD, CAS conflict, trash/restore visibility, attachment, public share/stream, export, and import.
+- [ ] When changing recovery/search verification, run the separate `npm run verify:restore` / `npm run verify:search:relevance` checks and retain their exact commit/dirty-tree status and artifact/dataset hashes. These full runs are not included in `npm run verify`; synthetic recovery success is not production recovery evidence, and `PASS_WITH_KNOWN_GAPS` or pending-human search labels are not full relevance acceptance.
 - [ ] Docker builds pass for `linux/amd64` and `linux/arm64`.
 - [ ] No credentials, data exports, user files, or attachment data are in the commit.
 - [ ] Record the candidate immutable image digest, previous running image ID/digest, and configuration identifiers.

@@ -112,10 +112,4 @@ describe('Vue 3 Feature Parity: Attachments, Settings, Import & Export (RF-505)'
         expect(src).to.contain('meemo:imported');
         expect(src).to.contain('handleImportEvent');
     });
-
-    it('bundles Vue 3 feature parity components into web/dist without errors', function () {
-        expect(fs.existsSync(path.join(webDir, 'dist/index.html'))).to.be(true);
-        var distIndex = fs.readFileSync(path.join(webDir, 'dist/index.html'), 'utf8');
-        expect(distIndex).to.contain('<div id="app"></div>');
-    });
 });

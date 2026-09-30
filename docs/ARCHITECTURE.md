@@ -91,6 +91,8 @@ Meemo employs a multi-tiered performance strategy balancing database efficiency,
 - Frontend state and request behavior: Vitest via `npm --prefix web test`.
 - Type and production asset checks: `npm --prefix web run typecheck` and `npm run build`.
 - Runtime integration: isolated Docker Compose smoke tests covering health, authentication, and representative writes/reads.
+- Recovery: explicit `npm run verify:restore` builds and retains an image, backs up a synthetic database and attachment volume, then restores into fresh Docker resources. It checks documents/indexes, authenticated readback, session revocation, maintenance freeze, attachment/export bytes, sharing, CAS, restart persistence, and a separate-database sentinel; it validates the archive's image config digest rather than relying on a cached image. Both explicit verification entry points handle SIGINT/SIGTERM, bound subprocess/request waits, and clean up owned containers including anonymous MongoDB volumes. This is not production recovery authorization.
+- Search quality: explicit `npm run verify:search:relevance` reuses the benchmark's service path with labeled synthetic queries. `scripts/fixtures/search-relevance.json` is an agent-authored review draft, not representative production data or human-approved relevance evidence.
 
 ## Build and deployment
 

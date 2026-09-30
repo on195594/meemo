@@ -4,6 +4,25 @@ Use this runbook for Meemo v2 upgrades and rollback. MongoDB, `/app/data`, and t
 
 Code review, pull-request approval, CI success, and release publication authorize code artifacts only. They never authorize a production write, migration, session purge, cutover, or retirement. Obtain and record separate production mutation authorization immediately before the write freeze and re-check that it covers the exact post-merge commit and immutable image digest being operated.
 
+## Repeatable synthetic restore verification
+
+```sh
+npm ci
+npm run verify:restore
+```
+
+Requires Node.js 24+, Docker, and the build dependencies/images available to the existing Dockerfile. This is an explicit verification command, separate from `npm run verify`; it does not accept database URLs, volume names, credentials, or other target arguments. It never reads the production operations directory or selects an existing application/MongoDB container.
+
+The command creates uniquely labeled source/target MongoDB containers, application containers, a network, and fresh attachment volumes. Only loopback ports are published, with Docker-assigned free ports. It seeds two synthetic owners, an attachment containing binary bytes, private/public/archived/trashed notes, settings, and sessions. Background workers and URL enrichment are disabled only in these test containers.
+
+After stopping the source application, it creates a matched `meemo_restore` database archive, `/app/data` archive, retained image archive, and manifest in a private temporary backup directory. Artifacts are created read-only, checksummed before restore and again after validation. Restore writes only to separate new containers/volumes, never to the backup directory; `mongorestore --nsInclude meemo_restore.*` protects a separately seeded `travel_cards` sentinel database in the isolated target.
+
+Checks include canonical BSON document fingerprints (including owner/content), index definitions and compound key order, and the retained archive's manifest/config digest and layer presence before loading it. Merely finding the image in the Docker cache is not restore proof. Authenticated checks include login and cross-owner denial, settings/tags, active/archive/trash visibility, sharing revocation, attachment and user-export contents, revision conflicts, and persistence after container restart. The restore policy is explicit: revoke backed-up sessions before starting the restored app, retain the backed-up write freeze until authenticated readback passes, then release only the isolated target's freeze and verify writes. Old cookies must fail even when the signing secret is unchanged. Every Supertest request has a 5-second response-header and 10-second total deadline; binary fetches and MongoDB connections/operations are also bounded, so stalled services fail instead of waiting indefinitely.
+
+The JSON report records the source commit, whether the working tree was dirty, immutable application/MongoDB image IDs, MongoDB/database-tool versions, artifact/manifest hashes, database fingerprints, check names, and backup/restore durations. A dirty-tree run is candidate evidence, not proof of the exact committed release. Reports contain no credentials, cookies, user contents, or password hashes. Capture stdout outside the repository if evidence is needed; all synthetic artifacts/resources are otherwise removed on success or failure. Cleanup checks resource ownership labels, removes MongoDB anonymous volumes along with their owned containers, and failures return nonzero. SIGINT/SIGTERM request controlled cancellation and run the same cleanup, exiting 130/143 rather than reporting a pass. SIGKILL, host failure, and an unavailable Docker daemon cannot guarantee cleanup.
+
+A synthetic `PASS` proves this fixture and flow, not production recovery readiness, a production RTO/RPO, or business readback of real notes. Continue to use the authorization and real-backup procedures below for production.
+
 ## Directory boundary
 
 On the current production host, use `/home/lin/meemo-repo` only as the Git repository and `/home/lin/meemo` only as the production operations directory. Run source checks and image builds from the repository; run production Compose commands from the operations directory. Store backups and readiness evidence outside both. The operations directory must not contain a Git checkout or copied build context.

@@ -12,11 +12,11 @@
 
 ## Operations and validation
 
-- [Backup and restore](BACKUP_RESTORE.md): matched backups, isolated restore verification, and rollback.
+- [Backup and restore](BACKUP_RESTORE.md): matched backups, explicit `verify:restore` synthetic recovery checks, and production rollback.
 - [Release checklist](RELEASE_CHECKLIST.md): authorization, migration, validation, RC publication, deployment, and rollback gates.
 - [Branch protection reference](BRANCH_PROTECTION.md): policy if protection is enabled; the single-maintainer workflow permits direct commits.
 - [Dependency security](DEPENDENCY_SECURITY.md): audit procedure and recorded findings; rerun the audit rather than assuming recorded results are current.
-- [Search baseline](SEARCH_BASELINE.md): benchmark method and recorded measurements, not a guarantee for every environment.
+- [Search baseline](SEARCH_BASELINE.md): performance measurements and the explicit `verify:search:relevance` synthetic corpus; labels remain pending human review and known gaps are reported, not hidden.
 - [Nginx reference](nginx-reverse-proxy.conf): reverse-proxy configuration template; adapt it before use.
 
 ## Plans and review snapshots
