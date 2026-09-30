@@ -8,18 +8,19 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 
 ## Source map
 
-- `app.js`: process entry point, middleware, sessions, authentication mode, route registration, and MongoDB startup.
+- `app.js`: runtime composition root, MongoDB/index startup, worker startup, and HTTP server lifecycle.
 - `src/lifecycle.js`: worker management, MongoDB connection pool lifecycle, and graceful shutdown sequencing.
-- `src/http/`: HTTP routing, input validation, authentication middleware, and error responses.
+- `src/http/`: injected Express factory, HTTP routing, input validation, authentication middleware, `connect-mongo` sessions, uploads, and error responses.
 - `src/services/`: application behavior for auth, things, attachments, sharing, settings, health, and import/export.
 - `src/storage/`: persistent attachment filesystem access.
-- `src/database/`: MongoDB access for things, tags, settings, users, and sessions.
+- `src/database/`: MongoDB access for things, tags, settings, and users.
 - `src/users.js`: account repository abstraction and bcrypt password handling.
 - `types/`: domain TypeScript definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`).
-- `scripts/`: historical v1-to-v2 migration tools, retirement preflight, business-readiness verifier, benchmark, and attachment GC.
+- `scripts/`: build/verification entry points, offline migrations, retirement preflight, business-readiness verifier, benchmark, and attachment GC.
 - `src/test/`: Mocha server tests.
 - `web/`: modern Vue 3 + Vite + TypeScript browser application.
-- `public/`: generated frontend output; never edit or commit it.
+- `public/`, `web/dist/`: generated frontend output; never edit or commit it.
+- `docs/README.md`: documentation index and directory maintenance rules.
 - `docs/ARCHITECTURE.md`: component boundaries, API contracts, and runtime flow.
 - `docs/LONG_TERM_ARCHITECTURE.md`: normative long-term architectural constraints and complexity budget.
 - `docs/BACKUP_RESTORE.md`: production backup, disaster recovery, and verification runbooks.
@@ -28,7 +29,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `docs/RELEASE_CHECKLIST.md`: release candidate validation, deployment, and rollback checklist.
 - `docs/openapi.yaml`: authoritative OpenAPI 3.0 specification.
 - `docs/nginx-reverse-proxy.conf`: reference Nginx reverse proxy configuration for caching and compression offloading.
-- `Dockerfile`, `docker-compose.yml`, `deploy.sh`: deployment, packaging, and hot-restart automation.
+- `Dockerfile`, `start.sh`, `docker-compose.yml`, `deploy.sh`: container packaging/startup and deployment; `deploy.sh` is host-specific and is not zero-downtime.
 
 ## Working rules
 
@@ -46,8 +47,8 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 
 Do not commit or hand-edit:
 
-- `node_modules/`
-- `public/`
+- `node_modules/`, `web/node_modules/`
+- `public/`, `web/dist/`
 - `.users.json`, `users.json`
 - `attachments/`, `storage/`, `data/`, `database/`
 
@@ -65,7 +66,7 @@ npm run api:generate           # generate TypeScript types from docs/openapi.yam
 npm --prefix web run typecheck # typecheck Vue 3 frontend
 npm --prefix web test          # run frontend behavior tests with Vitest
 docker compose up --build -d
-./deploy.sh                    # build image and hot-restart production container
+./deploy.sh                    # host-specific production deployment; requires authorization
 ```
 
 `npm test`, local development, and Compose require Docker. Do not replace the lockfile or upgrade dependencies unless dependency work is part of the request.

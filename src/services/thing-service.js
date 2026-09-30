@@ -157,10 +157,6 @@ function getAllPublic(userId, query, skip, limit, callback) {
     return getAll(userId, query, skip, limit, callback);
 }
 
-function getAllLean(userId, callback) {
-    return nodeify(things.getAllLean(userId), callback);
-}
-
 function get(userId, thingId, callback) {
     var promise = things.get(userId, thingId).then(function (result) {
         try {
@@ -325,7 +321,6 @@ function cleanupTags(callback) {
 module.exports = {
     getAll: getAll,
     getAllPublic: getAllPublic,
-    getAllLean: getAllLean,
     get: get,
     getPublic: getPublic,
     getPublicShared: getPublicShared,

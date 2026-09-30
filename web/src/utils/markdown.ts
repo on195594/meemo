@@ -144,10 +144,6 @@ const markdownCache = new Map<string, string>();
 const MAX_MARKDOWN_CACHE_SIZE = 500;
 const MAX_CACHEABLE_CHARS = 16384; // 16K chars (~16-48 KB max across UTF-8/CJK), prevents caching huge notes
 
-export function clearMarkdownCache(): void {
-  markdownCache.clear();
-}
-
 export function renderMarkdown(content: string): string {
   if (!content) return '';
   const shouldCache = content.length <= MAX_CACHEABLE_CHARS;

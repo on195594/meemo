@@ -137,10 +137,6 @@ export function useNotes() {
     await fetchNotes(true);
   }
 
-  function clearNotes(): void {
-    resetNotesState();
-  }
-
   // Write path operations (RF-504)
   async function createNote(
     content: string,
@@ -394,7 +390,6 @@ export function useNotes() {
     fetchMore,
     fetchTags,
     setFilters,
-    clearNotes,
     reset: resetNotesState,
 
     // Write Actions

@@ -168,14 +168,6 @@ export function useAuth() {
     sessionExpired.value = false;
   }
 
-  function setSessionExpired(expired = true): void {
-    sessionExpired.value = expired;
-    if (expired) {
-      resetUserScopedState();
-      user.value = null;
-    }
-  }
-
   // Testing helper to reset internal state
   function _resetState(): void {
     resetUserScopedState();
@@ -208,7 +200,6 @@ export function useAuth() {
     logout,
     clearError,
     dismissSessionExpired,
-    setSessionExpired,
     _resetState,
   };
 }

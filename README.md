@@ -13,7 +13,7 @@ Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It
 - Local username/password accounts with bcrypt password hashes stored exclusively in MongoDB
 - MongoDB unified collection model with stable user identity decoupling
 - Read-only retirement preflight and historical v1-to-v2 migration tooling
-- Docker Compose deployment and single-command `./deploy.sh` hot-restart
+- Docker Compose deployment with health checks and graceful shutdown
 - Production-ready reverse proxy template offloading compression and caching to Nginx
 
 ## Quick start
@@ -86,10 +86,11 @@ npm run build
 npm test
 npm run verify              # unified quality + isolated Compose smoke checks
 ./localdevelopment
-./deploy.sh                    # build image and hot-restart production deployment
 ```
 
-`npm run build` compiles modern Vue 3 web source in `web/` into the ignored `public/` directory. Frontend behavior tests use Vitest; backend and contract tests use Mocha through `npm test`, which starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application. `./deploy.sh` builds `meemo:latest` and restarts the production compose container in one command.
+`npm run build` compiles Vue 3 source into ignored `web/dist/`, then copies it to ignored `public/` for Express. `npm run build:web` only produces `web/dist/`; it does not update the Express-served frontend. Frontend behavior tests use Vitest; backend and contract tests use Mocha through `npm test`, which starts and removes a temporary MongoDB container. `./localdevelopment` starts a reusable development MongoDB container and the application.
+
+`./deploy.sh` is a host-specific production command, not a development step: it builds `meemo:latest` from this repository and runs Compose in `/home/lin/meemo`. That production Compose configuration must select `meemo:latest`; the repository's Compose file instead builds `meemo:local`. This recreates containers as needed, not a zero-downtime hot restart. Follow the [release checklist](docs/RELEASE_CHECKLIST.md) for production authorization, backup, image verification, and rollback.
 
 Before enabling revision-protected writes on an existing database, stop all Thing writers and run `npm run migrate:thing-revisions -- --dry-run --mongo-url <url> --expect-database <name>`, then apply and verify with the same explicit database name. The migration only fills missing revisions with `1` and refuses invalid existing values.
 
@@ -99,10 +100,11 @@ Runtime tag lists are derived from each owner's `things.tags` arrays in real tim
 
 ## Repository and production directories
 
-Keep source code and production state in separate directories. On the current host:
+Keep source code and production state in separate directories:
 
-- `/home/lin/meemo-repo` is the only Meemo Git repository and the only place where source, tests, and project documentation are edited.
-- `/home/lin/meemo` is the production operations directory. It contains only the active Compose configuration, local account source, attachment storage, and a short operator README; it is not a source checkout or image build context.
+- Use the Git checkout for source, tests, project documentation, and image builds.
+- Use a separate production operations directory for the active Compose configuration and persistent state. `deploy.sh` currently targets `/home/lin/meemo`; it is not a portable deployment entry point.
+- Runtime accounts live in MongoDB. Retained legacy account files are migration/rollback evidence, not an active authentication source.
 
 Build and test from the repository. Operate the deployed containers from the production directory. Keep backups and migration evidence outside both directories, and never copy credentials, account data, attachments, database files, or recovery artifacts into the repository.
 
@@ -115,20 +117,23 @@ Build and test from the repository. Operate the deployed containers from the pro
 | `src/http/` | Injected Express app factory, session/upload setup, domain routes, validation, and uniform HTTP errors |
 | `src/services/` | Promise-first authentication, things, attachments, sharing, settings, health, and import/export behavior |
 | `src/storage/` | Local filesystem attachment adapter |
-| `src/database/` | MongoDB persistence (things, tags, settings, users, and sessions) |
+| `src/database/` | MongoDB persistence for things, tags, settings, and users; sessions use `connect-mongo` in `src/http/session.js` |
 | `src/users.js` | Account repository abstraction targeting MongoDB users and bcrypt password handling |
 | `types/` | TypeScript domain definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`) |
-| `scripts/` | Historical v1-to-v2 migration tools, read-only retirement/business-readiness verifiers, benchmark, and attachment GC |
+| `scripts/` | Build/verification entry points, offline migrations, read-only readiness verifiers, benchmark, and attachment GC |
 | `src/test/` | Backend and contract tests run by Mocha |
 | `web/` | Vue 3 + Vite + TypeScript application and Vitest behavior tests; route query owns note filters |
-| `docs/` | Architecture, security, backup/restore, release, and refactoring documentation |
-| `Dockerfile`, `docker-compose.yml` | Container build and deployment |
+| `docs/` | [Documentation index](docs/README.md), current contracts/runbooks, roadmaps, and review snapshots |
+| `public/`, `web/dist/` | Generated frontend output; rebuild rather than edit |
+| `runTests`, `localdevelopment` | Root development/test entry points |
+| `Dockerfile`, `start.sh`, `docker-compose.yml`, `deploy.sh` | Container startup and deployment entry points |
 | `.github/` | Continuous integration and repository configuration |
 
-Do not commit generated `public/`, `node_modules/`, account files, attachments, or database data.
+Do not commit generated `public/`, `web/dist/`, `node_modules/`, `web/node_modules/`, account files, attachments, or database data.
 
 ## Contributing and security
 
+- [Documentation index](docs/README.md)
 - [Contribution guide](CONTRIBUTING.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Long-term architecture](docs/LONG_TERM_ARCHITECTURE.md)
