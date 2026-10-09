@@ -10,6 +10,7 @@ var MongoClient = require('mongodb').MongoClient,
     thingService = require('../src/services/thing-service.js');
 
 var SCENARIOS = [
+    { name: 'no-match-regex', options: { filter: 'nonexistent-term', mode: 'regex', archived: false } },
     { name: 'single-keyword', options: { filter: 'benchmark', mode: 'regex', archived: false } },
     { name: 'chinese-keyword', options: { filter: '基准', mode: 'regex', archived: false } },
     { name: 'multi-term', options: { filter: 'benchmark project', mode: 'regex', archived: false } },
@@ -82,10 +83,6 @@ function latency(durations) {
     };
 }
 
-function mongoQuery(ownerId, query) {
-    return Object.keys(query).length ? { $and: [{ ownerId: ownerId }, query] } : { ownerId: ownerId };
-}
-
 async function runApplicationScenario(ownerId, scenario, limit, skip) {
     return thingService.getAll(ownerId, search.buildQuery(scenario.options), skip || 0, limit);
 }
@@ -106,14 +103,7 @@ async function benchmarkScenario(db, ownerId, scenario, warmupRuns, repetitions,
     durations.sort(function (left, right) { return left - right; });
 
     var query = search.buildQuery(scenario.options);
-    var cursor = db.collection('things').find(mongoQuery(ownerId, query));
-    if (search.queryHasText(query)) {
-        cursor = cursor.project({ score: { $meta: 'textScore' } })
-            .sort({ sticky: -1, score: { $meta: 'textScore' }, modifiedAt: -1, _id: -1 });
-    } else {
-        cursor = cursor.sort({ sticky: -1, modifiedAt: -1, _id: -1 });
-    }
-    var explanation = await cursor.limit(limit).explain('executionStats');
+    var explanation = await databaseThings.createListCursor(ownerId, query, 0, limit).explain('executionStats');
     var stats = explanation.executionStats;
 
     return {

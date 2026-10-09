@@ -32,16 +32,16 @@
           {{ relativeDate }}
         </time>
         <span v-if="thing.sticky" class="badge badge-sticky" title="Pinned to top">
-          📌 Pinned
+          <UiIcon name="pin" /> Pinned
         </span>
         <span v-if="thing.public" class="badge badge-public" title="Visible on public stream">
-          🌐 Public
+          <UiIcon name="globe" /> Public
         </span>
         <span v-if="thing.shared" class="badge badge-shared" title="Directly shared">
-          🔗 Shared
+          <UiIcon name="attach" /> Shared
         </span>
         <span v-if="thing.archived" class="badge badge-archived" title="Archived note">
-          📦 Archived
+          <UiIcon name="archive" /> Archived
         </span>
       </div>
 
@@ -50,107 +50,22 @@
         type="button"
         class="action-btn"
         title="Restore note"
+        aria-label="Restore note"
         @click.stop="onRestore(thing)"
       >
-        ↩️
+        <UiIcon name="restore" />
       </button>
 
-      <!-- Action Buttons (when editable and not in edit mode) -->
-      <div v-if="canEdit && !isEditing" class="card-actions">
-        <!-- Color Picker Popover -->
-        <div ref="colorPickerWrapperRef" class="color-picker-wrapper">
-          <button
-            ref="colorTriggerRef"
-            type="button"
-            class="action-btn color-btn"
-            :class="{ active: showColorPicker }"
-            title="Note color"
-            aria-label="Note color"
-            aria-haspopup="true"
-            :aria-expanded="showColorPicker"
-            :disabled="isColorSaving"
-            @click="toggleColorPicker"
-          >
-            🎨
-          </button>
-          <div
-            v-if="showColorPicker"
-            ref="colorPaletteRef"
-            class="color-palette-popover"
-            role="group"
-            aria-label="Note card color"
-          >
-            <button
-              v-for="(c, index) in NOTE_COLORS"
-              :key="c.key"
-              type="button"
-              class="color-swatch-btn"
-              :class="{ active: (thing.color || 'default') === c.key }"
-              :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
-              :title="c.name"
-              :aria-label="c.name"
-              :aria-pressed="(thing.color || 'default') === c.key"
-              :aria-disabled="isColorSaving"
-              :tabindex="focusedColorIndex === index ? 0 : -1"
-              @click="selectColor(c.key)"
-              @keydown="handleColorKeydown($event, index)"
-            ></button>
-          </div>
-        </div>
-
-        <!-- Sticky Toggle -->
-        <button
-          type="button"
-          class="action-btn"
-          :class="{ active: thing.sticky }"
-          :title="thing.sticky ? 'Remove pin' : 'Pin to top'"
-          @click="$emit('toggleSticky', thing)"
-        >
-          📌
-        </button>
-
-        <!-- Public Toggle -->
-        <button
-          type="button"
-          class="action-btn"
-          :class="{ active: thing.public }"
-          :title="thing.public ? 'Make private' : 'Make public'"
-          @click="$emit('togglePublic', thing)"
-        >
-          🌐
-        </button>
-
-        <!-- Archive / Restore Toggle -->
-        <button
-          type="button"
-          class="action-btn"
-          :class="{ active: thing.archived }"
-          :title="thing.archived ? 'Restore note' : 'Archive note'"
-          @click="$emit('toggleArchive', thing)"
-        >
-          {{ thing.archived ? '↩️' : '📦' }}
-        </button>
-
-        <!-- Edit Button -->
-        <button
-          type="button"
-          class="action-btn"
-          title="Edit note"
-          @click="startEdit"
-        >
-          ✏️
-        </button>
-
-        <!-- Delete Button -->
-        <button
-          type="button"
-          class="action-btn delete-btn"
-          title="Delete note"
-          @click="showDeleteConfirm = true"
-        >
-          🗑️
-        </button>
-      </div>
+      <button
+        v-if="!isEditing && !selectable && hasOpenDetailListener"
+        type="button"
+        class="action-btn open-note-btn"
+        title="Open note"
+        aria-label="Open note"
+        @click.stop="$emit('openDetail', thing, 'view')"
+      >
+        <UiIcon name="expand" />
+      </button>
     </header>
 
     <div v-if="actionError" class="action-error" role="alert">
@@ -197,6 +112,111 @@
           </button>
         </div>
       </footer>
+
+      <!-- Action Buttons (when editable and not in edit mode) -->
+      <div v-if="canEdit && !isEditing" class="card-actions" role="group" aria-label="Note actions" @click.stop>
+        <!-- Color Picker Popover -->
+        <div ref="colorPickerWrapperRef" class="color-picker-wrapper">
+          <button
+            ref="colorTriggerRef"
+            type="button"
+            class="action-btn color-btn"
+            :class="{ active: showColorPicker }"
+            title="Note color"
+            aria-label="Note color"
+            aria-haspopup="true"
+            :aria-expanded="showColorPicker"
+            :disabled="isColorSaving"
+            @click="toggleColorPicker"
+          >
+            <UiIcon name="palette" />
+          </button>
+          <div
+            v-if="showColorPicker"
+            ref="colorPaletteRef"
+            class="color-palette-popover"
+            role="group"
+            aria-label="Note card color"
+          >
+            <button
+              v-for="(c, index) in NOTE_COLORS"
+              :key="c.key"
+              type="button"
+              class="color-swatch-btn"
+              :class="{ active: (thing.color || 'default') === c.key }"
+              :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
+              :title="c.name"
+              :aria-label="c.name"
+              :aria-pressed="(thing.color || 'default') === c.key"
+              :aria-disabled="isColorSaving"
+              :tabindex="focusedColorIndex === index ? 0 : -1"
+              @click="selectColor(c.key)"
+              @keydown="handleColorKeydown($event, index)"
+            ></button>
+          </div>
+        </div>
+
+        <!-- Sticky Toggle -->
+        <button
+          type="button"
+          class="action-btn"
+          :class="{ active: thing.sticky }"
+          :title="thing.sticky ? 'Remove pin' : 'Pin to top'"
+          :aria-label="thing.sticky ? 'Remove pin' : 'Pin to top'"
+          :aria-pressed="!!thing.sticky"
+          @click="$emit('toggleSticky', thing)"
+        >
+          <UiIcon name="pin" />
+        </button>
+
+        <!-- Public Toggle -->
+        <button
+          type="button"
+          class="action-btn"
+          :class="{ active: thing.public }"
+          :title="thing.public ? 'Make private' : 'Make public'"
+          :aria-label="thing.public ? 'Make private' : 'Make public'"
+          :aria-pressed="!!thing.public"
+          @click="$emit('togglePublic', thing)"
+        >
+          <UiIcon name="globe" />
+        </button>
+
+        <!-- Archive / Restore Toggle -->
+        <button
+          type="button"
+          class="action-btn"
+          :class="{ active: thing.archived }"
+          :title="thing.archived ? 'Restore note' : 'Archive note'"
+          :aria-label="thing.archived ? 'Restore note' : 'Archive note'"
+          @click="$emit('toggleArchive', thing)"
+        >
+          <UiIcon :name="thing.archived ? 'restore' : 'archive'" />
+        </button>
+
+        <!-- Edit Button -->
+        <button
+          type="button"
+          class="action-btn"
+          title="Edit note"
+          aria-label="Edit note"
+          @click="startEdit"
+        >
+          <UiIcon name="edit" />
+        </button>
+
+        <!-- Delete Button -->
+        <button
+          ref="deleteTriggerRef"
+          type="button"
+          class="action-btn delete-btn"
+          title="Delete note"
+          aria-label="Delete note"
+          @click="openDeleteConfirm"
+        >
+          <UiIcon name="trash" />
+        </button>
+      </div>
     </template>
 
     <!-- Inline Edit Form -->
@@ -206,6 +226,7 @@
           ref="editTextareaRef"
           v-model="editContent"
           class="edit-textarea"
+          aria-label="Edit note content"
           rows="5"
           @keydown="handleEditKeyDown"
           @input="editGeneration++"
@@ -246,19 +267,21 @@
     <div
       v-if="showDeleteConfirm"
       class="delete-modal-overlay"
-      @click.self="showDeleteConfirm = false"
+      @click.self="closeDeleteConfirm(true)"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="delete-confirm-title"
     >
-      <div class="delete-modal-card">
-        <h3>Move note to trash?</h3>
+      <div ref="deleteModalCardRef" class="delete-modal-card">
+        <h3 id="delete-confirm-title">Move note to trash?</h3>
         <p>This note can be restored from Trash.</p>
         <div class="delete-modal-actions">
           <button
+            ref="cancelDeleteBtnRef"
             type="button"
             class="btn-modal cancel"
             :disabled="isDeleting"
-            @click="showDeleteConfirm = false"
+            @click="closeDeleteConfirm(true)"
           >
             Cancel
           </button>
@@ -279,6 +302,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onUnmounted, getCurrentInstance } from 'vue';
+import UiIcon from './UiIcon.vue';
 import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import { renderMarkdown, highlightKeyword, toggleTaskItem } from '../utils/markdown';
@@ -372,7 +396,10 @@ async function selectColor(color: NoteColor, closeAfterSave = true) {
   }
 }
 
-onUnmounted(() => document.removeEventListener('pointerdown', handleOutsideColorPicker));
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', handleOutsideColorPicker);
+  document.removeEventListener('keydown', handleDeleteModalKeydown);
+});
 
 const props = withDefaults(
   defineProps<{
@@ -415,6 +442,51 @@ const editTextareaRef = ref<HTMLTextAreaElement | null>(null);
 
 const showDeleteConfirm = ref(false);
 const isDeleting = ref(false);
+const deleteTriggerRef = ref<HTMLButtonElement | null>(null);
+const deleteModalCardRef = ref<HTMLDivElement | null>(null);
+const cancelDeleteBtnRef = ref<HTMLButtonElement | null>(null);
+
+function openDeleteConfirm() {
+  showDeleteConfirm.value = true;
+  document.addEventListener('keydown', handleDeleteModalKeydown);
+  nextTick(() => {
+    cancelDeleteBtnRef.value?.focus();
+  });
+}
+
+function closeDeleteConfirm(returnFocus = true) {
+  showDeleteConfirm.value = false;
+  document.removeEventListener('keydown', handleDeleteModalKeydown);
+  if (returnFocus) {
+    nextTick(() => {
+      deleteTriggerRef.value?.focus();
+    });
+  }
+}
+
+function handleDeleteModalKeydown(event: KeyboardEvent) {
+  if (!showDeleteConfirm.value) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeDeleteConfirm(true);
+    return;
+  }
+  if (event.key === 'Tab' && deleteModalCardRef.value) {
+    const focusable = deleteModalCardRef.value.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+}
 
 const dateValue = computed(() => {
   return props.thing.modifiedAt || props.thing.createdAt || Date.now();
@@ -445,9 +517,9 @@ const relativeDate = computed(() => {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 });
 
+const renderedMarkdown = computed(() => renderMarkdown(props.thing.richContent || props.thing.content || ''));
 const renderedBody = computed(() => {
-  const raw = props.thing.richContent || props.thing.content || '';
-  const html = renderMarkdown(raw);
+  const html = renderedMarkdown.value;
   return props.highlightQuery ? highlightKeyword(html, props.highlightQuery) : html;
 });
 
@@ -689,11 +761,11 @@ async function confirmDelete() {
   if (props.onDeleteConfirm) {
     const result = await props.onDeleteConfirm(props.thing._id);
     if (result.success) {
-      showDeleteConfirm.value = false;
+      closeDeleteConfirm(false);
     }
   } else {
     emit('delete', props.thing._id);
-    showDeleteConfirm.value = false;
+    closeDeleteConfirm(false);
   }
   isDeleting.value = false;
 }
@@ -704,8 +776,8 @@ async function confirmDelete() {
   background-color: var(--note-color-default);
   border: 1px solid var(--note-border-color);
   border-radius: var(--md-sys-shape-corner-lg, 16px);
-  padding: 1.25rem 1.4rem;
-  box-shadow: var(--md-sys-elevation-1);
+  padding: 1rem;
+  box-shadow: var(--md-sys-elevation-0);
   transition: box-shadow var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
               border-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
               background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
@@ -713,7 +785,7 @@ async function confirmDelete() {
 }
 
 .note-card:hover {
-  box-shadow: var(--md-sys-elevation-2);
+  box-shadow: var(--md-sys-elevation-1);
   border-color: var(--note-border-hover);
 }
 
@@ -737,13 +809,14 @@ async function confirmDelete() {
 .card-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 0.75rem;
   gap: 0.5rem;
-  flex-wrap: wrap;
 }
 
 .header-meta {
+  min-width: 0;
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -756,6 +829,9 @@ async function confirmDelete() {
 }
 
 .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   font-size: 0.725rem;
   font-weight: 500;
   padding: 0.12rem 0.45rem;
@@ -782,26 +858,23 @@ async function confirmDelete() {
   border: 1px solid var(--md-sys-color-outline-variant);
 }
 
+.badge .ui-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
 .card-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.3rem;
-  opacity: 0;
-  transition: opacity var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
-}
-
-.note-card:hover .card-actions,
-.note-card:focus-within .card-actions {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .card-actions {
-    opacity: 0.85;
-  }
+  margin: 0.75rem -0.5rem -0.5rem;
 }
 
 .action-btn {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  color: var(--md-sys-color-on-surface-variant);
   background: none;
   border: 1px solid transparent;
   border-radius: var(--md-sys-shape-corner-full, 9999px);
@@ -814,19 +887,6 @@ async function confirmDelete() {
   justify-content: center;
   position: relative;
   transition: all var(--md-sys-motion-duration-short) ease;
-}
-
-/* Expand touch target to min 48x48px on pointer/touch */
-.action-btn::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 48px;
-  min-height: 48px;
-  width: 100%;
-  height: 100%;
 }
 
 .action-btn:focus-visible {
@@ -856,7 +916,7 @@ async function confirmDelete() {
 .color-palette-popover {
   position: absolute;
   bottom: 100%;
-  right: 0;
+  left: 0;
   margin-bottom: 8px;
   background: var(--md-sys-color-surface-container, #ffffff);
   border: 1px solid var(--md-sys-color-outline-variant, #c4c7c5);
@@ -912,6 +972,43 @@ async function confirmDelete() {
   color: var(--md-sys-color-on-surface, #1f1f1f);
   word-break: break-word;
   overflow-wrap: break-word;
+}
+
+.card-body :deep(h1),
+.card-body :deep(h2),
+.card-body :deep(h3),
+.card-body :deep(h4),
+.card-body :deep(h5),
+.card-body :deep(h6) {
+  font-size: 1.125rem;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.card-body :deep(h1) {
+  font-size: 1.25rem;
+}
+
+.card-body :deep(h3),
+.card-body :deep(h4),
+.card-body :deep(h5),
+.card-body :deep(h6) {
+  font-size: 1rem;
+}
+
+.card-body :deep(> * + *) {
+  margin-top: 0.625rem;
+}
+
+.card-body :deep(ul),
+.card-body :deep(ol) {
+  padding-left: 1.25rem;
+}
+
+.card-body :deep(blockquote) {
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .card-body :deep(mark) {
@@ -985,6 +1082,8 @@ async function confirmDelete() {
 }
 
 .attachment-link {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -1014,6 +1113,9 @@ async function confirmDelete() {
 }
 
 .tag-pill {
+  min-height: 32px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   background-color: var(--md-sys-color-surface-container-high);
   border: 1px solid transparent;
   color: var(--md-sys-color-on-surface-variant);
@@ -1200,10 +1302,10 @@ async function confirmDelete() {
 /* Card Selection Checkbox */
 .card-select-btn {
   position: absolute;
-  top: -8px;
-  left: -8px;
-  width: 26px;
-  height: 26px;
+  top: -6px;
+  left: -6px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   border: 2px solid var(--md-sys-color-outline, #79747e);
   background-color: var(--md-sys-color-surface, #fff);
@@ -1218,6 +1320,19 @@ async function confirmDelete() {
   z-index: 5;
   box-shadow: var(--md-sys-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.2));
   padding: 0;
+}
+
+/* Expand touch target to min 44x44px without visual crowding */
+.card-select-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 44px;
+  min-height: 44px;
+  width: 100%;
+  height: 100%;
 }
 
 .note-card:hover .card-select-btn,

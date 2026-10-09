@@ -3,6 +3,20 @@ import { describe, expect, it, vi } from 'vitest';
 import NoteComposer from './NoteComposer.vue';
 
 describe('NoteComposer behavior', () => {
+  it('expands the labeled composer on focus and collapses after clearing', async () => {
+    const wrapper = mount(NoteComposer, { props: { onSave: vi.fn() } });
+    const textarea = wrapper.get('textarea[aria-label="Write a note"]');
+
+    expect(textarea.attributes('rows')).toBe('1');
+    await textarea.trigger('focus');
+    expect(textarea.attributes('rows')).toBe('3');
+    await textarea.setValue('Draft');
+    await wrapper.get('.btn-composer.secondary').trigger('click');
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('');
+    expect(textarea.attributes('rows')).toBe('1');
+    expect(wrapper.get('[aria-label="Attach file or image"]').attributes('title')).toBe('Attach file or image');
+  });
+
   it('saves trimmed content, clears the composer, and emits created', async () => {
     const onSave = vi.fn().mockResolvedValue({ success: true });
     const wrapper = mount(NoteComposer, { props: { onSave } });

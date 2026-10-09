@@ -1,5 +1,6 @@
 <template>
   <div id="meemo-app">
+    <a class="skip-link" href="#main-content">Skip to content</a>
     <!-- Session Expiration Alert Banner -->
     <div v-if="sessionExpired" class="session-expired-banner" role="alert">
       <div class="banner-content">
@@ -27,13 +28,13 @@
         <!-- Center: Header Global Sticky Search Bar -->
         <div v-if="isAuthenticated" class="header-search-wrapper">
           <div class="header-search-box" :class="{ focused: isSearchFocused }">
-            <span class="header-search-icon" aria-hidden="true">🔍</span>
+            <UiIcon name="search" class="header-search-icon" />
             <input
               ref="headerSearchInputRef"
               v-model="headerSearchQuery"
               type="search"
               class="header-search-input"
-              placeholder="Search notes or #tags... (Ctrl+K)"
+              placeholder="Search notes or #tags"
               aria-label="Search notes"
               @focus="isSearchFocused = true"
               @blur="isSearchFocused = false"
@@ -67,7 +68,7 @@
               :title="themeTitle"
               :aria-label="themeTitle"
             >
-              <span class="btn-icon">{{ themeIcon }}</span>
+              <UiIcon :name="themeIcon" />
               <span class="btn-label">{{ themeLabel }}</span>
             </button>
           </div>
@@ -77,17 +78,19 @@
             <div v-if="isAuthenticated && user" class="user-menu-wrapper">
             <button
               type="button"
+              ref="userProfileRef"
               class="user-profile-btn"
+              aria-controls="account-options"
+              :aria-label="`Account options for ${user.displayName || user.username}`"
               @click="toggleUserMenu"
               :aria-expanded="showUserMenu"
-              aria-haspopup="true"
             >
               <span class="user-avatar">{{ userAvatarInitial }}</span>
               <span class="user-name">{{ user.displayName || user.username }}</span>
               <span class="caret-icon">▼</span>
             </button>
 
-            <div v-if="showUserMenu" class="user-dropdown-menu" role="menu">
+            <nav v-if="showUserMenu" id="account-options" class="user-dropdown-menu" aria-label="Account options" @keydown.esc.stop.prevent="closeUserMenu(true)">
               <div class="dropdown-header">
                 <span class="header-name">{{ user.displayName }}</span>
                 <span class="header-username">@{{ user.username }}</span>
@@ -96,7 +99,6 @@
               <button
                 type="button"
                 class="dropdown-item"
-                role="menuitem"
                 @click="openSettings"
               >
                 Settings
@@ -104,7 +106,6 @@
               <button
                 type="button"
                 class="dropdown-item"
-                role="menuitem"
                 @click="handleToggleArchiveFromMenu"
               >
                 {{ isArchived ? 'Active Notes' : 'Archived Notes' }}
@@ -112,7 +113,6 @@
               <button
                 type="button"
                 class="dropdown-item"
-                role="menuitem"
                 @click="handleToggleDeletedFromMenu"
               >
                 {{ isDeleted ? 'Active Notes' : 'Trash' }}
@@ -120,7 +120,6 @@
               <button
                 type="button"
                 class="dropdown-item"
-                role="menuitem"
                 @click="openCheatsheet"
               >
                 Cheatsheet
@@ -128,8 +127,7 @@
               <router-link
                 :to="`/public/${user.username}`"
                 class="dropdown-item"
-                role="menuitem"
-                @click="closeUserMenu"
+                @click="closeUserMenu()"
               >
                 Public Feed
               </router-link>
@@ -138,8 +136,7 @@
                 target="_blank"
                 rel="noopener"
                 class="dropdown-item"
-                role="menuitem"
-                @click="closeUserMenu"
+                @click="closeUserMenu()"
               >
                 RSS Feed
               </a>
@@ -147,7 +144,6 @@
               <button
                 type="button"
                 class="dropdown-item"
-                role="menuitem"
                 @click="openImport"
               >
                 Import
@@ -155,9 +151,8 @@
               <a
                 href="/api/export"
                 class="dropdown-item"
-                role="menuitem"
                 download="meemo-export.tar"
-                @click="closeUserMenu"
+                @click="closeUserMenu()"
               >
                 Export
               </a>
@@ -165,12 +160,11 @@
               <button
                 type="button"
                 class="dropdown-item logout-btn"
-                role="menuitem"
                 @click="handleLogout"
               >
                 Log Out
               </button>
-            </div>
+            </nav>
           </div>
 
           <!-- Unauthenticated Action Buttons -->
@@ -198,7 +192,9 @@
   </header>
 
     <!-- Main View Content -->
-    <router-view />
+    <div id="main-content" tabindex="-1">
+      <router-view />
+    </div>
 
     <!-- Modals -->
     <LoginModal
@@ -231,6 +227,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { useAuth } from './composables/useAuth';
 import { useSettings, type ThemeMode, getStoredTheme, setStoredTheme } from './composables/useSettings';
 import LoginModal from './components/LoginModal.vue';
+import UiIcon from './components/UiIcon.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -336,11 +333,7 @@ watch(() => settings.value.theme, (newTheme) => {
   }
 });
 
-const themeIcon = computed(() => {
-  if (currentTheme.value === 'dark') return '🌙';
-  if (currentTheme.value === 'light') return '☀️';
-  return '🌓';
-});
+const themeIcon = computed(() => currentTheme.value === 'dark' ? 'moon' : currentTheme.value === 'light' ? 'sun' : 'system');
 
 const themeLabel = computed(() => {
   if (currentTheme.value === 'dark') return 'Dark';
@@ -372,6 +365,7 @@ function cycleTheme() {
 const showAuthModal = ref(false);
 const authModalTab = ref<'login' | 'register'>('login');
 const showUserMenu = ref(false);
+const userProfileRef = ref<HTMLButtonElement | null>(null);
 
 const showSettingsModal = ref(false);
 const showImportModal = ref(false);
@@ -413,8 +407,9 @@ function toggleUserMenu() {
   showUserMenu.value = !showUserMenu.value;
 }
 
-function closeUserMenu() {
+function closeUserMenu(returnFocus = false) {
   showUserMenu.value = false;
+  if (returnFocus) userProfileRef.value?.focus();
 }
 
 function onAuthSuccess() {
@@ -471,6 +466,56 @@ onUnmounted(() => {
   padding: 0;
 }
 
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+input,
+textarea {
+  caret-color: var(--md-sys-color-primary);
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 2000;
+  transform: translateY(-150%);
+  padding: 0.75rem 1rem;
+  border-radius: var(--md-sys-shape-corner-sm);
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 3px;
+}
+
 body {
   background-color: var(--md-sys-color-surface, #f8fafd);
   color: var(--md-sys-color-on-surface, #1f1f1f);
@@ -487,52 +532,46 @@ video {
 }
 
 .session-expired-banner {
-  background-color: #fffaf0;
-  border-bottom: 1px solid #feebc8;
-  color: #c05621;
-  padding: 0.6rem 1.5rem;
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  padding: 0.75rem 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   font-size: 0.9rem;
 }
 
-.banner-content {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
+.banner-content,
 .banner-actions {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
 }
 
 .banner-btn {
-  padding: 0.25rem 0.6rem;
-  border-radius: 4px;
-  font-size: 0.85rem;
-  font-weight: 500;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: 0.875rem;
+  font-weight: 600;
   cursor: pointer;
   border: none;
 }
 
 .banner-btn.primary {
-  background-color: #dd6b20;
-  color: #ffffff;
-}
-
-.banner-btn.primary:hover {
-  background-color: #c05621;
+  background: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error);
 }
 
 .banner-btn.secondary {
-  background-color: transparent;
-  color: #7b341e;
+  background: transparent;
+  color: inherit;
 }
 
-.banner-btn.secondary:hover {
-  background-color: #fbd38d;
+.banner-btn:hover {
+  text-decoration: underline;
 }
 
 .app-nav {
@@ -546,11 +585,11 @@ video {
 .nav-container {
   max-width: 1040px;
   margin: 0 auto;
-  padding: 0.75rem 1.5rem;
+  padding: 0.875rem 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  transition: max-width 0.2s;
+  gap: 1.25rem;
 }
 
 .nav-container.is-wide {
@@ -558,13 +597,26 @@ video {
 }
 
 .brand-logo {
+  max-width: 35%;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   text-decoration: none;
-  color: #2b6cb0;
+  color: var(--md-sys-color-on-surface);
+  min-width: 0;
+  flex-shrink: 0;
   font-size: 1.25rem;
   font-weight: 700;
+}
+
+.logo-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logo-img {
+  flex-shrink: 0;
 }
 
 .nav-links {
@@ -591,31 +643,19 @@ video {
 }
 
 .btn-auth {
-  padding: 0.4rem 0.9rem;
-  border-radius: 6px;
+  min-height: 44px;
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   border: none;
-  transition: background-color 0.2s;
 }
 
-.btn-auth.login-btn {
-  background-color: #2b6cb0;
-  color: #ffffff;
-}
-
-.btn-auth.login-btn:hover {
-  background-color: #2c5282;
-}
-
-.btn-auth.setup-btn {
-  background-color: #38a169;
-  color: #ffffff;
-}
-
-.btn-auth.setup-btn:hover {
-  background-color: #2f855a;
+.btn-auth:hover {
+  box-shadow: var(--md-sys-elevation-1);
 }
 
 .user-menu-wrapper {
@@ -628,8 +668,10 @@ video {
   gap: 0.5rem;
   background: none;
   border: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
-  padding: 0.3rem 0.6rem;
-  border-radius: 20px;
+  min-height: 44px;
+  max-width: 220px;
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--md-sys-shape-corner-full);
   cursor: pointer;
   transition: border-color 0.2s;
 }
@@ -642,8 +684,9 @@ video {
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
   background-color: var(--md-sys-color-primary, #3182ce);
   color: var(--md-sys-color-on-primary, #ffffff);
   border-radius: 50%;
@@ -652,6 +695,9 @@ video {
 }
 
 .user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.9rem;
   font-weight: 500;
   color: var(--md-sys-color-on-surface, #2d3748);
@@ -666,7 +712,7 @@ video {
   position: absolute;
   right: 0;
   top: calc(100% + 0.5rem);
-  width: 180px;
+  width: min(240px, calc(100vw - 2rem));
   background-color: var(--md-sys-color-surface-container, #ffffff);
   border: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
   border-radius: 8px;
@@ -684,12 +730,14 @@ video {
 }
 
 .header-name {
+  overflow-wrap: anywhere;
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--md-sys-color-on-surface, #1a202c);
 }
 
 .header-username {
+  overflow-wrap: anywhere;
   font-size: 0.8rem;
   color: var(--md-sys-color-on-surface-variant, #718096);
 }
@@ -702,7 +750,8 @@ video {
 
 .dropdown-item {
   display: block;
-  padding: 0.4rem 1rem;
+  min-height: 44px;
+  padding: 0.625rem 1rem;
   font-size: 0.9rem;
   color: var(--md-sys-color-on-surface, #4a5568);
   text-decoration: none;
@@ -724,7 +773,7 @@ video {
 
 .dropdown-item.logout-btn:hover {
   background-color: var(--md-sys-color-error-container, #fff5f5);
-  color: var(--md-sys-color-on-error, #c53030);
+  color: var(--md-sys-color-on-error-container);
 }
 
 /* Header layout & search bar styles */
@@ -737,8 +786,8 @@ video {
 
 .header-search-wrapper {
   flex: 1;
+  min-width: 0;
   max-width: 480px;
-  margin: 0 1rem;
 }
 
 .header-search-box {
@@ -748,8 +797,10 @@ video {
   background-color: var(--md-sys-color-surface-container-high, #e9eef6);
   border: 1px solid transparent;
   border-radius: var(--md-sys-shape-corner-xl, 24px);
-  padding: 0.35rem 0.85rem;
-  transition: all var(--md-sys-motion-duration-short) ease;
+  min-height: 48px;
+  padding: 0.25rem 0.75rem;
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              border-color var(--md-sys-motion-duration-short) ease;
 }
 
 .header-search-box:hover {
@@ -760,7 +811,7 @@ video {
 .header-search-box.focused {
   background-color: var(--md-sys-color-surface-container, #ffffff);
   border-color: var(--md-sys-color-primary);
-  box-shadow: var(--md-sys-elevation-2), 0 0 0 2px var(--md-sys-color-primary-container);
+  box-shadow: var(--md-sys-elevation-1);
 }
 
 .header-search-icon {
@@ -773,53 +824,52 @@ video {
 
 .header-search-input {
   width: 100%;
+  min-width: 0;
   border: none;
   background: transparent;
   font-size: 0.875rem;
   color: var(--md-sys-color-on-surface, #1e293b);
-  outline: none;
   padding: 0.2rem 0;
 }
 
+.header-search-input:focus-visible {
+  outline: none;
+}
+
 .header-search-input::placeholder {
-  color: #94a3b8;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .header-search-clear {
-  background: none;
+  background: transparent;
   border: none;
-  color: #94a3b8;
-  font-size: 1rem;
+  color: var(--md-sys-color-on-surface-variant);
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  font-size: 1.25rem;
   cursor: pointer;
-  padding: 0.1rem 0.35rem;
-  border-radius: 50%;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.15s, background-color 0.15s;
+  border-radius: var(--md-sys-shape-corner-full);
 }
 
 .header-search-clear:hover {
-  color: #475569;
-  background-color: #e2e8f0;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-high);
 }
 
 .header-search-shortcut {
   flex-shrink: 0;
-  margin-left: 0.35rem;
+  margin-left: 0.5rem;
   pointer-events: none;
 }
 
 .header-search-shortcut kbd {
-  background-color: #e2e8f0;
-  border: 1px solid #cbd5e1;
-  color: #64748b;
-  font-family: inherit;
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.75rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--md-sys-shape-corner-xs);
 }
 
 .header-theme-toggle {
@@ -834,7 +884,9 @@ video {
   background-color: var(--md-sys-color-surface-container-low, #f8fafc);
   border: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
   border-radius: 20px;
-  padding: 0.32rem 0.75rem;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
   font-size: 0.825rem;
   font-weight: 500;
   color: var(--md-sys-color-on-surface-variant, #475569);
@@ -858,33 +910,55 @@ video {
 
 @media (max-width: 768px) {
   .nav-container {
-    padding: 0.5rem 0.75rem;
+    padding: 0.75rem 1rem;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .nav-container.is-wide {
+    max-width: 100%;
+  }
+
+  .brand-logo {
+    max-width: calc(100% - 112px);
+  }
+
+  .logo-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-right {
+    margin-left: auto;
     gap: 0.5rem;
   }
 
-  .brand-logo .logo-text {
-    display: none;
-  }
-
   .header-search-wrapper {
-    margin: 0 0.25rem;
+    order: 3;
+    flex-basis: 100%;
     max-width: none;
   }
 
-  .header-search-shortcut {
-    display: none;
+  .header-search-input {
+    font-size: 1rem;
   }
 
-  .header-toggle-btn .btn-label {
+  .header-search-shortcut,
+  .header-toggle-btn .btn-label,
+  .user-name,
+  .caret-icon {
     display: none;
   }
 
   .header-toggle-btn {
-    padding: 0.35rem 0.5rem;
+    padding: 0.5rem;
   }
 
-  .nav-links {
-    display: none;
+  .user-profile-btn {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
   }
 }
 </style>

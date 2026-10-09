@@ -91,28 +91,23 @@ md.renderer.rules.wikilink = function (tokens, idx, _options, _env, self) {
 function taskListRule(state: any): void {
   const tokens = state.tokens;
   let taskIndex = 0;
-  for (let i = 2; i < tokens.length; i++) {
-    if (tokens[i].type !== 'inline') continue;
-
-    let isInsideLi = false;
-    let liToken: any = null;
-    let listToken: any = null;
-    for (let j = i - 1; j >= 0; j--) {
-      if (tokens[j].type === 'list_item_close') break;
-      if (tokens[j].type === 'list_item_open') {
-        isInsideLi = true;
-        liToken = tokens[j];
-        for (let k = j - 1; k >= 0; k--) {
-          if (tokens[k].type === 'bullet_list_close' || tokens[k].type === 'ordered_list_close') break;
-          if (tokens[k].type === 'bullet_list_open' || tokens[k].type === 'ordered_list_open') {
-            listToken = tokens[k];
-            break;
-          }
-        }
-        break;
-      }
+  let liToken: any = null;
+  let listToken: any = null;
+  let precedingList: any = null;
+  // Track the same open/close boundaries as the former backward scans, once.
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.type === 'bullet_list_open' || token.type === 'ordered_list_open') {
+      precedingList = token;
+    } else if (token.type === 'bullet_list_close' || token.type === 'ordered_list_close') {
+      precedingList = null;
+    } else if (token.type === 'list_item_open') {
+      liToken = token;
+      listToken = precedingList;
+    } else if (token.type === 'list_item_close') {
+      liToken = null;
     }
-    if (!isInsideLi || !liToken) continue;
+    if (token.type !== 'inline' || !liToken) continue;
 
     const children = tokens[i].children;
     if (!children || children.length === 0 || children[0].type !== 'text') continue;

@@ -132,7 +132,7 @@ export const api = {
   },
 
   things: {
-    list: (params?: ListThingsQuery) => {
+    list: (params?: ListThingsQuery, signal?: AbortSignal) => {
       const query = new URLSearchParams();
       if (params?.filter) query.set('filter', params.filter);
       if (params?.mode) query.set('mode', params.mode);
@@ -142,7 +142,7 @@ export const api = {
       if (params?.skip !== undefined) query.set('skip', String(params.skip));
       if (params?.limit !== undefined) query.set('limit', String(params.limit));
       const qs = query.toString();
-      return request<ListThingsResponse>(`/api/things${qs ? '?' + qs : ''}`);
+      return request<ListThingsResponse>(`/api/things${qs ? '?' + qs : ''}`, { signal });
     },
     get: (id: string) => request<GetThingResponse>(`/api/things/${id}`),
     create: (data: CreateThingRequest) =>

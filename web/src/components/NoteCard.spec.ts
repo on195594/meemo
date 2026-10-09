@@ -1,7 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import { describe, expect, it, vi } from 'vitest';
 import type { Thing } from '../api/client';
 import NoteCard from './NoteCard.vue';
+import * as markdown from '../utils/markdown';
 
 function note(overrides: Partial<Thing> = {}): Thing {
   return {
@@ -23,6 +25,40 @@ function note(overrides: Partial<Thing> = {}): Thing {
 }
 
 describe('NoteCard behavior', () => {
+  it('provides a native open button without crowding the metadata header', async () => {
+    const thing = note();
+    const onOpenDetail = vi.fn();
+    const wrapper = mount(NoteCard, { props: { thing, onOpenDetail } });
+
+    expect(wrapper.find('header .card-actions').exists()).toBe(false);
+    expect(wrapper.get('.card-actions').attributes('aria-label')).toBe('Note actions');
+    await wrapper.get('button[aria-label="Open note"]').trigger('click');
+    expect(onOpenDetail).toHaveBeenCalledTimes(1);
+    expect(onOpenDetail).toHaveBeenCalledWith(thing, 'view');
+
+    await wrapper.setProps({ selectable: true });
+    expect(wrapper.find('button[aria-label="Open note"]').exists()).toBe(false);
+  });
+
+  it('updates highlighting without reparsing unchanged large notes', async () => {
+    const render = vi.spyOn(markdown, 'renderMarkdown');
+    const wrapper = mount(NoteCard, {
+      props: { thing: note({ content: 'Hello world '.repeat(1500) }), highlightQuery: 'Hello' },
+    });
+    try {
+      expect(render).toHaveBeenCalledTimes(1);
+      await wrapper.setProps({ highlightQuery: 'world' });
+      expect(wrapper.get('mark').text()).toBe('world');
+      expect(render).toHaveBeenCalledTimes(1);
+      await wrapper.setProps({ thing: note({ content: '**Changed** world' }) });
+      expect(render).toHaveBeenCalledTimes(2);
+      expect(wrapper.get('strong').text()).toBe('Changed');
+    } finally {
+      wrapper.unmount();
+      render.mockRestore();
+    }
+  });
+
   it('renders note state, markdown, and attachments', () => {
     const wrapper = mount(NoteCard, {
       props: {
@@ -224,6 +260,25 @@ describe('NoteCard behavior', () => {
 
     expect(onDeleteConfirm).toHaveBeenCalledWith('note-1');
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+  });
+
+  it('closes delete confirmation on Escape and traps keyboard navigation', async () => {
+    const wrapper = mount(NoteCard, { attachTo: document.body, props: { thing: note() } });
+    const deleteBtn = wrapper.get('button[aria-label="Delete note"]');
+    await deleteBtn.trigger('click');
+
+    const dialog = wrapper.get('.delete-modal-overlay');
+    expect(dialog.attributes('role')).toBe('dialog');
+    expect(dialog.attributes('aria-labelledby')).toBe('delete-confirm-title');
+
+    const cancelBtn = wrapper.get('.delete-modal-actions .cancel');
+    expect(document.activeElement).toBe(cancelBtn.element);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await nextTick();
+    expect(wrapper.find('.delete-modal-overlay').exists()).toBe(false);
+    expect(document.activeElement).toBe(deleteBtn.element);
+    wrapper.unmount();
   });
 
   it('hides mutating actions when editing is disabled', () => {

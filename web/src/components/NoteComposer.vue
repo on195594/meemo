@@ -13,8 +13,9 @@
         ref="textareaRef"
         v-model="content"
         class="composer-textarea"
-        placeholder="Write a note... (#tags, markdown supported, drag & drop images)"
-        rows="3"
+        placeholder="Write a note…"
+        aria-label="Write a note"
+        :rows="isFocused || content.trim().length > 0 || attachments.length > 0 ? 3 : 1"
         :disabled="isSaving"
         @focus="isFocused = true"
         @blur="handleBlur"
@@ -44,6 +45,7 @@
           type="button"
           class="chip-remove"
           title="Remove attachment"
+          :aria-label="`Remove attachment ${att.fileName || att.identifier}`"
           @click="removeAttachment(idx)"
         >
           &times;
@@ -72,7 +74,7 @@
             :aria-expanded="showColorPicker"
             @click="toggleColorPicker"
           >
-            🎨
+            <UiIcon name="palette" />
           </button>
           <div
             v-if="showColorPicker"
@@ -103,10 +105,11 @@
           type="button"
           class="btn-icon"
           title="Attach file or image"
+          aria-label="Attach file or image"
           :disabled="isSaving || isUploading"
           @click="triggerFileSelect"
         >
-          📎
+          <UiIcon name="attach" />
         </button>
         <input
           ref="fileInputRef"
@@ -146,6 +149,7 @@
 
 <script setup lang="ts">
 import { ref, nextTick, onUnmounted } from 'vue';
+import UiIcon from './UiIcon.vue';
 import { api, type AttachmentDescriptor, type NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 
@@ -424,7 +428,8 @@ defineExpose({
   border: none;
   outline: none;
   resize: vertical;
-  min-height: 56px;
+  display: block;
+  min-height: 28px;
   font-family: inherit;
   font-size: 0.95rem;
   line-height: 1.5;
@@ -453,7 +458,6 @@ defineExpose({
 .progress-fill {
   height: 100%;
   background-color: var(--md-sys-color-primary);
-  transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
 .progress-text {
@@ -507,6 +511,8 @@ defineExpose({
 
 .composer-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   justify-content: space-between;
   align-items: center;
   margin-top: 0.75rem;
@@ -521,6 +527,10 @@ defineExpose({
 }
 
 .btn-icon {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  color: var(--md-sys-color-on-surface-variant);
   background: none;
   border: 1px solid transparent;
   border-radius: var(--md-sys-shape-corner-full, 9999px);
@@ -532,19 +542,6 @@ defineExpose({
   justify-content: center;
   position: relative;
   transition: all var(--md-sys-motion-duration-short) ease;
-}
-
-/* Expand touch target to min 48x48px on pointer/touch */
-.btn-icon::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 48px;
-  min-height: 48px;
-  width: 100%;
-  height: 100%;
 }
 
 .btn-icon:focus-visible {
@@ -625,10 +622,14 @@ defineExpose({
 
 .btn-group {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.5rem;
 }
 
 .btn-composer {
+  max-width: 100%;
+  min-height: 44px;
   padding: 0.5rem 1.15rem;
   border-radius: var(--md-sys-shape-corner-full, 9999px);
   font-size: 0.875rem;
@@ -665,5 +666,18 @@ defineExpose({
 .btn-composer:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+@media (max-width: 600px) {
+  .shortcut-hint {
+    display: none;
+  }
+
+  .left-actions {
+    gap: 0.25rem;
+  }
+
+  .btn-group {
+    margin-left: auto;
+  }
 }
 </style>

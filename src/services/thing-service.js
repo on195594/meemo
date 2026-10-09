@@ -40,10 +40,10 @@ function extractURLs(content) {
     return Array.from(new Set(env.urls));
 }
 
-function extractTags(content) {
+function extractTags(content, urls) {
     if (!content || typeof content !== 'string' || content.indexOf('#') === -1) return [];
 
-    var urls = extractURLs(content);
+    urls = urls || extractURLs(content);
     if (urls.length) {
         for (var u = 0; u < urls.length; u++) {
             content = content.replace(new RegExp(escapeRegExp(urls[u]), 'gmi'), ' --URL_PLACEHOLDER-- ');
@@ -192,11 +192,12 @@ function add(userId, content, attachments, color, callback) {
         color = 'default';
     }
     var promise = Promise.resolve().then(async function () {
-        var externalContent = await extractExternalContent(content);
-        var tagObjects = extractTags(content);
+        var urls = extractURLs(content);
+        var externalContent = await ssrf.enrichUrls(urls);
+        var tagObjects = extractTags(content, urls);
         var result = await things.add(userId, content, tagObjects, attachments, externalContent, color);
         if (!result) throw new Error('no result returned');
-        return get(userId, result._id);
+        return addRichContent(userId, [result])[0];
     });
     return nodeify(promise, callback);
 }
@@ -212,15 +213,17 @@ function put(userId, thingId, content, attachments, isPublic, isShared, isArchiv
         expectedRevision = undefined;
     }
     var promise = Promise.resolve().then(async function () {
-        var tagObjects = extractTags(content);
+        var urls = extractURLs(content);
+        var tagObjects = extractTags(content, urls);
         var externalContent;
         try {
-            externalContent = await extractExternalContent(content);
+            externalContent = await ssrf.enrichUrls(urls);
         } catch (error) {
             console.error('Failed to extract external content:', error);
             externalContent = [];
         }
 
+        // The repository still checks owner, deletion state and expectedRevision atomically.
         return things.put(userId, thingId, content, tagObjects, attachments, externalContent,
             isPublic, isShared, isArchived, isSticky, color, expectedRevision);
     });

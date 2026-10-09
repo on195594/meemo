@@ -23,6 +23,8 @@
 
 - [Architecture evolution roadmap](roadmaps/2026-09-18-architecture-evolution.md): staged work and acceptance criteria.
 - [MD3 review and recommendations](reviews/meemo-md3-review-and-fix-recommendations.md): review findings and proposed fixes.
+- [Impeccable UI audit and polish](reviews/2026-10-08-impeccable-ui-audit.md): scoped UI findings, implemented refinements, modal focus hardening, and synthetic browser validation.
+- [Performance optimization snapshot](reviews/2026-09-30-performance-optimization.md): implemented optimizations, synthetic before/after measurements, validation and remaining limits.
 
 Keep new plans in `roadmaps/` and review reports in `reviews/`. These documents retain design rationale; confirm implementation against source and tests before treating a recommendation as current behavior.
 

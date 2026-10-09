@@ -42,9 +42,10 @@ function json(body: unknown, status = 200): Response {
 }
 
 function backend() {
-  const state: { current: 'a' | 'b' | null; rejectNextThings: boolean } = {
+  const state: { current: 'a' | 'b' | null; rejectNextThings: boolean; emptyThings: boolean } = {
     current: 'a',
     rejectNextThings: false,
+    emptyThings: false,
   };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -68,7 +69,7 @@ function backend() {
         state.rejectNextThings = false;
         return json({ code: 'authentication_required', message: 'Expired' }, 401);
       }
-      return json({ things: state.current ? [note(state.current)] : [] });
+      return json({ things: state.current && !state.emptyThings ? [note(state.current)] : [] });
     }
     if (url === '/api/tags') return json({ tags: [] });
     if (url === '/api/settings') return json({ settings: { showTagSidebar: false } });
@@ -208,6 +209,28 @@ describe('App authenticated note flows', () => {
     expect(themeBtn.text()).toContain('Auto');
     expect(document.documentElement.getAttribute('data-theme')).toBeNull();
     expect(localStorage.getItem('meemo_theme')).toBe('auto');
+  });
+
+  it.each([
+    { query: { archived: 'true' }, title: 'Archive', empty: 'No archived notes' },
+    { query: { deleted: 'true' }, title: 'Trash', empty: 'Trash is empty' },
+  ])('labels the empty $title view without calling it a failed search', async ({ query, title, empty }) => {
+    const { state, fetchMock } = backend();
+    state.emptyThings = true;
+    const rendered = await renderApp(fetchMock);
+    wrapper = rendered.wrapper;
+
+    await rendered.router.replace({ query });
+    await settle();
+    expect(wrapper.get('.workspace-title').text()).toBe(title);
+    expect(wrapper.get('.empty-state h2').text()).toBe(empty);
+    expect(wrapper.get('.clear-filters-btn').text()).toBe('Back to notes');
+
+    await rendered.router.replace({ query: { ...query, q: 'needle' } });
+    await settle();
+    expect(wrapper.get('.empty-state h2').text()).toBe('No matching notes');
+    expect(wrapper.get('[aria-label="Remove search filter"]').element.tagName).toBe('BUTTON');
+    expect(wrapper.get('.clear-filters-btn').text()).toBe('Clear filters');
   });
 
   it('renders notes inside a masonry layout', async () => {

@@ -1,5 +1,5 @@
 <template>
-  <div class="notes-view" :class="{ 'is-wide': settings.wide }">
+  <div class="notes-view" :class="{ 'is-wide': settings.wide, 'is-selecting': isSelectionMode }">
     <!-- Unauthenticated View States -->
     <template v-if="!isAuthenticated">
       <div v-if="authLoading" class="loading-state">
@@ -9,8 +9,8 @@
 
       <!-- First-User Setup Prompt -->
       <div v-else-if="isFirstUser" class="auth-hero first-user-hero">
-        <div class="hero-icon">🚀</div>
-        <h2>Welcome to Meemo</h2>
+        <div class="hero-icon"><UiIcon name="note" /></div>
+        <h1>Welcome to Meemo</h1>
         <p>No user account exists yet. Create your administrator account to start writing and organizing your thoughts.</p>
         <button type="button" class="hero-btn primary" @click="triggerAuthModal('register')">
           Create Administrator Account
@@ -19,8 +19,8 @@
 
       <!-- General Sign In Prompt -->
       <div v-else class="auth-hero login-hero">
-        <div class="hero-icon">🔒</div>
-        <h2>Sign In to Meemo</h2>
+        <div class="hero-icon"><UiIcon name="lock" /></div>
+        <h1>Sign In to Meemo</h1>
         <p>Log in with your credentials to access your notes, attachments, and settings.</p>
         <button type="button" class="hero-btn primary" @click="triggerAuthModal('login')">
           Log In
@@ -35,19 +35,19 @@
         <span class="filter-label">Filter:</span>
         <span v-if="selectedTag" class="filter-chip">
           Tag: #{{ selectedTag }}
-          <button type="button" class="chip-remove" @click="clearTagFilter">&times;</button>
+          <button type="button" class="chip-remove" aria-label="Remove tag filter" @click="clearTagFilter">&times;</button>
         </span>
         <span v-if="searchQuery" class="filter-chip">
           Query: "{{ searchQuery }}"
-          <button type="button" class="chip-remove" @click="handleQueryRemove">&times;</button>
+          <button type="button" class="chip-remove" aria-label="Remove search filter" @click="handleQueryRemove">&times;</button>
         </span>
         <span v-if="isArchived" class="filter-chip archive-chip">
           Archived View
-          <button type="button" class="chip-remove" @click="handleViewSwitch(false)">&times;</button>
+          <button type="button" class="chip-remove" aria-label="Leave archived notes" @click="handleViewSwitch(false)">&times;</button>
         </span>
         <span v-if="isDeleted" class="filter-chip archive-chip">
           Trash
-          <button type="button" class="chip-remove" @click="handleDeletedView(false)">&times;</button>
+          <button type="button" class="chip-remove" aria-label="Leave trash" @click="handleDeletedView(false)">&times;</button>
         </span>
         <button type="button" class="clear-all-link" @click="clearRouteFilters">
           Reset all filters
@@ -66,6 +66,7 @@
 
       <!-- Main Cards Stream -->
       <main class="stream-column">
+        <h1 class="workspace-title">{{ isDeleted ? 'Trash' : (isArchived ? 'Archive' : 'Notes') }}</h1>
         <!-- Note Composer (visible in active notes view) -->
         <NoteComposer
           v-if="!isArchived && !isDeleted"
@@ -82,7 +83,7 @@
         <div v-else-if="things.length > 0" class="notes-card-list">
           <!-- Pinned Section -->
           <section v-if="pinnedThings.length > 0" class="notes-section" aria-labelledby="pinned-heading">
-            <h3 id="pinned-heading" class="section-label">PINNED</h3>
+            <h2 id="pinned-heading" class="section-label">Pinned</h2>
             <div class="m3-notes-masonry">
               <NoteCard
                 v-for="thing in pinnedThings"
@@ -108,8 +109,8 @@
           </section>
 
           <!-- Others Section -->
-          <section v-if="otherThings.length > 0" class="notes-section" aria-labelledby="others-heading">
-            <h3 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">OTHERS</h3>
+          <section v-if="otherThings.length > 0" class="notes-section" :aria-labelledby="pinnedThings.length > 0 ? 'others-heading' : undefined">
+            <h2 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">Other notes</h2>
             <div class="m3-notes-masonry">
               <NoteCard
                 v-for="thing in otherThings"
@@ -147,29 +148,29 @@
               <span v-else>Load more notes</span>
             </button>
             <p v-else class="end-marker">
-              — You have reached the end of the notes —
+              You're all caught up
             </p>
           </div>
         </div>
 
         <!-- Empty Results State -->
         <div v-else class="empty-state">
-          <div class="empty-icon">{{ isDeleted ? '🗑️' : (isArchived ? '📦' : '📝') }}</div>
-          <h3 v-if="hasActiveFilter && !isDeleted">No notes found matching your filter</h3>
-          <h3 v-else-if="isDeleted">Trash is empty</h3>
-          <h3 v-else-if="isArchived">No archived notes</h3>
-          <h3 v-else>No notes found</h3>
-          <p v-if="hasActiveFilter && !isDeleted">Try adjusting your search terms or clearing tag filters.</p>
+          <div class="empty-icon"><UiIcon :name="isDeleted ? 'trash' : (isArchived ? 'archive' : 'note')" /></div>
+          <h2 v-if="activeFilter">No matching notes</h2>
+          <h2 v-else-if="isDeleted">Trash is empty</h2>
+          <h2 v-else-if="isArchived">No archived notes</h2>
+          <h2 v-else>Your next idea starts here</h2>
+          <p v-if="activeFilter">Try a different search or clear your filters.</p>
           <p v-else-if="isDeleted">Deleted notes can be restored from here.</p>
           <p v-else-if="isArchived">Notes you archive will appear here.</p>
-          <p v-else>Type a note in the composer above to begin!</p>
+          <p v-else>Write your first note in the box above. Markdown and #tags are welcome.</p>
           <button
             v-if="hasActiveFilter"
             type="button"
             class="clear-filters-btn"
             @click="clearRouteFilters"
           >
-            Clear filters
+            {{ activeFilter ? 'Clear filters' : 'Back to notes' }}
           </button>
         </div>
       </main>
@@ -186,7 +187,7 @@
               :disabled="isBatchMutating"
               @click="handleClearSelection"
             >
-              ✕
+              <UiIcon name="close" />
             </button>
             <span class="batch-count">{{ selectedIds.size }} selected</span>
             <button
@@ -201,8 +202,9 @@
 
           <div class="batch-bar-actions">
             <!-- Color Picker Popover -->
-            <div class="batch-color-wrapper">
+            <div ref="batchColorWrapperRef" class="batch-color-wrapper">
               <button
+                ref="batchColorTriggerRef"
                 type="button"
                 class="batch-btn"
                 :class="{ active: showBatchColorPicker }"
@@ -211,26 +213,29 @@
                 aria-haspopup="true"
                 :aria-expanded="showBatchColorPicker"
                 :disabled="isBatchMutating"
-                @click="showBatchColorPicker = !showBatchColorPicker"
+                @click="toggleBatchColorPicker"
               >
-                🎨
+                <UiIcon name="palette" />
               </button>
               <div
                 v-if="showBatchColorPicker"
+                ref="batchColorPaletteRef"
                 class="batch-color-palette"
                 role="group"
                 aria-label="Select color for all"
               >
                 <button
-                  v-for="c in NOTE_COLORS"
+                  v-for="(c, index) in NOTE_COLORS"
                   :key="c.key"
                   type="button"
                   class="batch-swatch"
                   :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
                   :title="c.name"
                   :aria-label="c.name"
+                  :tabindex="focusedBatchColorIndex === index ? 0 : -1"
                   :disabled="isBatchMutating"
                   @click="handleBatchColor(c.key)"
+                  @keydown="handleBatchColorKeydown($event, index)"
                 ></button>
               </div>
             </div>
@@ -244,7 +249,7 @@
               :disabled="isBatchMutating"
               @click="handleBatchPin"
             >
-              📌
+              <UiIcon name="pin" />
             </button>
 
             <!-- Archive / Restore Toggle -->
@@ -256,19 +261,20 @@
               :disabled="isBatchMutating"
               @click="handleBatchArchive"
             >
-              {{ isArchived ? '↩️' : '📦' }}
+              <UiIcon :name="isArchived ? 'restore' : 'archive'" />
             </button>
 
             <!-- Delete Button -->
             <button
+              ref="batchDeleteTriggerRef"
               type="button"
               class="batch-btn batch-delete-btn"
               title="Delete selected notes"
               aria-label="Delete selected notes"
               :disabled="isBatchMutating"
-              @click="showBatchDeleteConfirm = true"
+              @click="openBatchDeleteConfirm"
             >
-              🗑️
+              <UiIcon name="trash" />
             </button>
           </div>
         </aside>
@@ -278,20 +284,21 @@
       <div
         v-if="showBatchDeleteConfirm"
         class="batch-delete-modal-overlay"
-        @click.self="showBatchDeleteConfirm = false"
+        @click.self="closeBatchDeleteConfirm(true)"
         role="dialog"
         aria-modal="true"
-        aria-label="Confirm batch delete"
+        aria-labelledby="batch-delete-title"
       >
-        <div class="batch-delete-card">
-          <h3>Delete {{ selectedIds.size }} Notes?</h3>
+        <div ref="batchDeleteModalCardRef" class="batch-delete-card">
+          <h3 id="batch-delete-title">Delete {{ selectedIds.size }} Notes?</h3>
           <p>These notes can be restored from Trash.</p>
           <div class="batch-delete-actions">
             <button
+              ref="cancelBatchDeleteBtnRef"
               type="button"
               class="btn-modal cancel"
               :disabled="isBatchDeleting"
-              @click="showBatchDeleteConfirm = false"
+              @click="closeBatchDeleteConfirm(true)"
             >
               Cancel
             </button>
@@ -338,7 +345,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, inject } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, inject, nextTick } from 'vue';
+import UiIcon from '../components/UiIcon.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
 import { useNotes } from '../composables/useNotes';
@@ -559,12 +567,119 @@ const selectedIds = ref<Set<string>>(new Set());
 const isSelectionMode = computed(() => selectedIds.value.size > 0);
 const showBatchDeleteConfirm = ref(false);
 const isBatchDeleting = ref(false);
+const batchDeleteTriggerRef = ref<HTMLButtonElement | null>(null);
+const batchDeleteModalCardRef = ref<HTMLDivElement | null>(null);
+const cancelBatchDeleteBtnRef = ref<HTMLButtonElement | null>(null);
+
+function openBatchDeleteConfirm() {
+  showBatchDeleteConfirm.value = true;
+  document.addEventListener('keydown', handleBatchDeleteModalKeydown);
+  nextTick(() => {
+    cancelBatchDeleteBtnRef.value?.focus();
+  });
+}
+
+function closeBatchDeleteConfirm(returnFocus = true) {
+  showBatchDeleteConfirm.value = false;
+  document.removeEventListener('keydown', handleBatchDeleteModalKeydown);
+  if (returnFocus) {
+    nextTick(() => {
+      batchDeleteTriggerRef.value?.focus();
+    });
+  }
+}
+
+function handleBatchDeleteModalKeydown(event: KeyboardEvent) {
+  if (!showBatchDeleteConfirm.value) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeBatchDeleteConfirm(true);
+    return;
+  }
+  if (event.key === 'Tab' && batchDeleteModalCardRef.value) {
+    const focusable = batchDeleteModalCardRef.value.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+}
+
 const isBatchColorSaving = ref(false);
 const isBatchUpdating = ref(false);
 const isBatchMutating = computed(
   () => isBatchDeleting.value || isBatchColorSaving.value || isBatchUpdating.value
 );
 const showBatchColorPicker = ref(false);
+const batchColorWrapperRef = ref<HTMLDivElement | null>(null);
+const batchColorTriggerRef = ref<HTMLButtonElement | null>(null);
+const batchColorPaletteRef = ref<HTMLDivElement | null>(null);
+const focusedBatchColorIndex = ref(0);
+
+function focusBatchColor(index: number) {
+  focusedBatchColorIndex.value = index;
+  nextTick(() => {
+    batchColorPaletteRef.value?.querySelectorAll<HTMLButtonElement>('.batch-swatch')[index]?.focus();
+  });
+}
+
+function closeBatchColorPicker(returnFocus = false) {
+  showBatchColorPicker.value = false;
+  document.removeEventListener('pointerdown', handleOutsideBatchColorPicker);
+  if (returnFocus) {
+    nextTick(() => {
+      batchColorTriggerRef.value?.focus();
+    });
+  }
+}
+
+function toggleBatchColorPicker() {
+  if (showBatchColorPicker.value) {
+    closeBatchColorPicker();
+    return;
+  }
+  showBatchColorPicker.value = true;
+  document.addEventListener('pointerdown', handleOutsideBatchColorPicker);
+  focusBatchColor(0);
+}
+
+function handleOutsideBatchColorPicker(event: PointerEvent) {
+  if (showBatchColorPicker.value && !batchColorWrapperRef.value?.contains(event.target as Node)) {
+    closeBatchColorPicker();
+  }
+}
+
+function handleBatchColorKeydown(event: KeyboardEvent, index: number) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeBatchColorPicker(true);
+    return;
+  }
+
+  const columnCount = 4;
+  const offsets: Record<string, number> = {
+    ArrowLeft: -1,
+    ArrowRight: 1,
+    ArrowUp: -columnCount,
+    ArrowDown: columnCount,
+  };
+  if (offsets[event.key] === undefined && event.key !== 'Home' && event.key !== 'End') return;
+
+  event.preventDefault();
+  let nextIndex;
+  if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = NOTE_COLORS.length - 1;
+  else nextIndex = (index + offsets[event.key] + NOTE_COLORS.length) % NOTE_COLORS.length;
+  focusBatchColor(nextIndex);
+}
 
 function handleToggleSelect(thing: Thing) {
   if (isBatchMutating.value) return;
@@ -585,7 +700,8 @@ function handleSelectAll() {
 function handleClearSelection() {
   if (isBatchMutating.value) return;
   selectedIds.value = new Set();
-  showBatchColorPicker.value = false;
+  closeBatchColorPicker(false);
+  closeBatchDeleteConfirm(false);
 }
 
 async function handleBatchColor(color: NoteColor) {
@@ -594,7 +710,7 @@ async function handleBatchColor(color: NoteColor) {
   try {
     const ids = Array.from(selectedIds.value);
     const res = await batchUpdateNotes(ids, { color });
-    showBatchColorPicker.value = false;
+    closeBatchColorPicker(true);
     for (const id of res.successfulIds) {
       selectedIds.value.delete(id);
     }
@@ -658,7 +774,7 @@ async function handleBatchDelete() {
   try {
     const ids = Array.from(selectedIds.value);
     const res = await batchDeleteNotes(ids);
-    showBatchDeleteConfirm.value = false;
+    closeBatchDeleteConfirm(false);
     for (const id of res.successfulIds) {
       selectedIds.value.delete(id);
     }
@@ -685,9 +801,9 @@ watch(things, (current) => {
 function handleGlobalKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     if (showBatchDeleteConfirm.value) {
-      showBatchDeleteConfirm.value = false;
+      closeBatchDeleteConfirm(true);
     } else if (showBatchColorPicker.value) {
-      showBatchColorPicker.value = false;
+      closeBatchColorPicker(true);
     } else if (isSelectionMode.value && !isLightboxOpen.value) {
       handleClearSelection();
     }
@@ -733,6 +849,8 @@ onUnmounted(() => {
   }
   window.removeEventListener('meemo:imported', handleImportEvent);
   window.removeEventListener('keydown', handleGlobalKeydown);
+  document.removeEventListener('keydown', handleBatchDeleteModalKeydown);
+  document.removeEventListener('pointerdown', handleOutsideBatchColorPicker);
 });
 </script>
 
@@ -742,7 +860,17 @@ onUnmounted(() => {
   margin: 0 auto;
   padding: 1.5rem;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  transition: max-width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
+}
+
+.workspace-title {
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.notes-view.is-selecting {
+  padding-bottom: 12rem;
 }
 
 .notes-view.is-wide {
@@ -786,11 +914,13 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
-.hero-icon {
-  font-size: 2.5rem;
+.hero-icon .ui-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: var(--md-sys-color-primary);
 }
 
-.auth-hero h2 {
+.auth-hero h1 {
   font-size: 1.5rem;
   color: var(--md-sys-color-on-surface);
   margin: 0;
@@ -844,6 +974,8 @@ onUnmounted(() => {
 }
 
 .filter-chip {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -863,6 +995,9 @@ onUnmounted(() => {
 }
 
 .chip-remove {
+  min-width: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
   background: none;
   border: none;
   color: var(--md-sys-color-on-surface-variant);
@@ -947,10 +1082,11 @@ onUnmounted(() => {
 }
 
 .notes-section {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .section-label {
+  text-transform: uppercase;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -1000,13 +1136,14 @@ onUnmounted(() => {
   color: var(--md-sys-color-on-surface-variant);
 }
 
-.empty-icon {
-  font-size: 2.75rem;
+.empty-icon .ui-icon {
+  width: 2.75rem;
+  height: 2.75rem;
   margin-bottom: 0.75rem;
   opacity: 0.85;
 }
 
-.empty-state h3 {
+.empty-state h2 {
   font-size: 1.15rem;
   font-weight: 600;
   color: var(--md-sys-color-on-surface);
@@ -1014,6 +1151,7 @@ onUnmounted(() => {
 }
 
 .clear-filters-btn {
+  min-height: 44px;
   margin-top: 1.25rem;
   background-color: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
@@ -1042,19 +1180,18 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 1.25rem;
-  background-color: var(--md-sys-color-surface-container-highest, #e6e0e9);
+  background-color: var(--md-sys-color-surface-container-high);
   color: var(--md-sys-color-on-surface, #1d1b20);
   padding: 0.5rem 1rem;
   border-radius: var(--md-sys-shape-corner-full, 9999px);
   box-shadow: var(--md-sys-elevation-3, 0 4px 14px rgba(0, 0, 0, 0.25));
   border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.12));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   max-width: 90vw;
 }
 
 .batch-bar-leading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
 }
@@ -1066,6 +1203,7 @@ onUnmounted(() => {
 }
 
 .batch-text-btn {
+  min-height: 44px;
   background: none;
   border: none;
   color: var(--md-sys-color-primary, #6750a4);
@@ -1088,8 +1226,9 @@ onUnmounted(() => {
 }
 
 .batch-btn {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
   border-radius: 50%;
   border: none;
   background: transparent;
@@ -1103,21 +1242,17 @@ onUnmounted(() => {
 }
 
 .batch-btn:hover {
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: var(--md-sys-color-surface-container);
 }
 
 .batch-btn.active {
-  background-color: rgba(0, 0, 0, 0.12);
-}
-
-.batch-close-btn {
-  font-size: 0.95rem;
-  width: 32px;
-  height: 32px;
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
 }
 
 .batch-delete-btn:hover {
-  background-color: rgba(220, 53, 69, 0.15);
+  background-color: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-error);
 }
 
 /* Batch Color Picker */
@@ -1128,22 +1263,21 @@ onUnmounted(() => {
 .batch-color-palette {
   position: absolute;
   bottom: 50px;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: var(--md-sys-color-surface-container-highest, #e6e0e9);
+  left: 0;
+  background-color: var(--md-sys-color-surface-container-high);
   padding: 8px;
   border-radius: 16px;
   display: grid;
-  grid-template-columns: repeat(4, 28px);
-  gap: 8px;
+  grid-template-columns: repeat(4, 44px);
+  gap: 4px;
   box-shadow: var(--md-sys-elevation-3, 0 4px 14px rgba(0, 0, 0, 0.25));
   border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.12));
   z-index: 600;
 }
 
 .batch-swatch {
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.2));
   cursor: pointer;
@@ -1208,21 +1342,33 @@ onUnmounted(() => {
 }
 
 @media (max-width: 640px) {
+  .notes-view {
+    padding-inline: 1rem;
+  }
+
   .batch-action-bar {
-    bottom: 1rem;
-    padding: 0.4rem 0.75rem;
-    gap: 0.5rem;
-    max-width: 95vw;
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    width: calc(100% - 2rem);
+    max-width: 400px;
+    padding: 0.5rem;
+    flex-direction: column;
+    gap: 0.25rem;
+    border-radius: var(--md-sys-shape-corner-xl);
   }
 
-  .batch-count {
-    font-size: 0.8rem;
+  .batch-bar-leading,
+  .batch-bar-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
-  .batch-btn {
-    width: 34px;
-    height: 34px;
-    font-size: 1rem;
+  .batch-text-btn {
+    margin-left: auto;
+  }
+
+  .batch-bar-actions {
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    padding-top: 0.25rem;
   }
 }
 </style>

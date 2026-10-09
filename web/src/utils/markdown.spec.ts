@@ -54,6 +54,20 @@ describe('renderMarkdown', () => {
     expect(wikilink).not.toContain('target="_blank"');
   });
 
+  it('keeps nested, ordered, quoted and code-block task boundaries', () => {
+    const html = renderMarkdown([
+      '[ ] Not a list', '', '- [ ] Parent', '  1. [x] Child', '- [ ] Sibling',
+      '', '> - [ ] Quoted', '', '```', '- [ ] Code', '```',
+    ].join('\n'));
+    const root = document.createElement('div');
+    root.innerHTML = html;
+    const checkboxes = root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(Array.from(checkboxes, (input) => input.dataset.taskIndex)).toEqual(['0', '1', '2', '3']);
+    expect(Array.from(checkboxes, (input) => input.checked)).toEqual([false, true, false, false]);
+    expect(root.querySelector('ol')?.classList.contains('task-list')).toBe(true);
+    expect(root.querySelector('pre input')).toBeNull();
+  });
+
   it('renders interactive task lists with checkboxes', () => {
     const markdown = '- [ ] Todo item\n- [x] Done item';
     const html = renderMarkdown(markdown);

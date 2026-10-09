@@ -208,7 +208,7 @@ function postProcess(userId, thing) {
     thing.color = noteColors.normalizeNoteColor(thing.color);
 }
 
-function getAll(userId, query, skip, limit, callback) {
+function createListCursor(userId, query, skip, limit) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof query, 'object');
 
@@ -228,10 +228,14 @@ function getAll(userId, query, skip, limit, callback) {
         cursor = cursor.sort({ sticky: -1, modifiedAt: -1, _id: -1 });
     }
 
-    var promise = cursor
-        .skip(skip)
-        .limit(limit)
-        .toArray().then(function (result) {
+    if (skip) cursor = cursor.skip(skip);
+    if (limit) cursor = cursor.limit(limit);
+    return cursor;
+}
+
+function getAll(userId, query, skip, limit, callback) {
+    var cursor = createListCursor(userId, query, skip, limit);
+    var promise = cursor.toArray().then(function (result) {
         (result || []).forEach(postProcess.bind(null, userId));
         return result || [];
     });
@@ -514,6 +518,7 @@ module.exports = {
     requireWriteFreeze: requireWriteFreeze,
     ensureIndexes: ensureIndexes,
     getUnifiedCollection: getUnifiedCollection,
+    createListCursor: createListCursor,
     resetCache: resetCache,
     queryHasText: queryHasText
 };

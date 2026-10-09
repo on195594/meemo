@@ -7,3 +7,4 @@ dist/
 /database/
 users.json
 .users.json
+.playwright-mcp/
