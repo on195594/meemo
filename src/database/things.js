@@ -541,5 +541,6 @@ module.exports = {
     getUnifiedCollection: getUnifiedCollection,
     createListCursor: createListCursor,
     resetCache: resetCache,
-    queryHasText: queryHasText
+    queryHasText: queryHasText,
+    normalizeQueryForIndex: normalizeQueryForIndex
 };

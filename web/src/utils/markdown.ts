@@ -226,16 +226,25 @@ export function toggleTaskItem(content: string, targetIndex: number): string {
 }
 
 const highlightCache = new Map<string, string>();
-const MAX_HIGHLIGHT_CACHE_SIZE = 500;
+const MAX_HIGHLIGHT_CACHE_SIZE = 200;
+// Skip caching very large notes so the cache's worst-case memory stays bounded.
+const MAX_HIGHLIGHT_CACHE_HTML_LENGTH = 20000;
 
 // Highlight search terms in already-sanitized HTML, touching only text nodes.
 // Splits on HTML tags (<...>) so attributes (href, src, …) are never touched.
 // Multi-word queries highlight each word independently.
 export function highlightKeyword(html: string, keyword: string): string {
   if (!keyword || !html) return html;
+  const cacheable = html.length <= MAX_HIGHLIGHT_CACHE_HTML_LENGTH;
   const cacheKey = `${keyword}\0${html}`;
-  const cached = highlightCache.get(cacheKey);
-  if (cached !== undefined) return cached;
+  if (cacheable) {
+    const cached = highlightCache.get(cacheKey);
+    if (cached !== undefined) {
+      highlightCache.delete(cacheKey);
+      highlightCache.set(cacheKey, cached);
+      return cached;
+    }
+  }
 
   // Collect individual terms: "#tag word" → ["tag", "word"]
   // Also extract [[target]] or [[target|label]] and support multi-delimiter
@@ -267,10 +276,12 @@ export function highlightKeyword(html: string, keyword: string): string {
     chunk.startsWith('<') ? chunk : chunk.replace(re, '<mark>$&</mark>')
   ).join('');
 
-  if (highlightCache.size >= MAX_HIGHLIGHT_CACHE_SIZE) {
-    const oldestKey = highlightCache.keys().next().value;
-    if (oldestKey !== undefined) highlightCache.delete(oldestKey);
+  if (cacheable) {
+    if (highlightCache.size >= MAX_HIGHLIGHT_CACHE_SIZE) {
+      const oldestKey = highlightCache.keys().next().value;
+      if (oldestKey !== undefined) highlightCache.delete(oldestKey);
+    }
+    highlightCache.set(cacheKey, result);
   }
-  highlightCache.set(cacheKey, result);
   return result;
 }

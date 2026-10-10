@@ -926,6 +926,14 @@ onUnmounted(() => {
   transition: opacity 0.15s ease;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .search-progress-bar .progress-indicator {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+}
+
 .loading-state {
   text-align: center;
   padding: 3rem 1rem;

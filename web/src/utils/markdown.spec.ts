@@ -163,4 +163,13 @@ describe('highlightKeyword', () => {
     const highlighted = highlightKeyword(html, 'test');
     expect(highlighted).toBe('<a class="wikilink" href="/?q=test" data-wikilink="test"><mark>test</mark></a>');
   });
+
+  it('returns identical output on repeated calls and for oversized html', () => {
+    const html = '<p>Hello world</p>';
+    expect(highlightKeyword(html, 'world')).toBe(highlightKeyword(html, 'world'));
+    const big = `<p>${'world '.repeat(5000)}</p>`;
+    const first = highlightKeyword(big, 'world');
+    expect(first).toContain('<mark>world</mark>');
+    expect(highlightKeyword(big, 'world')).toBe(first);
+  });
 });
