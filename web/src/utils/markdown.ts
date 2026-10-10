@@ -225,11 +225,18 @@ export function toggleTaskItem(content: string, targetIndex: number): string {
   return newLines.join('\n');
 }
 
+const highlightCache = new Map<string, string>();
+const MAX_HIGHLIGHT_CACHE_SIZE = 500;
+
 // Highlight search terms in already-sanitized HTML, touching only text nodes.
 // Splits on HTML tags (<...>) so attributes (href, src, …) are never touched.
 // Multi-word queries highlight each word independently.
 export function highlightKeyword(html: string, keyword: string): string {
-  if (!keyword) return html;
+  if (!keyword || !html) return html;
+  const cacheKey = `${keyword}\0${html}`;
+  const cached = highlightCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   // Collect individual terms: "#tag word" → ["tag", "word"]
   // Also extract [[target]] or [[target|label]] and support multi-delimiter
   const tokens = keyword.trim().match(/\[\[[^\]\n]+\]\]|[^\s,，、；;]+/g) || [];
@@ -256,7 +263,14 @@ export function highlightKeyword(html: string, keyword: string): string {
     terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
     'gi'
   );
-  return html.split(/(<[^>]*>)/).map((chunk) =>
+  const result = html.split(/(<[^>]*>)/).map((chunk) =>
     chunk.startsWith('<') ? chunk : chunk.replace(re, '<mark>$&</mark>')
   ).join('');
+
+  if (highlightCache.size >= MAX_HIGHLIGHT_CACHE_SIZE) {
+    const oldestKey = highlightCache.keys().next().value;
+    if (oldestKey !== undefined) highlightCache.delete(oldestKey);
+  }
+  highlightCache.set(cacheKey, result);
+  return result;
 }

@@ -163,6 +163,7 @@ function ensureIndexes(callback) {
     var promise = Promise.resolve().then(async function () {
         if (!config.db) throw new Error('MongoDB database is not connected');
         var collection = config.db.collection('things');
+        await collection.updateMany({ archived: { $exists: false } }, { $set: { archived: false } });
         await Promise.all([
             createIndex(collection, { ownerId: 1, modifiedAt: -1 }),
             createIndex(collection, { ownerId: 1, sticky: -1, modifiedAt: -1 }),
@@ -208,6 +209,25 @@ function postProcess(userId, thing) {
     thing.color = noteColors.normalizeNoteColor(thing.color);
 }
 
+function normalizeQueryForIndex(condition) {
+    if (!condition || typeof condition !== 'object') return condition;
+    if (Array.isArray(condition)) return condition.map(normalizeQueryForIndex);
+    if (Array.isArray(condition.$or) && condition.$or.length === 2) {
+        var hasFalse = condition.$or.some(function (c) { return c && c.archived === false; });
+        var hasMissing = condition.$or.some(function (c) {
+            return c && c.archived && typeof c.archived === 'object' && c.archived.$exists === false;
+        });
+        if (hasFalse && hasMissing && Object.keys(condition).length === 1) {
+            return { archived: false };
+        }
+    }
+    var normalized = {};
+    for (var key of Object.keys(condition)) {
+        normalized[key] = normalizeQueryForIndex(condition[key]);
+    }
+    return normalized;
+}
+
 function createListCursor(userId, query, skip, limit) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof query, 'object');
@@ -216,7 +236,8 @@ function createListCursor(userId, query, skip, limit) {
     var activeCondition = queryHasDeleted(query) ? {} : { deletedAt: { $exists: false } };
     var conditions = [ownerCondition];
     if (Object.keys(activeCondition).length) conditions.push(activeCondition);
-    if (Object.keys(query).length) conditions.push(query);
+    var normalizedQuery = normalizeQueryForIndex(query);
+    if (Object.keys(normalizedQuery).length) conditions.push(normalizedQuery);
     var unifiedQuery = conditions.length === 1 ? conditions[0] : { $and: conditions };
     var hasText = queryHasText(unifiedQuery);
     var cursor = getUnifiedCollection().find(unifiedQuery);

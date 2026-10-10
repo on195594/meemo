@@ -74,13 +74,18 @@
           @created="onNoteCreated"
         />
 
-        <div v-if="isLoading" class="loading-state">
+        <!-- Top Search/Filter Loading Bar when updating existing notes -->
+        <div v-if="isLoading && things.length > 0" class="search-progress-bar" role="progressbar" aria-label="Updating notes">
+          <div class="progress-indicator"></div>
+        </div>
+
+        <div v-if="isLoading && things.length === 0" class="loading-state">
           <span class="spinner"></span>
           <p>Loading notes...</p>
         </div>
 
         <!-- Notes Card List -->
-        <div v-else-if="things.length > 0" class="notes-card-list">
+        <div v-else-if="things.length > 0" class="notes-card-list" :class="{ 'is-refreshing': isLoading }">
           <!-- Pinned Section -->
           <section v-if="pinnedThings.length > 0" class="notes-section" aria-labelledby="pinned-heading">
             <h2 id="pinned-heading" class="section-label">Pinned</h2>
@@ -358,7 +363,7 @@ import NoteCard from '../components/NoteCard.vue';
 import NoteDetailModal from '../components/NoteDetailModal.vue';
 import ImageLightbox, { type LightboxImage } from '../components/ImageLightbox.vue';
 
-const { isAuthenticated, isLoading: authLoading, isFirstUser } = useAuth();
+const { isAuthenticated, isLoading: authLoading, isFirstUser, user } = useAuth();
 const { settings } = useSettings();
 const route = useRoute();
 const router = useRouter();
@@ -524,11 +529,17 @@ function clearRouteFilters() {
   router.replace({ query: {} });
 }
 
-function syncRouteFilters() {
+let lastSyncedFilterKey = '';
+
+function syncRouteFilters(force = false) {
   const q = typeof route.query.q === 'string' ? route.query.q : '';
   const tag = typeof route.query.tag === 'string' ? route.query.tag : null;
   const archived = route.query.archived === '1' || route.query.archived === 'true';
   const deleted = route.query.deleted === '1' || route.query.deleted === 'true';
+  const userId = user.value?.id || '';
+  const filterKey = `${userId}|${q}|${tag}|${archived}|${deleted}`;
+  if (!force && filterKey === lastSyncedFilterKey) return;
+  lastSyncedFilterKey = filterKey;
   setFilters({ search: q, tag, archived, deleted });
 }
 
@@ -811,8 +822,11 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 }
 
 watch(isAuthenticated, (authenticated) => {
-  if (!authenticated) return;
-  syncRouteFilters();
+  if (!authenticated) {
+    lastSyncedFilterKey = '';
+    return;
+  }
+  syncRouteFilters(true);
 }, { immediate: true });
 
 watch(
@@ -875,6 +889,41 @@ onUnmounted(() => {
 
 .notes-view.is-wide {
   max-width: 96%;
+}
+
+.search-progress-bar {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  background-color: var(--md-sys-color-surface-container-high, rgba(0, 0, 0, 0.08));
+  overflow: hidden;
+  border-radius: 2px;
+  margin-bottom: 0.75rem;
+}
+
+.search-progress-bar .progress-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 40%;
+  background-color: var(--md-sys-color-primary, #0066cc);
+  border-radius: 2px;
+  animation: search-indeterminate 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes search-indeterminate {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.notes-card-list.is-refreshing {
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
 }
 
 .loading-state {
