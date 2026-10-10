@@ -48,7 +48,7 @@
         <!-- Upload & Extraction Progress Bar -->
         <div v-if="isImporting" class="progress-section">
           <div class="progress-bar-container">
-            <div class="progress-fill" :style="{ width: uploadProgress + '%' }"></div>
+            <div class="progress-fill" :style="{ transform: `scaleX(${uploadProgress / 100})` }"></div>
           </div>
           <span class="progress-text">
             {{ uploadProgress < 100 ? `Uploading archive... ${uploadProgress}%` : 'Extracting and verifying notes...' }}
@@ -191,11 +191,12 @@ async function executeImport() {
 }
 
 .modal-card {
-  background: #ffffff;
-  border-radius: 10px;
+  background: var(--md-sys-color-surface-container, #ffffff);
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
+  border-radius: var(--md-sys-shape-corner-2xl, 28px);
   width: 100%;
   max-width: 480px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--md-sys-elevation-3, 0 10px 25px rgba(0, 0, 0, 0.15));
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -206,13 +207,13 @@ async function executeImport() {
   justify-content: space-between;
   align-items: center;
   padding: 1.25rem 1.5rem 0.75rem;
-  border-bottom: 1px solid #edf2f7;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
 }
 
 .modal-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1a202c;
+  color: var(--md-sys-color-on-surface, #1a202c);
   margin: 0;
 }
 
@@ -221,14 +222,14 @@ async function executeImport() {
   border: none;
   font-size: 1.5rem;
   line-height: 1;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
   cursor: pointer;
   padding: 0.25rem;
-  border-radius: 4px;
+  border-radius: var(--md-sys-shape-corner-xs, 4px);
 }
 
 .close-btn:hover {
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface, #2d3748);
 }
 
 .modal-body {
@@ -240,35 +241,36 @@ async function executeImport() {
 
 .import-desc {
   font-size: 0.9rem;
-  color: #4a5568;
+  color: var(--md-sys-color-on-surface-variant, #4a5568);
   line-height: 1.5;
 }
 
 .import-desc code {
-  background: #edf2f7;
-  padding: 0.1rem 0.3rem;
-  border-radius: 4px;
+  background: var(--md-sys-color-surface-container-high, #edf2f7);
+  color: var(--md-sys-color-on-surface, inherit);
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--md-sys-shape-corner-xs, 4px);
   font-size: 0.85rem;
 }
 
 .drop-zone {
-  border: 2px dashed #cbd5e0;
-  border-radius: 8px;
+  border: 2px dashed var(--md-sys-color-outline-variant, #cbd5e0);
+  border-radius: var(--md-sys-shape-corner-md, 12px);
   padding: 2rem 1rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
-  background-color: #f7fafc;
+  background-color: var(--md-sys-color-surface-container-low, #f7fafc);
   transition: all 0.2s;
   text-align: center;
 }
 
 .drop-zone:hover,
 .drop-zone.dragging {
-  border-color: #3182ce;
-  background-color: #ebf8ff;
+  border-color: var(--md-sys-color-primary, #0b57d0);
+  background-color: var(--md-sys-color-primary-container, #ebf8ff);
 }
 
 .drop-icon {
@@ -277,13 +279,13 @@ async function executeImport() {
 
 .drop-text {
   font-size: 0.85rem;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
 }
 
 .file-name {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #2b6cb0;
+  color: var(--md-sys-color-primary, #0b57d0);
 }
 
 .hidden-file-input {
@@ -298,37 +300,40 @@ async function executeImport() {
 
 .progress-bar-container {
   height: 8px;
-  background-color: #edf2f7;
-  border-radius: 4px;
+  background-color: var(--md-sys-color-surface-container-high, #edf2f7);
+  border-radius: var(--md-sys-shape-corner-xs, 4px);
   overflow: hidden;
 }
 
 .progress-fill {
+  width: 100%;
   height: 100%;
-  background-color: #3182ce;
-  transition: width 0.2s ease;
+  background-color: var(--md-sys-color-primary, #0b57d0);
+  transform-origin: left center;
+  transition: transform 0.2s ease;
+  will-change: transform;
 }
 
 .progress-text {
   font-size: 0.8rem;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
   text-align: center;
 }
 
 .success-banner {
-  background-color: #f0fff4;
-  border: 1px solid #c6f6d5;
-  color: #276749;
-  border-radius: 6px;
+  background-color: var(--note-color-mint, #f0fff4);
+  border: 1px solid var(--md-sys-color-outline-variant, #c6f6d5);
+  color: var(--md-sys-color-on-surface, #276749);
+  border-radius: var(--md-sys-shape-corner-sm, 8px);
   padding: 0.75rem;
   font-size: 0.875rem;
 }
 
 .error-banner {
-  background-color: #fff5f5;
-  border: 1px solid #fed7d7;
-  color: #c53030;
-  border-radius: 6px;
+  background-color: var(--md-sys-color-error-container, #fff5f5);
+  border: 1px solid var(--md-sys-color-error, #fed7d7);
+  color: var(--md-sys-color-on-error-container, #c53030);
+  border-radius: var(--md-sys-shape-corner-sm, 8px);
   padding: 0.75rem;
   font-size: 0.875rem;
 }
@@ -338,12 +343,12 @@ async function executeImport() {
   justify-content: flex-end;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem 1.25rem;
-  border-top: 1px solid #edf2f7;
+  border-top: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
 }
 
 .btn-modal {
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-sm, 8px);
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
@@ -351,27 +356,27 @@ async function executeImport() {
 }
 
 .btn-modal.primary {
-  background-color: #2b6cb0;
-  color: #ffffff;
+  background-color: var(--md-sys-color-primary, #0b57d0);
+  color: var(--md-sys-color-on-primary, #ffffff);
   border: 1px solid transparent;
 }
 
 .btn-modal.primary:hover:not(:disabled) {
-  background-color: #2c5282;
+  opacity: 0.92;
 }
 
 .btn-modal.secondary {
-  background-color: #edf2f7;
-  color: #4a5568;
-  border: 1px solid #cbd5e0;
+  background-color: var(--md-sys-color-surface-container-high, #edf2f7);
+  color: var(--md-sys-color-on-surface, #4a5568);
+  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
 }
 
 .btn-modal.secondary:hover:not(:disabled) {
-  background-color: #e2e8f0;
+  background-color: var(--md-sys-color-surface-container-low, #e2e8f0);
 }
 
 .btn-modal:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 </style>

@@ -298,11 +298,12 @@ async function handleRegister() {
 }
 
 .modal-card {
-  background: #ffffff;
-  border-radius: 10px;
+  background: var(--md-sys-color-surface-container, #ffffff);
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
+  border-radius: var(--md-sys-shape-corner-2xl, 28px);
   width: 100%;
   max-width: 440px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--md-sys-elevation-3, 0 10px 25px rgba(0, 0, 0, 0.15));
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -318,7 +319,7 @@ async function handleRegister() {
 .modal-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1a202c;
+  color: var(--md-sys-color-on-surface, #1a202c);
   margin: 0;
 }
 
@@ -327,29 +328,29 @@ async function handleRegister() {
   border: none;
   font-size: 1.5rem;
   line-height: 1;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
   cursor: pointer;
   padding: 0.25rem;
-  border-radius: 4px;
+  border-radius: var(--md-sys-shape-corner-xs, 4px);
 }
 
 .close-btn:hover {
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface, #2d3748);
 }
 
 .first-user-banner {
   margin: 0.5rem 1.5rem 0.75rem;
   padding: 0.75rem;
-  background-color: #ebf8ff;
-  border: 1px solid #bee3f8;
-  color: #2b6cb0;
-  border-radius: 6px;
+  background-color: var(--md-sys-color-primary-container, #ebf8ff);
+  border: 1px solid var(--md-sys-color-outline-variant, #bee3f8);
+  color: var(--md-sys-color-on-primary-container, #2b6cb0);
+  border-radius: var(--md-sys-shape-corner-sm, 8px);
   font-size: 0.9rem;
 }
 
 .tab-switcher {
   display: flex;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
   margin: 0 1.5rem;
 }
 
@@ -360,24 +361,24 @@ async function handleRegister() {
   padding: 0.75rem;
   font-size: 0.95rem;
   font-weight: 500;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.2s ease;
 }
 
 .tab-btn.active {
-  color: #2b6cb0;
-  border-bottom-color: #2b6cb0;
+  color: var(--md-sys-color-primary, #0b57d0);
+  border-bottom-color: var(--md-sys-color-primary, #0b57d0);
 }
 
 .error-banner {
   margin: 1rem 1.5rem 0;
   padding: 0.6rem 0.8rem;
-  background-color: #fff5f5;
-  border: 1px solid #fed7d7;
-  color: #c53030;
-  border-radius: 6px;
+  background-color: var(--md-sys-color-error-container, #fff5f5);
+  border: 1px solid var(--md-sys-color-error, #fed7d7);
+  color: var(--md-sys-color-on-error-container, #c53030);
+  border-radius: var(--md-sys-shape-corner-sm, 8px);
   font-size: 0.875rem;
 }
 
@@ -397,26 +398,28 @@ async function handleRegister() {
 .form-group label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #4a5568;
+  color: var(--md-sys-color-on-surface, #4a5568);
 }
 
 .form-input {
   padding: 0.6rem 0.75rem;
-  border: 1px solid #cbd5e0;
-  border-radius: 6px;
+  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
+  border-radius: var(--md-sys-shape-corner-sm, 8px);
   font-size: 0.95rem;
+  background-color: var(--md-sys-color-surface, #ffffff);
+  color: var(--md-sys-color-on-surface, inherit);
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .form-input:focus {
-  border-color: #3182ce;
-  box-shadow: 0 0 0 2px rgba(49, 130, 206, 0.2);
+  border-color: var(--md-sys-color-primary, #0b57d0);
+  box-shadow: 0 0 0 2px var(--md-sys-color-primary-container, rgba(11, 87, 208, 0.2));
 }
 
 .field-hint {
   font-size: 0.75rem;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
 }
 
 .form-actions {
@@ -427,24 +430,24 @@ async function handleRegister() {
   width: 100%;
   padding: 0.65rem 1rem;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-sm, 8px);
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: opacity 0.2s;
 }
 
 .submit-btn.primary {
-  background-color: #2b6cb0;
-  color: #ffffff;
+  background-color: var(--md-sys-color-primary, #0b57d0);
+  color: var(--md-sys-color-on-primary, #ffffff);
 }
 
 .submit-btn.primary:hover:not(:disabled) {
-  background-color: #2c5282;
+  opacity: 0.92;
 }
 
 .submit-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 </style>

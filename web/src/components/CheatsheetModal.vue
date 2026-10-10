@@ -120,11 +120,12 @@ function handleClose() {
 }
 
 .modal-card {
-  background: #ffffff;
-  border-radius: 10px;
+  background: var(--md-sys-color-surface-container, #ffffff);
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
+  border-radius: var(--md-sys-shape-corner-2xl, 28px);
   width: 100%;
   max-width: 540px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--md-sys-elevation-3, 0 10px 25px rgba(0, 0, 0, 0.15));
   overflow: hidden;
   max-height: 85vh;
   display: flex;
@@ -136,13 +137,13 @@ function handleClose() {
   justify-content: space-between;
   align-items: center;
   padding: 1.25rem 1.5rem 0.75rem;
-  border-bottom: 1px solid #edf2f7;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
 }
 
 .modal-title {
   font-size: 1.2rem;
   font-weight: 600;
-  color: #1a202c;
+  color: var(--md-sys-color-on-surface, #1a202c);
   margin: 0;
 }
 
@@ -151,14 +152,14 @@ function handleClose() {
   border: none;
   font-size: 1.5rem;
   line-height: 1;
-  color: #718096;
+  color: var(--md-sys-color-on-surface-variant, #718096);
   cursor: pointer;
   padding: 0.25rem;
-  border-radius: 4px;
+  border-radius: var(--md-sys-shape-corner-xs, 4px);
 }
 
 .close-btn:hover {
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface, #2d3748);
 }
 
 .modal-body {
@@ -171,7 +172,7 @@ function handleClose() {
 
 .cheatsheet-section h3 {
   font-size: 1rem;
-  color: #2b6cb0;
+  color: var(--md-sys-color-primary, #0b57d0);
   margin-bottom: 0.5rem;
   font-weight: 600;
 }
@@ -185,31 +186,33 @@ function handleClose() {
 .cheat-table th,
 .cheat-table td {
   padding: 0.45rem 0.6rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
   text-align: left;
 }
 
 .cheat-table th {
-  background-color: #f7fafc;
-  color: #4a5568;
+  background-color: var(--md-sys-color-surface-container-high, #f7fafc);
+  color: var(--md-sys-color-on-surface, #4a5568);
 }
 
 .cheat-table td {
-  color: #2d3748;
+  color: var(--md-sys-color-on-surface-variant, #2d3748);
 }
 
 .cheat-table code {
-  background: #edf2f7;
+  background: var(--md-sys-color-surface-container-high, #edf2f7);
+  color: var(--md-sys-color-on-surface, inherit);
   padding: 0.1rem 0.35rem;
-  border-radius: 4px;
+  border-radius: var(--md-sys-shape-corner-xs, 4px);
   font-family: monospace;
   font-size: 0.85rem;
 }
 
 kbd {
-  background: #edf2f7;
-  border: 1px solid #cbd5e0;
-  border-radius: 3px;
+  background: var(--md-sys-color-surface-container-high, #edf2f7);
+  color: var(--md-sys-color-on-surface, inherit);
+  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
+  border-radius: var(--md-sys-shape-corner-xs, 3px);
   padding: 0.1rem 0.3rem;
   font-size: 0.75rem;
   font-family: monospace;
@@ -219,21 +222,22 @@ kbd {
   display: flex;
   justify-content: flex-end;
   padding: 0.75rem 1.5rem 1.25rem;
-  border-top: 1px solid #edf2f7;
+  border-top: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
 }
 
 .btn-modal {
   padding: 0.45rem 1rem;
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-sm, 8px);
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  background-color: #edf2f7;
-  color: #4a5568;
-  border: 1px solid #cbd5e0;
+  background-color: var(--md-sys-color-surface-container-high, #edf2f7);
+  color: var(--md-sys-color-on-surface, #4a5568);
+  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
+  transition: opacity 0.2s;
 }
 
 .btn-modal:hover {
-  background-color: #e2e8f0;
+  opacity: 0.9;
 }
 </style>

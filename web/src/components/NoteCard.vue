@@ -794,7 +794,8 @@ async function confirmDelete() {
 }
 
 .note-card.is-sticky {
-  border-left: 4px solid var(--md-sys-color-primary);
+  box-shadow: var(--md-sys-elevation-2);
+  border-color: var(--md-sys-color-primary);
 }
 
 .note-card.is-archived {
@@ -1007,7 +1008,7 @@ async function confirmDelete() {
 
 .card-body :deep(blockquote) {
   padding-left: 0.75rem;
-  border-left: 3px solid var(--md-sys-color-outline-variant);
+  border-left: 2px solid var(--md-sys-color-outline-variant);
   color: var(--md-sys-color-on-surface-variant);
 }
 
