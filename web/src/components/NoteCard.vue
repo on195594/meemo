@@ -798,6 +798,10 @@ async function confirmDelete() {
   border-color: var(--md-sys-color-primary);
 }
 
+.note-card.is-sticky:hover {
+  box-shadow: var(--md-sys-elevation-3);
+}
+
 .note-card.is-archived {
   opacity: 0.85;
 }

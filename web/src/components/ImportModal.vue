@@ -47,7 +47,14 @@
 
         <!-- Upload & Extraction Progress Bar -->
         <div v-if="isImporting" class="progress-section">
-          <div class="progress-bar-container">
+          <div
+            class="progress-bar-container"
+            role="progressbar"
+            aria-label="Import progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-valuenow="uploadProgress"
+          >
             <div class="progress-fill" :style="{ transform: `scaleX(${uploadProgress / 100})` }"></div>
           </div>
           <span class="progress-text">
@@ -311,7 +318,6 @@ async function executeImport() {
   background-color: var(--md-sys-color-primary, #0b57d0);
   transform-origin: left center;
   transition: transform 0.2s ease;
-  will-change: transform;
 }
 
 .progress-text {

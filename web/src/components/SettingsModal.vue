@@ -295,7 +295,7 @@ async function handleSave() {
   padding: 0.6rem 0.8rem;
   background-color: var(--md-sys-color-error-container, #fff5f5);
   border: 1px solid var(--md-sys-color-error, #fed7d7);
-  color: var(--md-sys-color-on-error, #c53030);
+  color: var(--md-sys-color-on-error-container, #c53030);
   border-radius: 6px;
   font-size: 0.875rem;
 }

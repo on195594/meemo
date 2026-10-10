@@ -30,31 +30,9 @@ colors:
   note-clay: "#f5ece2"
   note-chalk: "#f1f3f4"
 typography:
-  display:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "2rem"
-    fontWeight: 700
-    lineHeight: 1.25
-  headline:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "1.5rem"
-    fontWeight: 600
-    lineHeight: 1.3
-  title:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "1.125rem"
-    fontWeight: 600
-    lineHeight: 1.4
   body:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "0.9375rem"
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif"
     fontWeight: 400
-    lineHeight: 1.55
-  label:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "0.8125rem"
-    fontWeight: 500
-    lineHeight: 1.4
 rounded:
   none: "0px"
   xs: "4px"
@@ -64,12 +42,6 @@ rounded:
   xl: "24px"
   2xl: "28px"
   full: "9999px"
-spacing:
-  xs: "4px"
-  sm: "8px"
-  md: "16px"
-  lg: "24px"
-  xl: "32px"
 components:
   button-primary:
     backgroundColor: "{colors.primary}"
@@ -135,21 +107,14 @@ Every note color is calibrated as a background tone that preserves comfortable r
 
 ## Typography
 
-Typography prioritizes system-native fonts (`-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`) for instantaneous render times and platform familiarity.
-
-- **Display** (`2rem`, 700 weight): App branding and hero welcomes.
-- **Headline** (`1.5rem`, 600 weight): Modal headers and workspace section titles (`Notes`, `Archive`, `Trash`).
-- **Title** (`1.125rem`, 600 weight): Note card titles.
-- **Body** (`0.9375rem`, 400 weight, `1.55` line height): Note card body copy, modal editor text, markdown prose.
-- **Label** (`0.8125rem`, 500 weight): Tag chips, timestamp metadata, keyboard shortcuts.
-- **Code / Monospace** (`0.875rem`, font-family: monospace): Markdown code spans and fenced blocks.
+System font stack (`-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, ...`) throughout; code uses `monospace`. Sizes are set per component in `rem` (e.g. modal titles 1.2-1.25rem, card body ~0.95rem, meta 0.725-0.825rem); there is no shared type-scale token yet.
 
 ## Layout
 
 - **Header Bar**: Sticky navigation bar with responsive width constraint (`is-wide` mode toggle), central pill search input, and right-aligned theme toggle and account controls.
-- **Masonry Grid**: Multi-column masonry layout (`column-count` responsive breakpoints: 1 column on mobile `< 600px`, 2 columns at `600px-1024px`, 3-4 columns on desktop `> 1024px`).
-- **Stream Composer**: Centered top composer that starts as a single-line prompt and expands smoothly on focus into a full Markdown drafting card.
-- **Modal Layer**: Centered floating dialog (`max-width: 680px` for note details, `max-width: 480px` for dialogs) with smooth backdrop blur.
+- **Masonry Grid**: CSS multi-column (`column-width: 280px`, `column-gap: 1rem`); column count follows container width.
+- **Stream Composer**: Top composer starts as a one-row textarea and expands on focus or content.
+- **Modal Layer**: Centered dialogs: note detail `min(720px, 94vw)`, auth/import 440-480px, cheatsheet 540px.
 
 ## Elevation & Depth
 
@@ -174,9 +139,8 @@ Corner radii adhere to the M3 shape hierarchy:
 
 ### Note Card
 - Card surface tinted with the note's selected background tone.
-- Hover reveal for quick action buttons (Pin, Color, Archive, Delete).
-- Pinned cards use subtle elevation depth (`elevation-2`) and primary border tint without thick side tabs.
-- Checkboxes in markdown task lists styled with rounded corners and smooth tick transitions.
+- Pinned cards use `elevation-2` (`elevation-3` on hover) and a primary border tint, with no thick side tabs.
+- Markdown task items render interactive checkboxes.
 
 ### Search Pill
 - Centered in header, full-width on mobile.
@@ -190,7 +154,7 @@ Corner radii adhere to the M3 shape hierarchy:
 
 ### Color Picker
 - 12 circular swatches in a grid popover.
-- Visual checkmark or focus ring on the active selection.
+- Active swatch exposed with `aria-pressed`.
 
 ## Do's and Don'ts
 
