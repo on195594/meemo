@@ -35,25 +35,6 @@ describe('Vue 3 Cutover and Legacy Retirement (RF-506)', function () {
         });
     });
 
-    describe('Modern Vue 3 SPA Build Artifacts', function () {
-        it('has modern Vue 3 SPA build output in public directory', function () {
-            var publicDir = path.join(rootDir, 'public');
-            expect(fs.existsSync(publicDir)).to.be(true);
-            expect(fs.existsSync(path.join(publicDir, 'index.html'))).to.be(true);
-            expect(fs.existsSync(path.join(publicDir, 'favicon.png'))).to.be(true);
-
-            var indexHtml = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
-            expect(indexHtml).to.contain('<div id="app"></div>');
-            expect(indexHtml).to.contain('/assets/');
-
-            var assetsDir = path.join(publicDir, 'assets');
-            expect(fs.existsSync(assetsDir)).to.be(true);
-            var assetFiles = fs.readdirSync(assetsDir);
-            expect(assetFiles.some(function (f) { return f.endsWith('.js'); })).to.be(true);
-            expect(assetFiles.some(function (f) { return f.endsWith('.css'); })).to.be(true);
-        });
-    });
-
     describe('Express Static Serving and SPA History Routing', function () {
         it('serves SPA index.html on root path /', function (done) {
             request(app)

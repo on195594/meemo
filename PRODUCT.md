@@ -12,11 +12,11 @@ Self-hosted individuals, developers, and knowledge workers managing personal not
 
 ## Product Purpose
 
-A responsive, self-hosted scratchpad and note-taking web application inspired by Google Keep and Material Design 3. Meemo provides an instant, low-friction environment to capture thoughts, format with Markdown, organize via tags and colors, and retrieve with relevance-scored full-text search without vendor lock-in or cloud privacy compromises.
+A responsive, self-hosted scratchpad and note-taking web application inspired by Google Keep and Material Design 3. Meemo provides an instant, low-friction environment to capture thoughts, format with Markdown, organize via tags and colors, and retrieve with relevance-scored full-text search without vendor lock-in or a mandatory cloud service.
 
 ## Positioning
 
-Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesystem attachments) and keeps accounts, notes, and attachments on the operator's own host. It combines Google Keep-style color organization and fast capture with Markdown, wikilinks, and full-text search.
+Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesystem attachments) and keeps accounts, notes, and attachments on the operator's own host. It combines Google Keep-style color organization and fast capture with Markdown, wikilinks, and full-text search. Optional assistant read access is a separate privacy decision: retrieved private note content may be sent to Google.
 
 ## Operating Context
 
@@ -32,7 +32,8 @@ Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesys
 - **Content Formatting**: Markdown rendering, interactive task checkboxes, wikilinks, search-term highlighting.
 - **Organization**: Pinned notes section, 12-color Keep-calibrated palette with automatic dark mode contrast recalibration, dynamic tag aggregation, multi-select batch actions (pin, archive, color, delete to trash).
 - **Import/Export**: Drag-and-drop `.tar` archive import with progress tracking; `.tar` export (`/api/export`).
-- **Authentication**: Local username/password authentication with bcrypt hashing, server-side MongoDB sessions, configurable registration modes (`open`, `first-user`, `disabled`).
+- **Authentication**: Browser username/password login with bcrypt hashing, server-side MongoDB sessions, configurable registration modes (`open`, `first-user`, `disabled`). MCP uses separately consented, user-bound OAuth tokens, not REST session substitution.
+- **Optional assistant**: Default-disabled, read-only Gemini/MCP search, note reads and tag listing. Private-note transfer requires explicit consent; writing remains gated and real Meemo client acceptance is pending. See [current configuration and boundaries](docs/GEMINI_ASSISTANT.md).
 - **Constraints**: Self-hosted only; URL enrichment (outbound fetch) is disabled by default for SSRF safety; note colors are designed toward WCAG AA contrast (not formally audited).
 
 ## Brand Commitments
@@ -42,16 +43,16 @@ Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesys
 
 ## Evidence on Hand
 
-- Verified Vue 3 frontend (`web/src/`) with 98 automated Vitest unit/component behavior tests.
-- Express runtime with complete Mocha integration test suite.
+- Vue 3 frontend (`web/src/`) validated by build, typecheck and Vitest component/store/route behavior tests. Exact counts belong in dated validation records, not this product baseline.
+- Express runtime covered by Mocha server and integration tests.
 - Authoritative OpenAPI 3.0 specification (`docs/openapi.yaml`) and TypeScript domain definitions (`types/api.d.ts`).
-- Production-tested Docker Compose stack with healthchecks and graceful shutdown.
+- Docker Compose packaging with healthchecks and graceful shutdown; candidate releases require the [release checklist](docs/RELEASE_CHECKLIST.md). MCP deployment and real-client acceptance are still pending.
 
 ## Product Principles
 
 1. **Capture First**: The input bar is prominent and ready. Opening and composing notes takes zero unnecessary friction; autosave protects against data loss.
 2. **Calm Hierarchy**: Chrome recedes into the background. Note cards are clear, comfortable, and tactile; color functions as an organizational aid rather than visual noise.
-3. **Data Sovereignty**: Data stays on the operator's host; archive import and export keep notes portable.
+3. **Data Sovereignty**: Persistent notes and attachments stay on the operator's host; archive import and export keep notes portable. No external AI service is required; opt-in assistant access explicitly permits private content to leave the host.
 4. **Keyboard & Accessibility by Default**: Keyboard shortcuts (`/`, `Ctrl+K`, `Esc`), ARIA landmarks, and visible focus.
 
 ## Provenance

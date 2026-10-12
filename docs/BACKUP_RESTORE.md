@@ -27,6 +27,14 @@ A synthetic `PASS` proves this fixture and flow, not production recovery readine
 
 On the current production host, use `/home/lin/meemo-repo` only as the Git repository and `/home/lin/meemo` only as the production operations directory. Run source checks and image builds from the repository; run production Compose commands from the operations directory. Store backups and readiness evidence outside both. The operations directory must not contain a Git checkout or copied build context.
 
+## Optional MCP authorization state
+
+When MCP is enabled, dumps also contain sensitive `mcp_clients`, `mcp_requests`, `mcp_codes`, `mcp_grants`, and `mcp_tokens`. Note exports do not include these credentials/authorization records. TTL expiry does not make backup contents non-sensitive.
+
+After a database restore, keep `MCP_ENABLED=false` until a separately authorized, target-verified recovery step excludes or invalidates all five restored MCP collections. This prevents an older backup from resurrecting a revoked grant. Do not perform production deletion under this runbook without explicit authorization. Clients must reconnect/re-register afterward; ordinary note reads and browser login do not depend on OAuth state. See [MCP recovery and rollback](GEMINI_ASSISTANT.md#persistence-recovery-and-rollback).
+
+The current synthetic restore fixture does not seed or validate MCP grants; its PASS is not evidence of MCP-state recovery. Add that fixture before claiming OAuth recovery acceptance.
+
 ## Compatibility
 
 - Record the application image ID and repository digest, commit SHA, Compose file, non-secret configuration names, MongoDB image version, and UTC timestamp.

@@ -9,6 +9,7 @@
 - [Contribution guide](../CONTRIBUTING.md): coding and validation workflow.
 - [Agent instructions](../AGENTS.md): repository-specific working rules.
 - [Security policy](../SECURITY.md): vulnerability reporting and support policy.
+- [Gemini assistant](GEMINI_ASSISTANT.md): implemented, default-disabled read-only MCP, OAuth configuration, privacy, revocation and recovery.
 
 ## Operations and validation
 
@@ -21,12 +22,17 @@
 
 ## Plans and review snapshots
 
+- [Gemini assistant integration plan](roadmaps/2026-10-12-gemini-assistant-integration.md): staged MCP + OAuth integration; phase-1 read-only candidate implemented, real Meemo acceptance and writing remain pending.
+- [AGY integration-plan review](reviews/2026-10-12-gemini-assistant-agy-review.md): independent CLI review, verified findings, plan revisions, and scoped PASS on recheck; not implementation acceptance.
+- [AGY MCP implementation review](reviews/2026-10-12-gemini-mcp-implementation-agy-review.md): real independent CLI review, SDK evidence-based adjudication and scoped recheck PASS; not production acceptance.
+- [Codex MCP review and fixes](reviews/2026-10-12-gemini-mcp-codex-review.md): four verified findings repaired, full candidate recheck PASS_WITH_NOTES, local regressions and isolation evidence; not production acceptance.
+
 - [Architecture evolution roadmap](roadmaps/2026-09-18-architecture-evolution.md): staged work and acceptance criteria.
 - [MD3 review and recommendations](reviews/meemo-md3-review-and-fix-recommendations.md): review findings and proposed fixes.
 - [Impeccable UI audit and polish](reviews/2026-10-08-impeccable-ui-audit.md): scoped UI findings, implemented refinements, modal focus hardening, and synthetic browser validation.
 - [Performance optimization snapshot](reviews/2026-09-30-performance-optimization.md): implemented optimizations, synthetic before/after measurements, validation and remaining limits.
 
-Keep new plans in `roadmaps/` and review reports in `reviews/`. These documents retain design rationale; confirm implementation against source and tests before treating a recommendation as current behavior.
+Keep new plans in `roadmaps/` and review reports in `reviews/`. These documents retain design rationale; confirm implementation against source and tests before treating a recommendation as current behavior. Dated test counts and reviewer verdicts describe their original candidate, not later cleanup changes. Private `/tmp` review snapshots/logs and `.playwright-mcp` captures are disposable and may no longer exist; durable conclusions live in these reports.
 
 ## Directory maintenance
 
@@ -35,7 +41,8 @@ Keep new plans in `roadmaps/` and review reports in `reviews/`. These documents 
 - Retain offline migration and retirement tooling while backup/restore and release runbooks depend on it. Being unused by the HTTP server does not make a migration script dead code.
 - `types/api.d.ts` and `types/index.d.ts` form the package's declared TypeScript entry point; generated HTTP types live separately in `types/generated/`.
 - `npm run build` produces staging output in `web/dist/` and the Express-served copy in `public/`. Both are ignored and reproducible; `npm run build:web` updates only the staging output.
-- Keep dependencies, account files, attachments, database files, backups, and migration evidence out of commits. Do not treat ignored local state as disposable temporary files.
+- Keep dependencies, account files, attachments, database files, backups, and migration evidence out of commits. Do not treat ignored local state as disposable temporary files. Clean only identified logs/captures/review scratch copies after preserving conclusions; do not blanket-delete ignored directories, shared `/tmp`, or local data.
+- Keep Vue behavior tests with `web/src/`; server tests own HTTP/static delivery, authentication, persistence and verification tools. Obsolete Vue source-string and duplicate bundle-presence assertions are not a second frontend test suite.
 - Remove code only after checking runtime, test, script, build, and declared-package callers. Prefer removing unused entry points over moving working modules for appearance.
 
 Update the relevant current document when behavior changes, and keep links in this index and the project README synchronized. Historical findings should remain clearly distinguishable from current contracts.

@@ -11,13 +11,6 @@ function generateRequestId() {
     return crypto.randomBytes(16).toString('hex');
 }
 
-function sanitizeValue(key, value) {
-    if (SENSITIVE_KEY_PATTERN.test(key)) {
-        return '[REDACTED]';
-    }
-    return value;
-}
-
 function sanitizeObject(obj) {
     if (!obj || typeof obj !== 'object') return obj;
     if (Array.isArray(obj)) return obj.map(sanitizeObject);

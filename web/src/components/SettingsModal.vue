@@ -15,6 +15,8 @@
         </button>
       </header>
 
+      <router-link to="/assistant/connections" @click="handleClose">Manage assistant connections</router-link>
+
       <form @submit.prevent="handleSave" class="settings-form">
         <!-- Error Banner -->
         <div v-if="errorMessage" class="error-banner" role="alert">

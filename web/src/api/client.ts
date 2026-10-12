@@ -25,6 +25,8 @@ export type AttachmentDescriptor = components['schemas']['AttachmentDescriptor']
 export type Thing = components['schemas']['Thing'];
 export type NoteColor = components['schemas']['NoteColor'];
 export type Tag = components['schemas']['Tag'];
+export type McpConnectionsResponse = components['schemas']['McpConnectionsResponse'];
+export type McpConsentResponse = components['schemas']['McpConsentResponse'];
 
 type JsonResponse<
   Operation extends { responses: object },
@@ -129,6 +131,17 @@ export const api = {
         body: JSON.stringify(data),
       }),
     profile: () => request<ProfileResponse>('/api/profile'),
+  },
+
+  mcp: {
+    connections: () => request<McpConnectionsResponse>('/api/mcp/connections'),
+    consent: (id: string) => request<McpConsentResponse>(`/api/mcp/consent?request=${encodeURIComponent(id)}`),
+    decide: (id: string, allow: boolean, csrfToken: string) => request<{ redirectUrl: string }>('/api/mcp/consent', {
+      method: 'POST', headers: { 'X-CSRF-Token': csrfToken }, body: JSON.stringify({ request: id, allow }),
+    }),
+    revoke: (id: string, csrfToken: string) => request<void>(`/api/mcp/connections/${encodeURIComponent(id)}`, {
+      method: 'DELETE', headers: { 'X-CSRF-Token': csrfToken },
+    }),
   },
 
   things: {

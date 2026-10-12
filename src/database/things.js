@@ -275,16 +275,40 @@ function getAllLean(userId, callback) {
     return nodeify(promise, callback);
 }
 
-function getTagUsage(userId, callback) {
+function getSummaries(userId, query, skip, limit) {
+    var projection = { _id: 1, revision: 1, modifiedAt: 1, content: { $substrCP: [{ $ifNull: ['$content', ''] }, 0, 300] } };
+    if (queryHasText(query)) projection.score = { $meta: 'textScore' };
+    return createListCursor(userId, query, skip, limit).project(projection).maxTimeMS(3000).toArray();
+}
+
+async function getSnapshot(userId, thingId) {
+    assert.strictEqual(typeof userId, 'string');
+    if (!ObjectId.isValid(thingId)) throw new Error('not found');
+    var result = await getUnifiedCollection().findOne({ _id: new ObjectId(thingId), ownerId: userId, deletedAt: { $exists: false } }, {
+        projection: { content: 1, revision: 1 }, maxTimeMS: 3000
+    });
+    if (!result) throw new Error('not found');
+    return result;
+}
+
+function getTagUsage(userId, options, callback) {
+    if (typeof options === 'function') { callback = options; options = undefined; }
     assert.strictEqual(typeof userId, 'string');
 
-    var promise = getUnifiedCollection().aggregate([
+    var pipeline = [
         { $match: { ownerId: userId, deletedAt: { $exists: false } } },
         { $project: { tags: 1, _id: 0 } },
         { $unwind: '$tags' },
         { $group: { _id: '$tags', usage: { $sum: 1 } } },
         { $sort: { usage: -1, _id: 1 } }
-    ]).toArray().then(function (result) {
+    ];
+    if (options) {
+        assert(Number.isInteger(options.skip) && options.skip >= 0 && options.skip <= 1000);
+        assert(Number.isInteger(options.limit) && options.limit >= 1 && options.limit <= 51);
+        if (options.skip) pipeline.push({ $skip: options.skip });
+        pipeline.push({ $limit: options.limit });
+    }
+    var promise = getUnifiedCollection().aggregate(pipeline, options ? { maxTimeMS: 3000 } : {}).toArray().then(function (result) {
         return (result || []).map(function (tag) {
             return { ownerId: userId, name: tag._id, usage: tag.usage };
         });
@@ -525,6 +549,8 @@ module.exports = {
     getAll: getAll,
     getAllLean: getAllLean,
     getTagUsage: getTagUsage,
+    getSummaries: getSummaries,
+    getSnapshot: getSnapshot,
     get: get,
     getById: getById,
     add: add,

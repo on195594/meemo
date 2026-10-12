@@ -264,8 +264,9 @@ function purge(userId, thingId, expectedRevision, callback) {
     return nodeify(things.purge(userId, thingId, expectedRevision), callback);
 }
 
-function getTags(userId, callback) {
-    return nodeify(things.getTagUsage(userId), callback);
+function getTags(userId, options, callback) {
+    if (typeof options === 'function') { callback = options; options = undefined; }
+    return nodeify(things.getTagUsage(userId, options), callback);
 }
 
 function cleanupTags(callback) {

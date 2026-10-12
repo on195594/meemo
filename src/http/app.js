@@ -42,6 +42,13 @@ function createApp(options) {
         app.set('trust proxy', ['loopback', 'uniquelocal']);
     }
 
+    var mcp = require('./mcp.js').createMcp(options, structuredLogger);
+    app.use(mcp.protocol);
+    app.use('/assistant', function (req, res, next) {
+        res.set('Referrer-Policy', 'no-referrer').set('Cache-Control', 'no-store');
+        next();
+    });
+
     app.use(serveStatic(path.join(__dirname, '../../public'), {
         etag: true,
         lastModified: true,
@@ -60,6 +67,7 @@ function createApp(options) {
         app.use(cors({ origin: allowedOrigins, credentials: true }));
     }
 
+    app.use('/api/mcp', json({ strict: true, limit: '2kb' }));
     app.use(json({ strict: true, limit: '5mb' }));
 
     app.use('/api/health/ready', function (req, res, next) {
@@ -70,6 +78,7 @@ function createApp(options) {
     });
 
     app.use(createSession(options));
+    app.use(mcp.browser);
     app.use(createRouter(uploads));
     app.use(responses.errorHandler);
 

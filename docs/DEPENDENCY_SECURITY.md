@@ -1,5 +1,11 @@
 # Dependency security (VR-213)
 
+## 2026-10-12 MCP candidate audit
+
+Phase-1 integration adds exact `@modelcontextprotocol/sdk@1.32.1` and `express-rate-limit@8.7.1`. The SDK's nested Express 5 dependency requires `proxy-addr@2.0.8`, so npm deduplication also advances the compatible shared transitive version from 2.0.7. The app's Express 4 and other existing package versions are unchanged; `npm ci` verifies the resulting lockfile.
+
+`npm audit --omit=dev` on this candidate reports one **moderate** finding in existing `multer@2.3.0` (unchanged from HEAD), not a clean production audit. MCP-added packages are not named in that report. No blanket `npm audit fix` or unrelated dependency upgrade was performed; remediate/accept the existing finding under the release security policy. Prior scan results below are historical snapshots, not proof of the current registry state.
+
 ## Scope and result
 
 Production dependencies were audited with `npm audit --package-lock-only --omit=dev --json` against the baseline and remediated lockfiles.

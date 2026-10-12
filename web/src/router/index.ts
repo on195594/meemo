@@ -22,6 +22,16 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/PrivateNoteView.vue'),
   },
   {
+    path: '/assistant/authorize',
+    name: 'assistant-authorize',
+    component: () => import('../views/AssistantView.vue'),
+  },
+  {
+    path: '/assistant/connections',
+    name: 'assistant-connections',
+    component: () => import('../views/AssistantView.vue'),
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('../views/NotFoundView.vue'),

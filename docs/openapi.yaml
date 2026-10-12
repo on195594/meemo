@@ -25,8 +25,15 @@ tags:
   - name: health
     description: Container liveness and readiness probes
 
+  - name: assistant
+    description: Optional read-only MCP and OAuth connection management; disabled by default
+
 components:
   securitySchemes:
+    mcpBearer:
+      type: http
+      scheme: bearer
+      description: Resource-bound OAuth token; accepted only at /mcp, not REST APIs
     sessionCookie:
       type: apiKey
       in: cookie
@@ -34,6 +41,35 @@ components:
       description: Session cookie generated after successful login.
 
   schemas:
+    McpConnection:
+      type: object
+      required: [id, clientName, scope, createdAt, expiresAt]
+      properties:
+        id: { type: string }
+        clientName: { type: string }
+        scope: { type: string, enum: [notes.read] }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    McpConnectionsResponse:
+      type: object
+      required: [enabled, resource, csrfToken, connections]
+      properties:
+        enabled: { type: boolean }
+        resource: { type: string, format: uri }
+        csrfToken: { type: string }
+        connections:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/McpConnection' }
+    McpConsentResponse:
+      type: object
+      required: [clientName, username, scope, expiresIn, csrfToken]
+      properties:
+        clientName: { type: string }
+        username: { type: string }
+        scope: { type: string, enum: [notes.read] }
+        expiresIn: { type: integer, enum: [86400] }
+        csrfToken: { type: string }
     ErrorResponse:
       type: object
       required:
@@ -619,6 +655,234 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
 
 paths:
+  /api/mcp/connections:
+    get:
+      tags: [assistant]
+      summary: List this user's active OAuth grants and session CSRF token
+      security: [{ sessionCookie: [] }]
+      responses:
+        '200':
+          description: At most 50 active grants, newest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpConnectionsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: MCP disabled
+  /api/mcp/connections/{id}:
+    delete:
+      tags: [assistant]
+      summary: Revoke only this user's grant; never disable the shared client
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } }
+        - { name: X-CSRF-Token, in: header, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Revoked, or grant absent/not owned; idempotent }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: CSRF or Origin invalid }
+        '404': { description: MCP disabled }
+  /api/mcp/consent:
+    get:
+      tags: [assistant]
+      summary: Claim a pending authorization for the signed-in user and show consent information
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: request, in: query, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } }
+      responses:
+        '200':
+          description: Consent information; does not approve access
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/McpConsentResponse' }
+        '400': { description: Request invalid, expired or unavailable }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: MCP disabled }
+    post:
+      tags: [assistant]
+      summary: Approve or deny a claimed authorization request once
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: X-CSRF-Token, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request, allow]
+              properties:
+                request: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+                allow: { type: boolean }
+      responses:
+        '200':
+          description: Exact registered callback URL containing a short-lived code or access_denied; navigate to it
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [redirectUrl]
+                properties:
+                  redirectUrl: { type: string, format: uri }
+        '400': { description: Request invalid, expired or unavailable }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: CSRF or Origin invalid }
+        '404': { description: MCP disabled }
+        '429': { description: Connection capacity or request rate reached }
+  /.well-known/oauth-protected-resource/mcp:
+    get:
+      tags: [assistant]
+      summary: OAuth protected resource metadata
+      responses:
+        '200':
+          description: Fixed resource /mcp, authorization server, and notes.read scope
+          content:
+            application/json:
+              schema: { type: object }
+        '404': { description: MCP disabled }
+  /.well-known/oauth-authorization-server:
+    get:
+      tags: [assistant]
+      summary: OAuth authorization server discovery
+      responses:
+        '200':
+          description: Authorization code with PKCE S256, DCR, token and revocation endpoints; no refresh tokens
+          content:
+            application/json:
+              schema: { type: object }
+        '404': { description: MCP disabled }
+  /oauth/register:
+    post:
+      tags: [assistant]
+      summary: Register a bounded OAuth client using an exact allowlisted HTTPS callback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [redirect_uris]
+              properties:
+                redirect_uris: { type: array, minItems: 1, maxItems: 5, items: { type: string, format: uri } }
+                client_name: { type: string, maxLength: 100 }
+                token_endpoint_auth_method: { type: string, enum: [none, client_secret_post], default: client_secret_post }
+                grant_types: { type: array, items: { type: string, enum: [authorization_code] } }
+                response_types: { type: array, items: { type: string, enum: [code] } }
+                scope: { type: string, enum: [notes.read] }
+      responses:
+        '201':
+          description: OAuth client metadata and optional one-time-disclosed client secret; registration expires after 30 days
+          content:
+            application/json:
+              schema: { type: object }
+        '400': { description: Invalid metadata or callback }
+        '404': { description: MCP disabled }
+        '429': { description: Rate or registration capacity reached }
+  /oauth/authorize:
+    get:
+      tags: [assistant]
+      summary: Start authorization code flow, redirecting to Meemo login/consent
+      parameters:
+        - { name: client_id, in: query, required: true, schema: { type: string } }
+        - { name: response_type, in: query, required: true, schema: { type: string, enum: [code] } }
+        - { name: redirect_uri, in: query, required: true, schema: { type: string, format: uri } }
+        - { name: resource, in: query, required: true, schema: { type: string, format: uri } }
+        - { name: code_challenge, in: query, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } }
+        - { name: code_challenge_method, in: query, required: true, schema: { type: string, enum: [S256] } }
+        - { name: scope, in: query, schema: { type: string, enum: [notes.read] } }
+        - { name: state, in: query, schema: { type: string, maxLength: 1000 } }
+      responses:
+        '302': { description: Redirect to Meemo consent, or exact client callback with OAuth error }
+        '400': { description: Invalid OAuth request }
+        '404': { description: MCP disabled }
+  /oauth/token:
+    post:
+      tags: [assistant]
+      summary: Exchange a single-use three-minute code and PKCE verifier for a resource-bound token
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [client_id, grant_type, code, code_verifier, redirect_uri, resource]
+              properties:
+                client_id: { type: string }
+                client_secret: { type: string, description: Required for confidential clients }
+                grant_type: { type: string, enum: [authorization_code] }
+                code: { type: string }
+                code_verifier: { type: string }
+                redirect_uri: { type: string, format: uri }
+                resource: { type: string, format: uri }
+      responses:
+        '200':
+          description: Bearer token valid for remaining grant lifetime (up to 24 hours), no refresh token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [access_token, token_type, expires_in, scope]
+                properties:
+                  access_token: { type: string }
+                  token_type: { type: string, enum: [Bearer] }
+                  expires_in: { type: integer }
+                  scope: { type: string, enum: [notes.read] }
+        '400': { description: Invalid client, code, verifier, target or grant }
+        '404': { description: MCP disabled }
+  /oauth/revoke:
+    post:
+      tags: [assistant]
+      summary: Revoke a token bound to the authenticated OAuth client (not the entire client)
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [client_id, token]
+              properties:
+                client_id: { type: string }
+                client_secret: { type: string }
+                token: { type: string }
+                token_type_hint: { type: string }
+      responses:
+        '200': { description: Revocation processed; invalid or absent token treated identically }
+        '400': { description: Invalid client or request }
+        '404': { description: MCP disabled }
+  /mcp:
+    post:
+      tags: [assistant]
+      summary: Stateless Streamable HTTP MCP, with JSON responses and only three read-only tools
+      description: >
+        MCP protocol endpoint implemented by the official SDK. Supports initialize,
+        tools/list and tools/call for search_notes, get_note and list_tags. No write tools.
+        Batch arrays are rejected; a single JSON-RPC ID must fit within 256 serialized
+        UTF-8 bytes. CORS for approved origins covers discovery and protocol success/error
+        responses and exposes WWW-Authenticate. Tool responses are bounded to 128 KiB,
+        request bodies to 64 KiB. Search/tag
+        pagination defaults to 20, max 50, skip max 1000. Note bodies are not silently
+        truncated. Bearer authorization is rechecked on each request and tool call.
+      security: [{ mcpBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, description: MCP JSON-RPC request }
+      responses:
+        '200':
+          description: MCP JSON-RPC response (may contain protocol or tool error)
+          content:
+            application/json:
+              schema: { type: object }
+        '202': { description: MCP notification accepted }
+        '400': { description: Invalid protocol request }
+        '401': { description: Token missing, expired or revoked; WWW-Authenticate contains resource metadata }
+        '403': { description: Invalid Origin/Host or insufficient scope }
+        '404': { description: MCP disabled }
+        '413': { description: Request too large }
+        '429': { description: Request rate limit reached }
   /api/register:
     post:
       tags: [auth]

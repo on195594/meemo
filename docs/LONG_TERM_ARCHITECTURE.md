@@ -1078,6 +1078,8 @@ Secrets：
 
 # 33. AI 能力的长期接入原则
 
+当前实现状态：外部 Gemini/MCP 的第一阶段只读候选实现已通过本地验证，默认关闭；真实 Meemo 客户端验收与部署仍 pending。它使用 OAuth 授权，不要求 Meemo 持有 Gemini API Key。写工具、内置 AI 聊天、向量/语义检索等仍未实现；本章长期设计不代表这些能力已上线。当前契约以 [Gemini 接入说明](GEMINI_ASSISTANT.md) 为准。
+
 AI 可以成为 Meemo 的重要增强能力，但：
 
 > AI 不应成为核心数据架构的依赖。
@@ -1672,36 +1674,15 @@ presentation-only update
 
 ## P2
 
-### 4. 清理 repository workflow 文档冲突
+### 4. Repository workflow 文档（本地已对齐）
 
-统一：
-
-- `AGENTS.md`
-- `BRANCH_PROTECTION.md`
-- `RELEASE_CHECKLIST.md`
-
-不要同时声明：
-
-```text
-direct master preferred
-```
-
-与：
-
-```text
-PR mandatory
-```
+当前 `AGENTS.md`、`CONTRIBUTING.md` 与发布流程采用单维护者工作流：相关检查通过后可直接提交 master；外部贡献走 PR。`BRANCH_PROTECTION.md` 是重新启用保护时的参考，而不是所有改动强制 PR 的当前要求。生产部署、凭证、数据写入仍需独立授权；远程保护/CI 的实际状态在发布时另行核实，不从文档推定。
 
 ---
 
-### 5. 规划 legacy user source 退出
+### 5. Legacy user source（运行时已退出，历史输入仍保留）
 
-当生产观察窗口与回滚需求结束：
-
-- file source
-- fallback production path
-
-应进入 removal plan。
+当前账号运行时只支持 MongoDB；file/fallback source 已从在线认证路径移除。历史账号文件仍可作为离线迁移输入，不能据源码退休推定生产观察窗口或回滚需求已经结束。迁移工具和历史数据的处置仍按备份/恢复 runbook 验证目标并单独授权，不在普通死代码/临时文件清理中删除。
 
 ---
 

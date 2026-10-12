@@ -27,7 +27,15 @@ Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, pers
 | Attachments | `ATTACHMENT_DIR` partitioned by stable `userId` |
 | Accounts | MongoDB `users` collection (accounts are stored solely in MongoDB; legacy user files are read-only inputs for offline migration tools only) |
 
-Meemo supports username/password authentication only. Passwords are stored as bcrypt hashes, and successful login creates a server-side session backed by MongoDB with a stable user ID.
+Interactive login uses username/password authentication. Passwords are stored as bcrypt hashes, and successful login creates a server-side session backed by MongoDB with a stable user ID. Optional MCP clients use separately consented, resource-bound OAuth tokens; these cannot authenticate ordinary REST endpoints.
+
+## Optional read-only MCP
+
+`src/http/app.js` mounts `src/http/mcp.js` protocol routes before static/SPA/session handling and cookie-authenticated connection APIs after session middleware. Enabled mode uses the official MCP SDK's stateless Streamable HTTP and OAuth authorization-code/PKCE handlers; configuration is fixed at startup and defaults off. Reserved protocol/API paths return 404 when disabled rather than falling into SPA routing.
+
+`src/services/mcp-auth-service.js` manages grant/user/resource binding and expiry, while `src/database/mcp.js` owns five TTL-backed `mcp_*` collections (clients, requests, codes, grants, tokens). Client registration is shared metadata; user revocation affects only their grant. Opaque credential values are stored as hashes. These collections are sensitive, ephemeral authorization state, not a new note source of truth.
+
+`src/http/mcp-tools.js` exposes only `search_notes`, `get_note`, `list_tags`; every call revalidates the token and delegates to `src/services/mcp-note-service.js`. The repository returns owner-scoped, bounded projections without attachment access, Markdown rendering or URL enrichment. Tag paging extends the existing aggregation compatibly; normal `/api/tags` behavior remains unchanged. No writes or general network tools are registered. Frontend `/assistant/authorize` and `/assistant/connections` reuse the account/session store and CSRF-protected consent/revocation APIs. Configuration, privacy, limits and pending real-client acceptance are documented in [Gemini assistant](GEMINI_ASSISTANT.md).
 
 ## Frontend state ownership
 
@@ -38,7 +46,9 @@ Meemo supports username/password authentication only. Passwords are stored as bc
 
 ## HTTP surface
 
-Routes are registered by `src/http/router.js` from `src/http/app.js`:
+Ordinary routes are registered by `src/http/router.js` from `src/http/app.js`:
+
+- Optional `/mcp`, `/oauth/*`, OAuth `/.well-known/*`, and `/api/mcp/*` are separately mounted by `src/http/mcp.js`; `/assistant/*` are SPA views.
 
 - `/api/register`, `/api/login`, `/api/logout`: local authentication and session management
 - `/api/profile`: authenticated user identity and settings

@@ -29,6 +29,7 @@
   },
   "readme": "README.md",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
     "async": "^3.2.5",
     "bcrypt": "^6.0.0",
     "body-parser": "^1.20.8",
@@ -37,6 +38,7 @@
     "cors": "^2.8.5",
     "debug": "^4.3.4",
     "express": "^4.22.2",
+    "express-rate-limit": "8.7.1",
     "express-session": "^1.18.2",
     "markdown-it": "^15.0.2",
     "markdown-it-checkbox": "^1.1.0",

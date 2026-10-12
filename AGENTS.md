@@ -10,10 +10,10 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 
 - `app.js`: runtime composition root, MongoDB/index startup, worker startup, and HTTP server lifecycle.
 - `src/lifecycle.js`: worker management, MongoDB connection pool lifecycle, and graceful shutdown sequencing.
-- `src/http/`: injected Express factory, HTTP routing, input validation, authentication middleware, `connect-mongo` sessions, uploads, and error responses.
-- `src/services/`: application behavior for auth, things, attachments, sharing, settings, health, and import/export.
+- `src/http/`: injected Express factory, HTTP routing, input validation, authentication middleware, `connect-mongo` sessions, uploads, and error responses. `mcp.js` and `mcp-tools.js` own the optional, default-disabled read-only MCP/OAuth HTTP boundary.
+- `src/services/`: application behavior for auth, things, attachments, sharing, settings, health, and import/export; `mcp-*.js` implements optional OAuth grant and read-tool behavior.
 - `src/storage/`: persistent attachment filesystem access.
-- `src/database/`: MongoDB access for things, tags, settings, and users.
+- `src/database/`: MongoDB access for things, tags, settings, users, and ephemeral MCP authorization state.
 - `src/users.js`: account repository abstraction and bcrypt password handling.
 - `types/`: domain TypeScript definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`).
 - `scripts/`: build/verification entry points, offline migrations, retirement preflight, business-readiness verifier, isolated synthetic restore/search checks, performance benchmark, and attachment GC.
@@ -22,6 +22,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `public/`, `web/dist/`: generated frontend output; never edit or commit it.
 - `docs/README.md`: documentation index and directory maintenance rules.
 - `docs/ARCHITECTURE.md`: component boundaries, API contracts, and runtime flow.
+- `docs/GEMINI_ASSISTANT.md`: current optional MCP configuration, privacy, limits, revocation, recovery, and pending real-client acceptance.
 - `docs/LONG_TERM_ARCHITECTURE.md`: normative long-term architectural constraints and complexity budget.
 - `docs/BACKUP_RESTORE.md`: production backup, disaster recovery, and verification runbooks.
 - `docs/BRANCH_PROTECTION.md`: reference master branch protection and check policies (disabled for single-maintainer development).

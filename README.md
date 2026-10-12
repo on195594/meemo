@@ -36,9 +36,9 @@ Meemo supports username/password authentication with accounts stored exclusively
 The Compose stack uses two named volumes:
 
 - `meemo_data`: attachment files stored on disk
-- `mongodb_data`: accounts, notes, tags, settings, and sessions
+- `mongodb_data`: accounts, notes, tags, settings, sessions, and optional MCP authorization state
 
-Set a stable, strong `SESSION_SECRET`. When it is omitted, Meemo generates a process-local secret and existing sessions become invalid after every restart.
+Set a stable, strong `SESSION_SECRET`. Development without it generates a process-local secret, invalidating existing sessions after restart. Production startup fails when the secret is missing.
 
 Running `docker compose down -v` permanently deletes both volumes and all Meemo data.
 
@@ -52,8 +52,8 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `APP_ORIGIN` | `http://localhost` | `http://localhost:3000` | Public origin used in RSS links |
 | `ATTACHMENT_DIR` | `./storage` | `/app/data/storage` | Attachment directory |
 | `AUTH_USER_SOURCE` | `mongo` | `mongo` | Account repository: `mongo` (exclusive target) |
-| `SESSION_SECRET` | Random on startup | Value of host `SESSION_SECRET` | Session signing secret |
-| `REGISTRATION_MODE` | `open` | `first-user` | Registration policy: `open`, `first-user`, or `disabled` |
+| `SESSION_SECRET` | Random in development; required in production | Value of host `SESSION_SECRET` | Session signing secret |
+| `REGISTRATION_MODE` | `open` in development; `first-user` in production | `first-user` | Registration policy: `open`, `first-user`, or `disabled` |
 | `URL_ENRICHMENT_ENABLED` | `false` | `false` | Outbound URL metadata fetch (disabled by default for SSRF safety) |
 | `MAX_ATTACHMENT_SIZE` | `10485760` (10MB) | `10485760` | Maximum attachment upload size in bytes |
 | `MAX_IMPORT_SIZE` | `52428800` (50MB) | `52428800` | Maximum import archive size in bytes |
@@ -62,6 +62,12 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `MONGO_MAX_POOL_SIZE` | `50` | `50` | Maximum MongoDB connection pool size |
 | `MONGO_MIN_POOL_SIZE` | `1` | `1` | Minimum MongoDB connection pool size |
 | `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |
+| `MCP_ENABLED` | `false` | Not forwarded | Only the exact value `true` enables read-only MCP |
+| `MCP_PUBLIC_URL` | Unset | Not forwarded | Required fixed HTTPS bare origin when enabled; HTTP loopback allowed in development |
+| `MCP_REDIRECT_URIS` | Unset | Not forwarded | Required exact approved HTTPS callback URLs, comma-separated without spaces |
+| `MCP_ALLOWED_ORIGINS` | Public origin only | Not forwarded | Additional approved HTTPS browser origins, comma-separated without spaces |
+
+`.env.example` documents non-secret configuration keys. Node does not automatically load `.env`; export variables or pass them explicitly to the container. In particular, the repository Compose file does not forward MCP keys: adding them to a host `.env` alone does not enable the feature. See [MCP configuration](docs/GEMINI_ASSISTANT.md#enable-deliberately).
 
 For a public hostname or reverse proxy:
 
@@ -72,6 +78,12 @@ docker compose up --build -d
 ```
 
 A production-ready reverse proxy template offloading gzip/brotli compression, SSL termination, and static asset caching to Nginx is provided at [`docs/nginx-reverse-proxy.conf`](docs/nginx-reverse-proxy.conf).
+
+## Gemini assistant (optional, read-only)
+
+Meemo exposes default-disabled MCP + OAuth for Gemini custom apps. Supported tools are `search_notes`, `get_note` and `list_tags`; no Gemini API key or note-writing tools are included. Users explicitly approve account-level private-note read access, valid up to 24 hours, and can revoke their own connections in **Settings → Manage assistant connections**. Retrieved content may be sent to Google.
+
+See [configuration, protocol limits, privacy and recovery](docs/GEMINI_ASSISTANT.md) before setting `MCP_ENABLED=true`, a fixed HTTPS `MCP_PUBLIC_URL`, and exact reviewed `MCP_REDIRECT_URIS` in the Node/container environment. Real Meemo Gemini web/mobile acceptance is pending; local tests are not client acceptance. Enabling or deploying requires separate authorization.
 
 ## Development
 
