@@ -165,6 +165,33 @@ describe('Read-only MCP and OAuth isolation', function () {
         await alice.post('/api/mcp/consent').set('X-CSRF-Token', denied.csrfToken).send({ request: denied.request, allow: true }).expect(400);
     });
 
+    it('preserves long opaque OAuth state through consent and rejects state beyond 4096 characters', async function () {
+        var verifier = crypto.randomBytes(32).toString('base64url');
+        var params = {
+            client_id: client.client_id, redirect_uri: callback, response_type: 'code', resource: resource,
+            scope: 'notes.read', code_challenge: challenge(verifier), code_challenge_method: 'S256'
+        };
+        for (var length of [1001, 4096]) {
+            var state = 'opaque+/=?&%'.repeat(400).slice(0, length);
+            var response = await protocol(app, 'get', '/oauth/authorize').query(Object.assign({}, params, { state: state })).expect(302);
+            var location = new URL(response.headers.location);
+            assert.equal(location.origin + location.pathname, origin + '/assistant/authorize');
+            var id = location.searchParams.get('request');
+            var info = await alice.get('/api/mcp/consent').query({ request: id }).expect(200);
+            var decision = await alice.post('/api/mcp/consent').set('X-CSRF-Token', info.body.csrfToken).send({ request: id, allow: true }).expect(200);
+            var redirect = new URL(decision.body.redirectUrl);
+            assert.equal(redirect.searchParams.get('state'), state);
+            assert.equal((await exchange(app, client, verifier, redirect.searchParams.get('code'))).status, 200);
+        }
+        var pending = await db.collection('mcp_requests').countDocuments({ clientId: client.client_id });
+        var rejected = await protocol(app, 'get', '/oauth/authorize').query(Object.assign({}, params, { state: 'x'.repeat(4097) })).expect(302);
+        var error = new URL(rejected.headers.location);
+        assert.equal(error.origin + error.pathname, callback);
+        assert.equal(error.searchParams.get('error'), 'invalid_request');
+        assert.equal(error.searchParams.get('error_description'), 'State too long');
+        assert.equal(await db.collection('mcp_requests').countDocuments({ clientId: client.client_id }), pending);
+    });
+
     it('requires login, explicit consent and CSRF; pending requests cannot cross users', async function () {
         var verifier = crypto.randomBytes(32).toString('base64url');
         var response = await protocol(app, 'get', '/oauth/authorize').query({

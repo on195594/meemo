@@ -792,7 +792,7 @@ paths:
         - { name: code_challenge, in: query, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } }
         - { name: code_challenge_method, in: query, required: true, schema: { type: string, enum: [S256] } }
         - { name: scope, in: query, schema: { type: string, enum: [notes.read] } }
-        - { name: state, in: query, schema: { type: string, maxLength: 1000 } }
+        - { name: state, in: query, schema: { type: string, maxLength: 4096 } }
       responses:
         '302': { description: Redirect to Meemo consent, or exact client callback with OAuth error }
         '400': { description: Invalid OAuth request }

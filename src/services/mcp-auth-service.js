@@ -74,7 +74,7 @@ function createProvider(settings) {
                 throw new errors.InvalidScopeError('Only notes.read is supported');
             }
             if (!/^[A-Za-z0-9_-]{43}$/.test(params.codeChallenge)) throw new errors.InvalidRequestError('Invalid S256 challenge');
-            if (params.state && params.state.length > 1000) throw new errors.InvalidRequestError('State too long');
+            if (params.state && params.state.length > 4096) throw new errors.InvalidRequestError('State too long');
             if (!settings.redirectUris.includes(params.redirectUri)) throw new errors.InvalidRequestError('Redirect URI is not allowed');
             if (await repository.count('requests', { clientId: client.client_id }) >= 20) throw new errors.TooManyRequestsError('Too many pending authorizations');
             var request = random();
