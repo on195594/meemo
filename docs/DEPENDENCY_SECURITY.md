@@ -1,6 +1,12 @@
 # Dependency security (VR-213)
 
-## 2026-10-12 MCP candidate audit
+## 2026-10-12 upload-abort security fix
+
+The deployment candidate upgrades the existing upload dependency to `multer@2.4.0` (minimum manifest version `^2.4.0`). The official [GHSA-3pph-fpjx-jg34 advisory](https://github.com/advisories/GHSA-3pph-fpjx-jg34) identifies orphaned disk writes after aborted uploads in `>=2.2.0, <2.4.0`; `2.4.0` is the first patched version. Disk-backed archive imports cross this boundary; memory-backed attachment uploads do not leave disk files through that mechanism.
+
+The current root `npm audit --omit=dev` reports **zero production vulnerabilities**. An isolated HTTP regression verifies that disconnecting an incomplete disk upload removes its temporary file; existing size, nesting, malformed-body, authentication and import/export regressions remain. Only multer and its no-longer-needed transitive packages change; no blanket audit fix or framework upgrade is applied. Development-only findings remain outside this production fix.
+
+## Initial MCP candidate audit (`c9c8ddc`, historical)
 
 Phase-1 integration adds exact `@modelcontextprotocol/sdk@1.32.1` and `express-rate-limit@8.7.1`. The SDK's nested Express 5 dependency requires `proxy-addr@2.0.8`, so npm deduplication also advances the compatible shared transitive version from 2.0.7. The app's Express 4 and other existing package versions are unchanged; `npm ci` verifies the resulting lockfile.
 
@@ -32,7 +38,7 @@ The baseline root audit reported 13 high or critical vulnerable package nodes. T
 
 `express-session` was also updated to `1.18.2`, and `bn.js` was overridden to `4.12.3`, removing the remaining low and moderate production audit findings without a framework major upgrade.
 
-## Remaining production findings
+## Historical post-remediation production findings
 
 Neither the root nor `web/` production audit has a remaining critical or high finding. Both production audits are clean at every severity. The regenerated root lockfile also removes stale package trees that were no longer declared by `package.json`; retaining them would make production installs and audit results inconsistent with the manifest.
 

@@ -77,6 +77,44 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
         config._clearDatabase(done);
     });
 
+    it('removes temporary disk files when a multipart uploader disconnects', async function () {
+        this.timeout(6000);
+        var http = require('http');
+        var directory = fs.mkdtempSync(path.join(os.tmpdir(), 'meemo-aborted-upload-'));
+        var upload = require('multer')({ dest: directory, limits: uploads.uploadLimits(1024) }).any();
+        var server = http.createServer(function (req, res) {
+            upload(req, res, function () { res.end(); });
+        });
+        var pendingRequest;
+
+        async function waitForFileCount(count) {
+            for (var i = 0; i < 100; i++) {
+                if (fs.readdirSync(directory).length === count) return;
+                await new Promise(function (resolve) { setTimeout(resolve, 20); });
+            }
+            expect(fs.readdirSync(directory).length).to.equal(count);
+        }
+
+        try {
+            await new Promise(function (resolve) { server.listen(0, '127.0.0.1', resolve); });
+            pendingRequest = http.request({
+                hostname: '127.0.0.1', port: server.address().port, method: 'POST',
+                headers: { 'Content-Type': 'multipart/form-data; boundary=aborted-upload' }
+            });
+            pendingRequest.on('error', function () {});
+            pendingRequest.write('--aborted-upload\r\n' +
+                'Content-Disposition: form-data; name="file"; filename="partial.txt"\r\n\r\npartial data');
+            await waitForFileCount(1);
+            pendingRequest.destroy();
+            await waitForFileCount(0);
+        } finally {
+            if (pendingRequest) pendingRequest.destroy();
+            server.closeAllConnections();
+            await new Promise(function (resolve) { server.close(resolve); });
+            fs.rmSync(directory, { recursive: true, force: true });
+        }
+    });
+
     describe('Image MIME and magic bytes verification', function () {
         it('detects valid PNG magic bytes', function () {
             var pngBuf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
