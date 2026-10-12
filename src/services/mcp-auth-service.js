@@ -39,7 +39,7 @@ function createProvider(settings) {
                 return client ? client.info : undefined;
             },
             registerClient: async function (metadata) {
-                if (!metadata.redirect_uris || metadata.redirect_uris.length > 5 ||
+                if (!metadata.redirect_uris || metadata.redirect_uris.length > 10 ||
                     metadata.redirect_uris.some(function (uri) { return !settings.redirectUris.includes(uri); })) {
                     throw new errors.InvalidClientMetadataError('Redirect URI is not allowed');
                 }

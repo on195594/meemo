@@ -2,6 +2,25 @@
 
 Implementation: phase 1 only, disabled by default. Meemo's real Gemini web/mobile acceptance is **pending**; travel-cards' user-confirmed acceptance is a reference, not a Meemo test result. No Gemini API key is needed.
 
+## Discover the actual Gemini callbacks safely
+
+When the Meemo callback list is not yet known, use a short-lived **setup-only** window instead of guessing URLs or asking the user to copy an undocumented UI field:
+
+```sh
+MCP_ENABLED=false
+MCP_PUBLIC_URL=https://notes.example.com
+MCP_BOOTSTRAP_UNTIL=<absolute-UTC-deadline-within-30-minutes>
+MCP_ALLOWED_ORIGINS=https://gemini.google.com
+```
+
+The deadline is an ISO UTC timestamp, not the literal placeholder above. Leave `MCP_REDIRECT_URIS` unset during setup. Pass the variables into the container explicitly. Setup and full enabled mode are mutually exclusive. After the deadline (including process restarts), MCP discovery is closed; ordinary REST and notes remain available.
+
+Setup publishes discovery and a 401 MCP challenge, but **always rejects registration**, authorization, token/revocation requests and browser MCP APIs. It does not initialize the OAuth repository, register clients, issue credentials or invoke note tools. Only bounded, canonical HTTPS callbacks on the three observed Google hosts (`oauth-redirect.googleusercontent.com`, `oauth-redirect-test.googleusercontent.com`, `oauth-redirect-sandbox.googleusercontent.com`) with `/a/` or `/r/` user-bound custom-app paths are captured; this is a metadata filter, not proof of caller identity.
+
+Ask the user to open Gemini web → Settings → Connected Apps → Custom apps, enter the actual Meemo `/mcp` URL, and click Next. A failed connection is expected during setup. The operator reads only `callbacks.json` inside the private `/tmp/meemo-mcp-bootstrap-*` directory of the app container. Do not expose that file over HTTP or paste its Google account identifier into public logs/docs. No client names, secrets, tokens or other request fields are captured. Storage is private (directory 0700, file 0600), retains at most 10 submissions × 10 URLs × 512 characters, and is removed at expiry or container replacement.
+
+Correlate the receipt time with the user's attempt, review the Google host/account/app binding with the user, and treat every submitted URL as untrusted until approved. Do not automatically convert captures into a whitelist. Once reviewed, remove `MCP_BOOTSTRAP_UNTIL`, set the exact `MCP_REDIRECT_URIS` and `MCP_ENABLED=true`, then reconnect and complete consent. Full registration accepts at most 10 callbacks and rejects the entire list if any one is unapproved; six Google callback variants fit that bound.
+
 ## Enable deliberately
 
 Set these **Node process** environment variables only after deployment authorization:

@@ -120,6 +120,17 @@ describe('Read-only MCP and OAuth isolation', function () {
         await request(app).post('/mcp').set('Host', 'attacker.example').expect(403);
     });
 
+    it('registers six Google callback variants only when all are explicitly approved', async function () {
+        var uris = ['oauth-redirect.googleusercontent.com', 'oauth-redirect-test.googleusercontent.com', 'oauth-redirect-sandbox.googleusercontent.com'].flatMap(function (host) {
+            return ['r', 'a'].map(function (prefix) { return 'https://' + host + '/' + prefix + '/user_bound_custom-mcp-synthetic-meemo'; });
+        });
+        var isolated = createApp({ sessionMemory: true, sessionSecret: 'synthetic-six-callbacks', logger: logger.createLogger({ enabled: false }),
+            mcp: { enabled: true, publicUrl: origin, redirectUris: uris } });
+        var response = await protocol(isolated, 'post', '/oauth/register').send({ redirect_uris: uris, token_endpoint_auth_method: 'none' }).expect(201);
+        assert.deepEqual(response.body.redirect_uris, uris);
+        await protocol(isolated, 'post', '/oauth/register').send({ redirect_uris: uris.concat(['https://attacker.example/callback']) }).expect(400);
+    });
+
     it('registers bounded clients, stores only credential hashes and supports confidential clients', async function () {
         await protocol(app, 'post', '/oauth/register').send({ redirect_uris: ['https://attacker.example/callback'] }).expect(400);
         await protocol(app, 'post', '/oauth/register').send({ redirect_uris: [callback], client_uri: 'http://127.0.0.1' }).expect(400);

@@ -13,19 +13,24 @@ var express = require('express'),
     requireBearerAuth = require('@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js').requireBearerAuth,
     auth = require('./middleware/auth.js'),
     authService = require('../services/mcp-auth-service.js'),
+    createCaptureStore = require('../storage/mcp-bootstrap.js'),
     createServer = require('./mcp-tools.js');
 
 function settingsFromOptions(options) {
     var supplied = options.mcp || {};
     var enabled = supplied.enabled !== undefined ? supplied.enabled : process.env.MCP_ENABLED === 'true';
-    if (!enabled) return { enabled: false };
+    var bootstrap = supplied.bootstrapUntil !== undefined ? supplied.bootstrapUntil : process.env.MCP_BOOTSTRAP_UNTIL;
+    var until = bootstrap ? Date.parse(bootstrap) : undefined;
+    if (bootstrap && (enabled || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(bootstrap) ||
+        !Number.isFinite(until) || until > Date.now() + 30 * 60000)) throw new Error('MCP bootstrap requires MCP_ENABLED=false and a UTC deadline within 30 minutes');
+    if (!enabled && (!until || until <= Date.now())) return { enabled: false };
     var url = new URL(supplied.publicUrl || process.env.MCP_PUBLIC_URL || '');
     if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname) && !options.isProduction && process.env.NODE_ENV !== 'production')) {
         throw new Error('MCP_PUBLIC_URL must be HTTPS (HTTP loopback only in development)');
     }
     if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('MCP_PUBLIC_URL must be a bare origin');
     var redirectUris = supplied.redirectUris || (process.env.MCP_REDIRECT_URIS || '').split(',').filter(Boolean);
-    if (!redirectUris.length || redirectUris.length > 10) throw new Error('MCP_REDIRECT_URIS must specify exact approved HTTPS callbacks');
+    if ((!until && !redirectUris.length) || redirectUris.length > 10) throw new Error('MCP_REDIRECT_URIS must specify exact approved HTTPS callbacks');
     redirectUris.forEach(function (uri) {
         var callback = new URL(uri);
         if (callback.protocol !== 'https:' || callback.username || callback.password || callback.hash || uri.includes('*')) throw new Error('Invalid MCP redirect URI');
@@ -34,7 +39,7 @@ function settingsFromOptions(options) {
     origins.forEach(function (origin) {
         if (new URL(origin).origin !== origin || !origin.startsWith('https://')) throw new Error('Invalid MCP allowed origin');
     });
-    return { enabled: true, publicUrl: url.origin, host: url.host, redirectUris: redirectUris, allowedOrigins: [url.origin].concat(origins) };
+    return { enabled: true, bootstrapUntil: until, publicUrl: url.origin, host: url.host, redirectUris: redirectUris, allowedOrigins: [url.origin].concat(origins) };
 }
 
 // shortcut: rate limits are per process; coordinate them before running multiple replicas.
@@ -48,6 +53,12 @@ function wrap(handler) {
     return function (req, res, next) { Promise.resolve(handler(req, res)).catch(next); };
 }
 
+function protocolError(error, req, res, next) {
+    if (res.destroyed) return;
+    if (res.headersSent) return next(error);
+    res.status(error.type === 'entity.too.large' ? 413 : 400).json({ error: 'invalid_request' });
+}
+
 function createMcp(options, logger) {
     var settings = settingsFromOptions(options);
     var protocol = express.Router();
@@ -57,10 +68,10 @@ function createMcp(options, logger) {
         protocol.use(protocolPaths.concat(['/api/mcp']), function (req, res) { res.status(404).json({ error: 'mcp_disabled' }); });
         return { protocol: protocol, browser: browser };
     }
-    var provider = authService.createProvider(settings);
     var metadataUrl = settings.publicUrl + '/.well-known/oauth-protected-resource/mcp';
 
     protocol.use(protocolPaths, function (req, res, next) {
+        if (settings.bootstrapUntil && Date.now() >= settings.bootstrapUntil) return res.status(404).json({ error: 'mcp_bootstrap_expired' });
         if (req.get('host') !== settings.host || (req.get('origin') && !settings.allowedOrigins.includes(req.get('origin')))) {
             return res.status(403).json({ error: 'invalid_origin_or_host' });
         }
@@ -86,6 +97,32 @@ function createMcp(options, logger) {
             grant_types_supported: ['authorization_code'], code_challenge_methods_supported: ['S256'],
             token_endpoint_auth_methods_supported: ['none', 'client_secret_post'], scopes_supported: ['notes.read'] });
     });
+    if (settings.bootstrapUntil) {
+        var capture = createCaptureStore(settings.bootstrapUntil);
+        protocol.post('/oauth/register', wrap(async function (req, res) {
+            var uris = req.body && req.body.redirect_uris;
+            var hosts = ['oauth-redirect.googleusercontent.com', 'oauth-redirect-test.googleusercontent.com', 'oauth-redirect-sandbox.googleusercontent.com'];
+            if (Array.isArray(uris) && uris.length > 0 && uris.length <= 10 && uris.every(function (uri) {
+                if (typeof uri !== 'string' || uri.length > 512) return false;
+                try {
+                    var url = new URL(uri);
+                    return url.href === uri && url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash &&
+                        hosts.includes(url.hostname) && /^\/[ra]\/user_bound_custom-mcp-[A-Za-z0-9_-]+$/.test(url.pathname);
+                } catch (_) { return false; }
+            })) await capture(uris);
+            res.status(400).json({ error: 'invalid_client_metadata', error_description: 'Setup only: registration is denied pending operator review. No credentials issued.' });
+        }));
+        protocol.all('/mcp', function (req, res) {
+            res.set('WWW-Authenticate', 'Bearer resource_metadata="' + metadataUrl + '", scope="notes.read"')
+                .status(401).json({ error: 'bootstrap_only' });
+        });
+        protocol.use('/oauth', function (req, res) { res.status(403).json({ error: 'bootstrap_only' }); });
+        protocol.use('/api/mcp', function (req, res) { res.status(404).json({ error: 'bootstrap_only' }); });
+        protocol.use(protocolPaths, function (req, res) { res.status(404).json({ error: 'not_found' }); });
+        protocol.use(protocolError);
+        return { protocol: protocol, browser: browser };
+    }
+    var provider = authService.createProvider(settings);
     protocol.use('/oauth/register', function (req, res, next) {
         var keys = ['redirect_uris', 'client_name', 'token_endpoint_auth_method', 'grant_types', 'response_types', 'scope'];
         if (req.method === 'POST' && (!req.body || Object.keys(req.body).some(function (key) { return !keys.includes(key); }) ||
@@ -126,11 +163,7 @@ function createMcp(options, logger) {
     }));
     protocol.all('/mcp', function (req, res) { res.set('Allow', 'POST, OPTIONS').status(405).json({ error: 'stateless_transport' }); });
     protocol.use(protocolPaths, function (req, res) { res.status(404).json({ error: 'not_found' }); });
-    protocol.use(function (error, req, res, next) {
-        if (res.destroyed) return;
-        if (res.headersSent) return next(error);
-        res.status(error.type === 'entity.too.large' ? 413 : 400).json({ error: 'invalid_request' });
-    });
+    protocol.use(protocolError);
 
     browser.use('/api/mcp', function (req, res, next) {
         res.set('Cache-Control', 'no-store').set('Referrer-Policy', 'no-referrer');

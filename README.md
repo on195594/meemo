@@ -63,9 +63,10 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `MONGO_MIN_POOL_SIZE` | `1` | `1` | Minimum MongoDB connection pool size |
 | `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |
 | `MCP_ENABLED` | `false` | Not forwarded | Only the exact value `true` enables read-only MCP |
-| `MCP_PUBLIC_URL` | Unset | Not forwarded | Required fixed HTTPS bare origin when enabled; HTTP loopback allowed in development |
+| `MCP_PUBLIC_URL` | Unset | Not forwarded | Required fixed HTTPS bare origin in full or setup mode; HTTP loopback allowed in development |
 | `MCP_REDIRECT_URIS` | Unset | Not forwarded | Required exact approved HTTPS callback URLs, comma-separated without spaces |
 | `MCP_ALLOWED_ORIGINS` | Public origin only | Not forwarded | Additional approved HTTPS browser origins, comma-separated without spaces |
+| `MCP_BOOTSTRAP_UNTIL` | Unset | Not forwarded | Setup-only UTC deadline within 30 minutes; requires `MCP_ENABLED=false`, denies all registration/access and expires automatically |
 
 `.env.example` documents non-secret configuration keys. Node does not automatically load `.env`; export variables or pass them explicitly to the container. In particular, the repository Compose file does not forward MCP keys: adding them to a host `.env` alone does not enable the feature. See [MCP configuration](docs/GEMINI_ASSISTANT.md#enable-deliberately).
 
@@ -83,7 +84,7 @@ A production-ready reverse proxy template offloading gzip/brotli compression, SS
 
 Meemo exposes default-disabled MCP + OAuth for Gemini custom apps. Supported tools are `search_notes`, `get_note` and `list_tags`; no Gemini API key or note-writing tools are included. Users explicitly approve account-level private-note read access, valid up to 24 hours, and can revoke their own connections in **Settings → Manage assistant connections**. Retrieved content may be sent to Google.
 
-See [configuration, protocol limits, privacy and recovery](docs/GEMINI_ASSISTANT.md) before setting `MCP_ENABLED=true`, a fixed HTTPS `MCP_PUBLIC_URL`, and exact reviewed `MCP_REDIRECT_URIS` in the Node/container environment. Real Meemo Gemini web/mobile acceptance is pending; local tests are not client acceptance. Enabling or deploying requires separate authorization.
+See [configuration, protocol limits, privacy and recovery](docs/GEMINI_ASSISTANT.md) before setting `MCP_ENABLED=true`, a fixed HTTPS `MCP_PUBLIC_URL`, and exact reviewed `MCP_REDIRECT_URIS` in the Node/container environment. If callbacks are not yet known, use the [short-lived callback discovery procedure](docs/GEMINI_ASSISTANT.md#discover-the-actual-gemini-callbacks-safely), not placeholder allowlists. Real Meemo Gemini web/mobile acceptance is pending; local tests are not client acceptance. Enabling or deploying requires separate authorization.
 
 ## Development
 
