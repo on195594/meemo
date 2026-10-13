@@ -73,8 +73,10 @@ function applyToDOM(s: AppSettings) {
       document.body.style.backgroundImage = `url("${s.backgroundImageDataUrl}")`;
       document.body.style.backgroundSize = 'cover';
       document.body.style.backgroundAttachment = 'fixed';
+      document.body.classList.add('has-custom-bg');
     } else {
       document.body.style.backgroundImage = '';
+      document.body.classList.remove('has-custom-bg');
     }
   }
 }

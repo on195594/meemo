@@ -907,7 +907,7 @@ onUnmounted(() => {
   left: 0;
   bottom: 0;
   width: 40%;
-  background-color: var(--md-sys-color-primary, #0066cc);
+  background-color: var(--md-sys-color-primary);
   border-radius: 2px;
   animation: search-indeterminate 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
@@ -1147,7 +1147,7 @@ onUnmounted(() => {
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.08em;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
   text-transform: uppercase;
   margin: 1.5rem 0 0.75rem 0.25rem;
 }
@@ -1238,11 +1238,11 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 1.25rem;
   background-color: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-on-surface, #1d1b20);
+  color: var(--md-sys-color-on-surface);
   padding: 0.5rem 1rem;
   border-radius: var(--md-sys-shape-corner-full, 9999px);
-  box-shadow: var(--md-sys-elevation-3, 0 4px 14px rgba(0, 0, 0, 0.25));
-  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.12));
+  box-shadow: var(--md-sys-elevation-3);
+  border: 1px solid var(--md-sys-color-outline-variant);
   max-width: 90vw;
 }
 
@@ -1263,7 +1263,7 @@ onUnmounted(() => {
   min-height: 44px;
   background: none;
   border: none;
-  color: var(--md-sys-color-primary, #6750a4);
+  color: var(--md-sys-color-primary);
   font-size: 0.825rem;
   font-weight: 600;
   cursor: pointer;
@@ -1289,7 +1289,7 @@ onUnmounted(() => {
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: var(--md-sys-color-on-surface, #1d1b20);
+  color: var(--md-sys-color-on-surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1370,24 +1370,25 @@ onUnmounted(() => {
 }
 
 .batch-delete-card {
-  background: var(--md-sys-color-surface-container-high, #ffffff);
-  border-radius: var(--md-sys-shape-corner-2xl, 28px);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-2xl);
   padding: 1.75rem;
   max-width: 420px;
   width: 90%;
   box-shadow: var(--md-sys-elevation-3);
-  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .batch-delete-card h3 {
   font-size: 1.25rem;
-  color: var(--md-sys-color-error, #e53e3e);
+  color: var(--md-sys-color-error);
   margin-bottom: 0.75rem;
 }
 
 .batch-delete-card p {
   font-size: 0.95rem;
-  color: var(--md-sys-color-on-surface-variant, #4a5568);
+  color: var(--md-sys-color-on-surface-variant);
   line-height: 1.5;
   margin-bottom: 1.5rem;
 }

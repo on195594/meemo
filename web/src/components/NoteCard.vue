@@ -774,10 +774,11 @@ async function confirmDelete() {
 <style scoped>
 .note-card {
   background-color: var(--note-color-default);
+  color: var(--md-sys-color-on-surface);
   border: 1px solid var(--note-border-color);
   border-radius: var(--md-sys-shape-corner-lg);
   padding: 1rem;
-  box-shadow: var(--md-sys-elevation-0);
+  box-shadow: var(--md-sys-elevation-1);
   transition: box-shadow var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
               border-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
               background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);

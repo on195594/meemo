@@ -1,5 +1,5 @@
 <template>
-  <div id="meemo-app">
+  <div id="meemo-app" :class="{ 'has-custom-bg': !!settings.backgroundImageDataUrl }">
     <a class="skip-link" href="#main-content">Skip to content</a>
     <!-- Session Expiration Alert Banner -->
     <div v-if="sessionExpired" class="session-expired-banner" role="alert">
@@ -555,14 +555,33 @@ video {
 }
 
 .app-nav {
-  /* Translucent surface so content scrolls softly under the sticky bar */
-  background-color: color-mix(in srgb, var(--md-sys-color-surface) 88%, transparent);
-  backdrop-filter: saturate(1.4) blur(12px);
-  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  background-color: var(--md-sys-color-surface);
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
   position: sticky;
   top: 0;
   z-index: 100;
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              border-color var(--md-sys-motion-duration-short) ease;
+}
+
+#meemo-app.has-custom-bg .app-nav {
+  background-color: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+:root[data-theme="dark"] #meemo-app.has-custom-bg .app-nav {
+  background-color: rgba(18, 19, 22, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) #meemo-app.has-custom-bg .app-nav {
+    background-color: rgba(18, 19, 22, 0.94);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
 }
 
 .nav-container {

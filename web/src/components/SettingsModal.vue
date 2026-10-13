@@ -243,12 +243,13 @@ async function handleSave() {
 }
 
 .modal-card {
-  background: var(--md-sys-color-surface-container, #ffffff);
-  border: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
-  border-radius: 10px;
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-2xl);
   width: 100%;
   max-width: 500px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--md-sys-elevation-3);
   overflow: hidden;
   max-height: 90vh;
   display: flex;
@@ -260,13 +261,13 @@ async function handleSave() {
   justify-content: space-between;
   align-items: center;
   padding: 1.25rem 1.5rem 0.75rem;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .modal-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--md-sys-color-on-surface, #1a202c);
+  color: var(--md-sys-color-on-surface);
   margin: 0;
 }
 
@@ -275,14 +276,14 @@ async function handleSave() {
   border: none;
   font-size: 1.5rem;
   line-height: 1;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
   padding: 0.25rem;
   border-radius: 4px;
 }
 
 .close-btn:hover {
-  color: var(--md-sys-color-on-surface, #2d3748);
+  color: var(--md-sys-color-on-surface);
 }
 
 .settings-form {
@@ -311,23 +312,23 @@ async function handleSave() {
 .form-label {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--md-sys-color-on-surface, #4a5568);
+  color: var(--md-sys-color-on-surface);
 }
 
 .form-input,
 .form-select {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
-  border-radius: 6px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-sm);
   font-size: 0.95rem;
   outline: none;
-  background-color: var(--md-sys-color-surface-container-low, #ffffff);
-  color: var(--md-sys-color-on-surface, #1f1f1f);
+  background-color: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
 }
 
 .form-input:focus,
 .form-select:focus {
-  border-color: var(--md-sys-color-primary, #3182ce);
+  border-color: var(--md-sys-color-primary);
 }
 
 .checkbox-list {
@@ -342,30 +343,30 @@ async function handleSave() {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.9rem;
-  color: var(--md-sys-color-on-surface, #2d3748);
+  color: var(--md-sys-color-on-surface);
   cursor: pointer;
 }
 
 .image-picker-box {
   width: 100%;
   height: 90px;
-  border: 2px dashed var(--md-sys-color-outline-variant, #cbd5e0);
-  border-radius: 8px;
+  border: 2px dashed var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-sm);
   display: flex;
   justify-content: center;
   align-items: center;
   cursor: pointer;
-  background-color: var(--md-sys-color-surface-container-low, #f7fafc);
+  background-color: var(--md-sys-color-surface-container-low);
   transition: border-color 0.2s;
 }
 
 .image-picker-box:hover {
-  border-color: var(--md-sys-color-primary, #3182ce);
+  border-color: var(--md-sys-color-primary);
 }
 
 .picker-placeholder {
   font-size: 0.85rem;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .hidden-file-input {
@@ -392,12 +393,12 @@ async function handleSave() {
   gap: 0.5rem;
   margin-top: 0.5rem;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .btn-modal {
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-full);
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
@@ -405,8 +406,8 @@ async function handleSave() {
 }
 
 .btn-modal.primary {
-  background-color: var(--md-sys-color-primary, #2b6cb0);
-  color: var(--md-sys-color-on-primary, #ffffff);
+  background-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
   border: 1px solid transparent;
 }
 
@@ -415,9 +416,9 @@ async function handleSave() {
 }
 
 .btn-modal.secondary {
-  background-color: var(--md-sys-color-surface-container-high, #edf2f7);
-  color: var(--md-sys-color-on-surface, #4a5568);
-  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .btn-modal.secondary:hover:not(:disabled) {

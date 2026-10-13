@@ -79,7 +79,7 @@ Key attributes:
 
 ## Colors
 
-Meemo relies on two complementary palettes: the Material 3 structural palette and the Google Keep 12-color note palette. Each color token is declared once as `light-dark(<light>, <dark>)` and resolves against the root `color-scheme` (auto follows the OS; `data-theme="light|dark"` forces one side).
+Meemo relies on two complementary palettes: the Material 3 structural palette and the Google Keep 12-color note palette. Color tokens are explicitly declared for light mode and dark mode (`:root[data-theme="dark"]` and `@media (prefers-color-scheme: dark)`) for universal browser compatibility. When a custom background image is active, an ambient canvas tint (`.has-custom-bg`) provides contrast protection to ensure WCAG AA/AAA readability.
 
 ### Structural Surface & Accent Tokens
 - `primary`: `#0b57d0` (Light) / `#a8c7fa` (Dark) — Google Standard Blue, used for primary actions, active tabs, and focused controls.

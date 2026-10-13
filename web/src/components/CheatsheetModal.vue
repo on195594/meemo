@@ -120,12 +120,13 @@ function handleClose() {
 }
 
 .modal-card {
-  background: var(--md-sys-color-surface-container, #ffffff);
-  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
-  border-radius: var(--md-sys-shape-corner-2xl, 28px);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-2xl);
   width: 100%;
   max-width: 540px;
-  box-shadow: var(--md-sys-elevation-3, 0 10px 25px rgba(0, 0, 0, 0.15));
+  box-shadow: var(--md-sys-elevation-3);
   overflow: hidden;
   max-height: 85vh;
   display: flex;
@@ -137,13 +138,13 @@ function handleClose() {
   justify-content: space-between;
   align-items: center;
   padding: 1.25rem 1.5rem 0.75rem;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .modal-title {
   font-size: 1.2rem;
   font-weight: 600;
-  color: var(--md-sys-color-on-surface, #1a202c);
+  color: var(--md-sys-color-on-surface);
   margin: 0;
 }
 
@@ -152,14 +153,14 @@ function handleClose() {
   border: none;
   font-size: 1.5rem;
   line-height: 1;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
   padding: 0.25rem;
-  border-radius: var(--md-sys-shape-corner-xs, 4px);
+  border-radius: var(--md-sys-shape-corner-xs);
 }
 
 .close-btn:hover {
-  color: var(--md-sys-color-on-surface, #2d3748);
+  color: var(--md-sys-color-on-surface);
 }
 
 .modal-body {
@@ -172,7 +173,7 @@ function handleClose() {
 
 .cheatsheet-section h3 {
   font-size: 1rem;
-  color: var(--md-sys-color-primary, #0b57d0);
+  color: var(--md-sys-color-primary);
   margin-bottom: 0.5rem;
   font-weight: 600;
 }
@@ -186,33 +187,33 @@ function handleClose() {
 .cheat-table th,
 .cheat-table td {
   padding: 0.45rem 0.6rem;
-  border: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
+  border: 1px solid var(--md-sys-color-outline-variant);
   text-align: left;
 }
 
 .cheat-table th {
-  background-color: var(--md-sys-color-surface-container-high, #f7fafc);
-  color: var(--md-sys-color-on-surface, #4a5568);
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
 }
 
 .cheat-table td {
-  color: var(--md-sys-color-on-surface-variant, #2d3748);
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .cheat-table code {
-  background: var(--md-sys-color-surface-container-high, #edf2f7);
-  color: var(--md-sys-color-on-surface, inherit);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
   padding: 0.1rem 0.35rem;
-  border-radius: var(--md-sys-shape-corner-xs, 4px);
+  border-radius: var(--md-sys-shape-corner-xs);
   font-family: monospace;
   font-size: 0.85rem;
 }
 
 kbd {
-  background: var(--md-sys-color-surface-container-high, #edf2f7);
-  color: var(--md-sys-color-on-surface, inherit);
-  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
-  border-radius: var(--md-sys-shape-corner-xs, 3px);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-xs);
   padding: 0.1rem 0.3rem;
   font-size: 0.75rem;
   font-family: monospace;
@@ -222,18 +223,18 @@ kbd {
   display: flex;
   justify-content: flex-end;
   padding: 0.75rem 1.5rem 1.25rem;
-  border-top: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .btn-modal {
   padding: 0.45rem 1rem;
-  border-radius: var(--md-sys-shape-corner-sm, 8px);
+  border-radius: var(--md-sys-shape-corner-full);
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  background-color: var(--md-sys-color-surface-container-high, #edf2f7);
-  color: var(--md-sys-color-on-surface, #4a5568);
-  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
   transition: opacity 0.2s;
 }
 

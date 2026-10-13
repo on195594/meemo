@@ -198,12 +198,13 @@ async function executeImport() {
 }
 
 .modal-card {
-  background: var(--md-sys-color-surface-container, #ffffff);
-  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
-  border-radius: var(--md-sys-shape-corner-2xl, 28px);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-2xl);
   width: 100%;
   max-width: 480px;
-  box-shadow: var(--md-sys-elevation-3, 0 10px 25px rgba(0, 0, 0, 0.15));
+  box-shadow: var(--md-sys-elevation-3);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -214,13 +215,13 @@ async function executeImport() {
   justify-content: space-between;
   align-items: center;
   padding: 1.25rem 1.5rem 0.75rem;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .modal-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--md-sys-color-on-surface, #1a202c);
+  color: var(--md-sys-color-on-surface);
   margin: 0;
 }
 
@@ -229,14 +230,14 @@ async function executeImport() {
   border: none;
   font-size: 1.5rem;
   line-height: 1;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
   padding: 0.25rem;
-  border-radius: var(--md-sys-shape-corner-xs, 4px);
+  border-radius: var(--md-sys-shape-corner-xs);
 }
 
 .close-btn:hover {
-  color: var(--md-sys-color-on-surface, #2d3748);
+  color: var(--md-sys-color-on-surface);
 }
 
 .modal-body {
@@ -248,36 +249,36 @@ async function executeImport() {
 
 .import-desc {
   font-size: 0.9rem;
-  color: var(--md-sys-color-on-surface-variant, #4a5568);
+  color: var(--md-sys-color-on-surface-variant);
   line-height: 1.5;
 }
 
 .import-desc code {
-  background: var(--md-sys-color-surface-container-high, #edf2f7);
-  color: var(--md-sys-color-on-surface, inherit);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
   padding: 0.1rem 0.35rem;
-  border-radius: var(--md-sys-shape-corner-xs, 4px);
+  border-radius: var(--md-sys-shape-corner-xs);
   font-size: 0.85rem;
 }
 
 .drop-zone {
-  border: 2px dashed var(--md-sys-color-outline-variant, #cbd5e0);
-  border-radius: var(--md-sys-shape-corner-md, 12px);
+  border: 2px dashed var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-md);
   padding: 2rem 1rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
-  background-color: var(--md-sys-color-surface-container-low, #f7fafc);
+  background-color: var(--md-sys-color-surface-container-low);
   transition: all 0.2s;
   text-align: center;
 }
 
 .drop-zone:hover,
 .drop-zone.dragging {
-  border-color: var(--md-sys-color-primary, #0b57d0);
-  background-color: var(--md-sys-color-primary-container, #ebf8ff);
+  border-color: var(--md-sys-color-primary);
+  background-color: var(--md-sys-color-primary-container);
 }
 
 .drop-icon {
@@ -286,13 +287,13 @@ async function executeImport() {
 
 .drop-text {
   font-size: 0.85rem;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .file-name {
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--md-sys-color-primary, #0b57d0);
+  color: var(--md-sys-color-primary);
 }
 
 .hidden-file-input {
@@ -307,39 +308,39 @@ async function executeImport() {
 
 .progress-bar-container {
   height: 8px;
-  background-color: var(--md-sys-color-surface-container-high, #edf2f7);
-  border-radius: var(--md-sys-shape-corner-xs, 4px);
+  background-color: var(--md-sys-color-surface-container-high);
+  border-radius: var(--md-sys-shape-corner-xs);
   overflow: hidden;
 }
 
 .progress-fill {
   width: 100%;
   height: 100%;
-  background-color: var(--md-sys-color-primary, #0b57d0);
+  background-color: var(--md-sys-color-primary);
   transform-origin: left center;
   transition: transform 0.2s ease;
 }
 
 .progress-text {
   font-size: 0.8rem;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
   text-align: center;
 }
 
 .success-banner {
-  background-color: var(--note-color-mint, #f0fff4);
-  border: 1px solid var(--md-sys-color-outline-variant, #c6f6d5);
-  color: var(--md-sys-color-on-surface, #276749);
-  border-radius: var(--md-sys-shape-corner-sm, 8px);
+  background-color: var(--note-color-mint);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-sm);
   padding: 0.75rem;
   font-size: 0.875rem;
 }
 
 .error-banner {
-  background-color: var(--md-sys-color-error-container, #fff5f5);
-  border: 1px solid var(--md-sys-color-error, #fed7d7);
-  color: var(--md-sys-color-on-error-container, #c53030);
-  border-radius: var(--md-sys-shape-corner-sm, 8px);
+  background-color: var(--md-sys-color-error-container);
+  border: 1px solid var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error-container);
+  border-radius: var(--md-sys-shape-corner-sm);
   padding: 0.75rem;
   font-size: 0.875rem;
 }
@@ -349,12 +350,12 @@ async function executeImport() {
   justify-content: flex-end;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem 1.25rem;
-  border-top: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .btn-modal {
   padding: 0.5rem 1rem;
-  border-radius: var(--md-sys-shape-corner-sm, 8px);
+  border-radius: var(--md-sys-shape-corner-full);
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
@@ -362,8 +363,8 @@ async function executeImport() {
 }
 
 .btn-modal.primary {
-  background-color: var(--md-sys-color-primary, #0b57d0);
-  color: var(--md-sys-color-on-primary, #ffffff);
+  background-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
   border: 1px solid transparent;
 }
 
@@ -372,9 +373,9 @@ async function executeImport() {
 }
 
 .btn-modal.secondary {
-  background-color: var(--md-sys-color-surface-container-high, #edf2f7);
-  color: var(--md-sys-color-on-surface, #4a5568);
-  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .btn-modal.secondary:hover:not(:disabled) {
