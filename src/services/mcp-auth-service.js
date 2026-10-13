@@ -6,6 +6,7 @@ var crypto = require('crypto'),
     errors = require('@modelcontextprotocol/sdk/server/auth/errors.js');
 
 var ACCESS_SECONDS = 100 * 365 * 24 * 60 * 60;
+var CLIENT_REGISTRATION_SECONDS = 30 * 24 * 60 * 60;
 var ALLOWED_SCOPES = ['notes.read', 'notes.write'];
 
 function grantScopes(grant) {
@@ -73,11 +74,11 @@ function createProvider(settings) {
                 };
                 if (method !== 'none') {
                     info.client_secret = random();
-                    info.client_secret_expires_at = Math.floor(Date.now() / 1000) + ACCESS_SECONDS;
+                    info.client_secret_expires_at = Math.floor(Date.now() / 1000) + CLIENT_REGISTRATION_SECONDS;
                 }
                 var stored = Object.assign({}, info);
                 if (stored.client_secret) stored.client_secret = hash(stored.client_secret);
-                await repository.insert('clients', { _id: info.client_id, info: stored, expiresAt: expiry(ACCESS_SECONDS) });
+                await repository.insert('clients', { _id: info.client_id, info: stored, expiresAt: expiry(CLIENT_REGISTRATION_SECONDS) });
                 return info;
             }
         },
@@ -115,6 +116,7 @@ function createProvider(settings) {
             var record = await repository.consume('codes', { _id: hash(code), clientId: client.client_id, redirectUri: redirectUri });
             if (!record) throw new errors.InvalidGrantError('Invalid authorization code');
             var grant = await activeGrant(record.grantId);
+            await repository.extendClient(client.client_id, grant.expiresAt);
             var token = random();
             await repository.insert('tokens', {
                 _id: hash(token), clientId: client.client_id, grantId: grant._id, expiresAt: grant.expiresAt
@@ -165,6 +167,7 @@ function createProvider(settings) {
                 scopes: scopesToGrant,
                 createdAt: new Date(), expiresAt: expiry(ACCESS_SECONDS)
             });
+            await repository.extendClient(record.clientId, grant.expiresAt);
             var code = random();
             await repository.insert('codes', {
                 _id: hash(code), clientId: record.clientId, grantId: grant._id,

@@ -139,9 +139,30 @@ describe('MCP read/write tools and OAuth isolation', function () {
         assert(confidential.client_secret);
         var stored = await db.collection('mcp_clients').findOne({ _id: confidential.client_id });
         assert.equal(stored.info.client_secret, hash(confidential.client_secret));
+        var initialTtlDays = (stored.expiresAt.getTime() - Date.now()) / (24 * 3600 * 1000);
+        assert(initialTtlDays > 25 && initialTtlDays <= 31, 'Unused client registration must be bounded to ~30 days');
+
         var token = await connect(app, alice, confidential);
         assert(await db.collection('mcp_tokens').findOne({ _id: hash(token) }));
         assert.equal(await db.collection('mcp_tokens').findOne({ _id: token }), null);
+
+        var extended = await db.collection('mcp_clients').findOne({ _id: confidential.client_id });
+        var extendedYears = (extended.expiresAt.getTime() - Date.now()) / (365 * 24 * 3600 * 1000);
+        assert(extendedYears > 90, 'Authorized client must have expiration extended to match grant lifetime');
+    });
+
+    it('extends pre-existing client TTL upon re-authorization so long-lived tokens do not expire with old client TTL', async function () {
+        var oldClient = await register(app, 'none');
+        var nearExpiry = new Date(Date.now() + 5000);
+        await db.collection('mcp_clients').updateOne({ _id: oldClient.client_id }, { $set: { expiresAt: nearExpiry } });
+
+        var token = await connect(app, alice, oldClient);
+        var clientAfter = await db.collection('mcp_clients').findOne({ _id: oldClient.client_id });
+        var extendedYears = (clientAfter.expiresAt.getTime() - Date.now()) / (365 * 24 * 3600 * 1000);
+        assert(extendedYears > 90, 'Client expiration must be extended beyond pre-upgrade nearExpiry');
+
+        var notesRes = toolBody(await rpc(app, token, 'tools/call', { name: 'get_note', arguments: { id: noteId } }));
+        assert.equal(notesRes.content, 'private marker #alpha #beta');
     });
 
     it('enforces PKCE, resource, redirect binding and single-use codes', async function () {

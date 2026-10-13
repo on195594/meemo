@@ -54,6 +54,15 @@ function createRepository() {
         },
         revokeToken: async function (clientId, tokenHash) {
             await (await collection('tokens')).deleteOne({ _id: tokenHash, clientId: clientId });
+        },
+        extendClient: async function (id, expiresAt) {
+            await (await collection('clients')).updateOne(
+                { _id: id },
+                {
+                    $max: { expiresAt: expiresAt },
+                    $set: { 'info.client_secret_expires_at': Math.floor(expiresAt.getTime() / 1000) }
+                }
+            );
         }
     };
 }
