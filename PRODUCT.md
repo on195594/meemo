@@ -33,7 +33,7 @@ Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesys
 - **Organization**: Pinned notes section, 12-color Keep-calibrated palette with automatic dark mode contrast recalibration, dynamic tag aggregation, multi-select batch actions (pin, archive, color, delete to trash).
 - **Import/Export**: Drag-and-drop `.tar` archive import with progress tracking; `.tar` export (`/api/export`).
 - **Authentication**: Browser username/password login with bcrypt hashing, server-side MongoDB sessions, configurable registration modes (`open`, `first-user`, `disabled`). MCP uses separately consented, user-bound OAuth tokens, not REST session substitution.
-- **Optional assistant**: Default-disabled, read-only Gemini/MCP search, note reads and tag listing. Private-note transfer requires explicit consent; writing remains gated and real Meemo client acceptance is pending. See [current configuration and boundaries](docs/GEMINI_ASSISTANT.md).
+- **Optional assistant**: Default-disabled Gemini/MCP integration supporting note search, read, create, update, and delete with optimistic concurrency control. Private-note transfer requires explicit user consent. See [current configuration and boundaries](docs/GEMINI_ASSISTANT.md).
 - **Constraints**: Self-hosted only; URL enrichment (outbound fetch) is disabled by default for SSRF safety; note colors are designed toward WCAG AA contrast (not formally audited).
 
 ## Brand Commitments

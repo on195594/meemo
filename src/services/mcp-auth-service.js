@@ -6,6 +6,12 @@ var crypto = require('crypto'),
     errors = require('@modelcontextprotocol/sdk/server/auth/errors.js');
 
 var ACCESS_SECONDS = 24 * 60 * 60;
+var ALLOWED_SCOPES = ['notes.read', 'notes.write'];
+
+function grantScopes(grant) {
+    if (!grant || !Array.isArray(grant.scopes)) return ['notes.read'];
+    return grant.scopes;
+}
 
 function random() { return crypto.randomBytes(32).toString('base64url'); }
 function hash(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
@@ -49,14 +55,21 @@ function createProvider(settings) {
                 if (metadata.response_types && (metadata.response_types.length !== 1 || metadata.response_types[0] !== 'code')) {
                     throw new errors.InvalidClientMetadataError('Only code responses are supported');
                 }
-                if (metadata.scope && metadata.scope !== 'notes.read') throw new errors.InvalidScopeError('Only notes.read is supported');
+                var clientScope = 'notes.read notes.write';
+                if (metadata.scope) {
+                    var reqScopes = metadata.scope.split(' ').filter(Boolean);
+                    if (!reqScopes.length || reqScopes.some(function (s) { return !ALLOWED_SCOPES.includes(s); })) {
+                        throw new errors.InvalidScopeError('Unsupported scope: ' + metadata.scope);
+                    }
+                    clientScope = metadata.scope;
+                }
                 var method = metadata.token_endpoint_auth_method || 'client_secret_post';
                 if (!['none', 'client_secret_post'].includes(method)) throw new errors.InvalidClientMetadataError('Unsupported client authentication');
                 if (await repository.count('clients', {}) >= 500) throw new errors.TooManyRequestsError('Client capacity reached');
                 var info = {
                     client_id: random(), client_id_issued_at: Math.floor(Date.now() / 1000),
                     redirect_uris: metadata.redirect_uris, client_name: (metadata.client_name || 'Gemini').slice(0, 100),
-                    token_endpoint_auth_method: method, grant_types: ['authorization_code'], response_types: ['code'], scope: 'notes.read'
+                    token_endpoint_auth_method: method, grant_types: ['authorization_code'], response_types: ['code'], scope: clientScope
                 };
                 if (method !== 'none') {
                     info.client_secret = random();
@@ -70,17 +83,25 @@ function createProvider(settings) {
         },
         authorize: async function (client, params, res) {
             requireResource(params.resource);
-            if (params.scopes && params.scopes.length && (params.scopes.length !== 1 || params.scopes[0] !== 'notes.read')) {
-                throw new errors.InvalidScopeError('Only notes.read is supported');
+            if (params.scopes && params.scopes.length) {
+                if (params.scopes.some(function (s) { return !ALLOWED_SCOPES.includes(s); })) {
+                    throw new errors.InvalidScopeError('Unsupported scope');
+                }
             }
             if (!/^[A-Za-z0-9_-]{43}$/.test(params.codeChallenge)) throw new errors.InvalidRequestError('Invalid S256 challenge');
             if (params.state && params.state.length > 4096) throw new errors.InvalidRequestError('State too long');
             if (!settings.redirectUris.includes(params.redirectUri)) throw new errors.InvalidRequestError('Redirect URI is not allowed');
             if (await repository.count('requests', { clientId: client.client_id }) >= 20) throw new errors.TooManyRequestsError('Too many pending authorizations');
             var request = random();
+            var grantedScopes = (params.scopes && params.scopes.length)
+                ? params.scopes
+                : (client.scope ? client.scope.split(' ').filter(Boolean) : ['notes.read', 'notes.write']);
+            if (grantedScopes.includes('notes.write') && !grantedScopes.includes('notes.read')) {
+                grantedScopes.push('notes.read');
+            }
             await repository.insert('requests', {
                 _id: hash(request), clientId: client.client_id, redirectUri: params.redirectUri,
-                state: params.state, challenge: params.codeChallenge, expiresAt: expiry(600)
+                state: params.state, challenge: params.codeChallenge, scopes: grantedScopes, expiresAt: expiry(600)
             });
             res.redirect(settings.publicUrl + '/assistant/authorize?request=' + request);
         },
@@ -98,7 +119,8 @@ function createProvider(settings) {
             await repository.insert('tokens', {
                 _id: hash(token), clientId: client.client_id, grantId: grant._id, expiresAt: grant.expiresAt
             });
-            return { access_token: token, token_type: 'Bearer', expires_in: Math.max(0, Math.floor((grant.expiresAt.getTime() - Date.now()) / 1000)), scope: 'notes.read' };
+            var grantedScope = grantScopes(grant).join(' ');
+            return { access_token: token, token_type: 'Bearer', expires_in: Math.max(0, Math.floor((grant.expiresAt.getTime() - Date.now()) / 1000)), scope: grantedScope };
         },
         exchangeRefreshToken: async function () { throw new errors.UnsupportedGrantTypeError('Refresh tokens are not supported'); },
         verifyAccessToken: async function (token) {
@@ -107,7 +129,7 @@ function createProvider(settings) {
             if (!record || !await provider.clientsStore.getClient(record.clientId)) throw new errors.InvalidTokenError('Invalid token');
             var grant = await activeGrant(record.grantId);
             return {
-                token: token, clientId: record.clientId, scopes: ['notes.read'], resource: resource,
+                token: token, clientId: record.clientId, scopes: grantScopes(grant), resource: resource,
                 expiresAt: Math.floor(record.expiresAt.getTime() / 1000), extra: { userId: grant.userId, grantId: grant._id }
             };
         },
@@ -119,7 +141,8 @@ function createProvider(settings) {
             if (!record) throw new errors.InvalidRequestError('Authorization request expired or unavailable');
             var client = await provider.clientsStore.getClient(record.clientId);
             if (!client) throw new errors.InvalidClientError('Client expired');
-            return { clientName: client.client_name, scope: 'notes.read', expiresIn: ACCESS_SECONDS };
+            var scopeStr = (record.scopes || ['notes.read']).join(' ');
+            return { clientName: client.client_name, scope: scopeStr, expiresIn: ACCESS_SECONDS };
         },
         decide: async function (request, userId, allow) {
             var record = await repository.consume('requests', { _id: hash(request), userId: userId });
@@ -133,8 +156,13 @@ function createProvider(settings) {
             var client = await provider.clientsStore.getClient(record.clientId);
             if (!client || !settings.redirectUris.includes(record.redirectUri)) throw new errors.InvalidClientError('Client unavailable');
             if (await repository.count('grants', { userId: userId, revoked: { $ne: true } }) >= 50) throw new errors.TooManyRequestsError('Connection capacity reached');
+            var scopesToGrant = record.scopes || ['notes.read'];
+            if (scopesToGrant.includes('notes.write') && !scopesToGrant.includes('notes.read')) {
+                scopesToGrant.push('notes.read');
+            }
             var grant = await repository.insert('grants', {
                 _id: random(), userId: userId, clientId: record.clientId, clientName: client.client_name,
+                scopes: scopesToGrant,
                 createdAt: new Date(), expiresAt: expiry(ACCESS_SECONDS)
             });
             var code = random();
@@ -148,7 +176,8 @@ function createProvider(settings) {
         listConnections: async function (userId) {
             var grants = await repository.listGrants(userId);
             return grants.map(function (grant) {
-                return { id: grant._id, clientName: grant.clientName, scope: 'notes.read', createdAt: grant.createdAt, expiresAt: grant.expiresAt };
+                var scopeStr = grantScopes(grant).join(' ');
+                return { id: grant._id, clientName: grant.clientName, scope: scopeStr, createdAt: grant.createdAt, expiresAt: grant.expiresAt };
             });
         },
         revokeConnection: function (userId, id) { return repository.revokeGrant(userId, id); }

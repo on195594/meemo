@@ -330,8 +330,8 @@ export interface paths {
                         token_endpoint_auth_method?: "none" | "client_secret_post";
                         grant_types?: "authorization_code"[];
                         response_types?: "code"[];
-                        /** @enum {string} */
-                        scope?: "notes.read";
+                        /** @description Requested scopes (notes.read, notes.write) */
+                        scope?: string;
                     };
                 };
             };
@@ -391,7 +391,7 @@ export interface paths {
                     resource: string;
                     code_challenge: string;
                     code_challenge_method: "S256";
-                    scope?: "notes.read";
+                    scope?: string;
                     state?: string;
                 };
                 header?: never;
@@ -477,8 +477,8 @@ export interface paths {
                             /** @enum {string} */
                             token_type: "Bearer";
                             expires_in: number;
-                            /** @enum {string} */
-                            scope: "notes.read";
+                            /** @description Granted scopes (e.g. notes.read notes.write) */
+                            scope: string;
                         };
                     };
                 };
@@ -1816,8 +1816,8 @@ export interface components {
         McpConnection: {
             id: string;
             clientName: string;
-            /** @enum {string} */
-            scope: "notes.read";
+            /** @description Granted scopes (e.g. notes.read notes.write) */
+            scope: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1833,8 +1833,8 @@ export interface components {
         McpConsentResponse: {
             clientName: string;
             username: string;
-            /** @enum {string} */
-            scope: "notes.read";
+            /** @description Requested scopes (e.g. notes.read notes.write) */
+            scope: string;
             /** @enum {integer} */
             expiresIn: 86400;
             csrfToken: string;

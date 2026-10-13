@@ -80,9 +80,9 @@ docker compose up --build -d
 
 A production-ready reverse proxy template offloading gzip/brotli compression, SSL termination, and static asset caching to Nginx is provided at [`docs/nginx-reverse-proxy.conf`](docs/nginx-reverse-proxy.conf).
 
-## Gemini assistant (optional, read-only)
+## Gemini assistant (optional)
 
-Meemo exposes default-disabled MCP + OAuth for Gemini custom apps. Supported tools are `search_notes`, `get_note` and `list_tags`; no Gemini API key or note-writing tools are included. Users explicitly approve account-level private-note read access, valid up to 24 hours, and can revoke their own connections in **Settings → Manage assistant connections**. Retrieved content may be sent to Google.
+Meemo exposes default-disabled MCP + OAuth for Gemini custom apps. Supported tools are `search_notes`, `get_note`, `list_tags`, `create_note`, `update_note`, and `delete_note` with optimistic concurrency control (`expectedRevision`). No Gemini API key is needed. Users explicitly approve account-level private-note access, valid up to 24 hours, and can revoke their own connections in **Settings → Manage assistant connections**. Retrieved content may be sent to Google.
 
 See [configuration, protocol limits, privacy and recovery](docs/GEMINI_ASSISTANT.md) before setting `MCP_ENABLED=true`, a fixed HTTPS `MCP_PUBLIC_URL`, and exact reviewed `MCP_REDIRECT_URIS` in the Node/container environment. If callbacks are not yet known, use the [short-lived callback discovery procedure](docs/GEMINI_ASSISTANT.md#discover-the-actual-gemini-callbacks-safely), not placeholder allowlists. Real Meemo Gemini web/mobile acceptance is pending; local tests are not client acceptance. Enabling or deploying requires separate authorization.
 

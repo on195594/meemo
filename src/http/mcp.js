@@ -88,14 +88,14 @@ function createMcp(options, logger) {
     });
     protocol.use('/oauth', express.urlencoded({ extended: false, limit: '16kb' }), express.json({ limit: '16kb' }));
     protocol.get('/.well-known/oauth-protected-resource/mcp', function (req, res) {
-        res.json({ resource: settings.publicUrl + '/mcp', authorization_servers: [settings.publicUrl], scopes_supported: ['notes.read'], resource_name: 'Meemo private notes' });
+        res.json({ resource: settings.publicUrl + '/mcp', authorization_servers: [settings.publicUrl], scopes_supported: ['notes.read', 'notes.write'], resource_name: 'Meemo private notes' });
     });
     protocol.get('/.well-known/oauth-authorization-server', function (req, res) {
         res.json({ issuer: settings.publicUrl, authorization_endpoint: settings.publicUrl + '/oauth/authorize',
             token_endpoint: settings.publicUrl + '/oauth/token', registration_endpoint: settings.publicUrl + '/oauth/register',
             revocation_endpoint: settings.publicUrl + '/oauth/revoke', response_types_supported: ['code'],
             grant_types_supported: ['authorization_code'], code_challenge_methods_supported: ['S256'],
-            token_endpoint_auth_methods_supported: ['none', 'client_secret_post'], scopes_supported: ['notes.read'] });
+            token_endpoint_auth_methods_supported: ['none', 'client_secret_post'], scopes_supported: ['notes.read', 'notes.write'] });
     });
     if (settings.bootstrapUntil) {
         var capture = createCaptureStore(settings.bootstrapUntil);
@@ -140,7 +140,7 @@ function createMcp(options, logger) {
     protocol.use('/oauth/token', tokenHandler({ provider: provider, rateLimit: false }));
     protocol.use('/oauth/revoke', revocationHandler({ provider: provider, rateLimit: false }));
 
-    var bearer = requireBearerAuth({ verifier: provider, requiredScopes: ['notes.read'], resourceMetadataUrl: metadataUrl, expectedResource: settings.publicUrl + '/mcp' });
+    var bearer = requireBearerAuth({ verifier: provider, requiredScopes: [], resourceMetadataUrl: metadataUrl, expectedResource: settings.publicUrl + '/mcp' });
     var inFlight = 0;
     protocol.use('/mcp', bearer, limit(60, function (req) { return req.auth.clientId; }), limit(60, function (req) { return req.auth.extra.userId; }), function (req, res, next) {
         if (res.destroyed) return;

@@ -47,7 +47,7 @@ components:
       properties:
         id: { type: string }
         clientName: { type: string }
-        scope: { type: string, enum: [notes.read] }
+        scope: { type: string, description: 'Granted scopes (e.g. notes.read notes.write)' }
         createdAt: { type: string, format: date-time }
         expiresAt: { type: string, format: date-time }
     McpConnectionsResponse:
@@ -67,7 +67,7 @@ components:
       properties:
         clientName: { type: string }
         username: { type: string }
-        scope: { type: string, enum: [notes.read] }
+        scope: { type: string, description: 'Requested scopes (e.g. notes.read notes.write)' }
         expiresIn: { type: integer, enum: [86400] }
         csrfToken: { type: string }
     ErrorResponse:
@@ -770,7 +770,7 @@ paths:
                 token_endpoint_auth_method: { type: string, enum: [none, client_secret_post], default: client_secret_post }
                 grant_types: { type: array, items: { type: string, enum: [authorization_code] } }
                 response_types: { type: array, items: { type: string, enum: [code] } }
-                scope: { type: string, enum: [notes.read] }
+                scope: { type: string, description: 'Requested scopes (notes.read, notes.write)' }
       responses:
         '201':
           description: OAuth client metadata and optional one-time-disclosed client secret; registration expires after 30 days
@@ -791,7 +791,7 @@ paths:
         - { name: resource, in: query, required: true, schema: { type: string, format: uri } }
         - { name: code_challenge, in: query, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } }
         - { name: code_challenge_method, in: query, required: true, schema: { type: string, enum: [S256] } }
-        - { name: scope, in: query, schema: { type: string, enum: [notes.read] } }
+        - { name: scope, in: query, schema: { type: string, description: 'Requested scopes (notes.read, notes.write)' } }
         - { name: state, in: query, schema: { type: string, maxLength: 4096 } }
       responses:
         '302': { description: Redirect to Meemo consent, or exact client callback with OAuth error }
@@ -828,7 +828,7 @@ paths:
                   access_token: { type: string }
                   token_type: { type: string, enum: [Bearer] }
                   expires_in: { type: integer }
-                  scope: { type: string, enum: [notes.read] }
+                  scope: { type: string, description: 'Granted scopes (e.g. notes.read notes.write)' }
         '400': { description: Invalid client, code, verifier, target or grant }
         '404': { description: MCP disabled }
   /oauth/revoke:

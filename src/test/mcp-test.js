@@ -26,10 +26,10 @@ async function register(app, method) {
     return response.body;
 }
 
-async function consent(app, agent, client, verifier, allow) {
+async function consent(app, agent, client, verifier, allow, scope) {
     var response = await protocol(app, 'get', '/oauth/authorize').query({
         client_id: client.client_id, redirect_uri: callback, response_type: 'code', resource: resource,
-        scope: 'notes.read', code_challenge: challenge(verifier), code_challenge_method: 'S256', state: 'synthetic-state'
+        scope: scope || 'notes.read notes.write', code_challenge: challenge(verifier), code_challenge_method: 'S256', state: 'synthetic-state'
     }).expect(302);
     var id = new URL(response.headers.location).searchParams.get('request');
     var info = await agent.get('/api/mcp/consent').query({ request: id }).expect(200);
@@ -208,11 +208,14 @@ describe('Read-only MCP and OAuth isolation', function () {
         await alice.post('/api/mcp/consent').set('X-CSRF-Token', info.body.csrfToken).send({ request: id, allow: false }).expect(200);
     });
 
-    it('exposes only three read-only tools and isolates notes, tags and archived/deleted states', async function () {
+    it('exposes note tools and isolates notes, tags and archived/deleted states', async function () {
         var initialized = await rpc(app, aliceToken, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'synthetic', version: '1' } });
         assert.equal(initialized.status, 200);
         var listed = await rpc(app, aliceToken, 'tools/list');
-        assert.deepEqual(listed.body.result.tools.map(function (tool) { assert(tool.annotations.readOnlyHint); return tool.name; }).sort(), ['get_note', 'list_tags', 'search_notes']);
+        var readTools = listed.body.result.tools.filter(function (t) { return t.annotations.readOnlyHint; }).map(function (t) { return t.name; }).sort();
+        var writeTools = listed.body.result.tools.filter(function (t) { return !t.annotations.readOnlyHint; }).map(function (t) { return t.name; }).sort();
+        assert.deepEqual(readTools, ['get_note', 'list_tags', 'search_notes']);
+        assert.deepEqual(writeTools, ['create_note', 'delete_note', 'update_note']);
         var search = toolBody(await rpc(app, aliceToken, 'tools/call', { name: 'search_notes', arguments: { query: 'marker' } }));
         assert.deepEqual(search.notes.map(function (note) { return note.id; }), [noteId]);
         assert.equal(search.notes[0].content, undefined);
@@ -230,6 +233,122 @@ describe('Read-only MCP and OAuth isolation', function () {
         var deleted = await things.insertFull(aliceId, 'deleted secret', ['deleted'], [], [], 4, 4);
         await things.del(aliceId, deleted._id, deleted.revision);
         assert.equal(toolBody(await rpc(app, aliceToken, 'tools/call', { name: 'get_note', arguments: { id: deleted._id } })).code, 'not_found');
+    });
+
+    it('creates, updates with revision check, and deletes notes via MCP tools', async function () {
+        // Verify token with only notes.read cannot call write tools
+        var readOnlyVerifier = crypto.randomBytes(32).toString('base64url');
+        var readOnlyConsent = await consent(app, alice, client, readOnlyVerifier, true, 'notes.read');
+        var readOnlyTokenRes = await exchange(app, client, readOnlyVerifier, readOnlyConsent.redirect.searchParams.get('code'));
+        var readOnlyToken = readOnlyTokenRes.body.access_token;
+        var scopeDenied = toolBody(await rpc(app, readOnlyToken, 'tools/call', {
+            name: 'create_note', arguments: { content: 'forbidden write' }
+        }));
+        assert.equal(scopeDenied.code, 'insufficient_scope');
+
+        // 1. create_note
+        var created = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'create_note', arguments: { content: 'mcp created note #newtag', color: 'sage' }
+        }));
+        assert(created.id);
+        assert.equal(created.revision, 1);
+        assert.equal(created.content, undefined);
+
+        // Verify Bob cannot read it
+        assert.equal(toolBody(await rpc(app, bobToken, 'tools/call', { name: 'get_note', arguments: { id: created.id } })).code, 'not_found');
+
+        // Verify tags updated
+        var tags = toolBody(await rpc(app, aliceToken, 'tools/call', { name: 'list_tags', arguments: {} }));
+        assert(tags.tags.some(function (t) { return t.name === 'newtag'; }));
+
+        // 2. update_note with revision conflict
+        var conflict = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'update_note', arguments: { id: created.id, expectedRevision: 999, content: 'conflict content' }
+        }));
+        assert.equal(conflict.code, 'revision_conflict');
+
+        // 3. update_note success
+        var updated = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'update_note', arguments: { id: created.id, expectedRevision: 1, content: 'mcp updated content #updated' }
+        }));
+        assert.equal(updated.id, created.id);
+        assert.equal(updated.revision, 2);
+        assert.equal(updated.content, undefined);
+
+        // Verify reading back shows updated content
+        var readBack = toolBody(await rpc(app, aliceToken, 'tools/call', { name: 'get_note', arguments: { id: created.id } }));
+        assert.equal(readBack.content, 'mcp updated content #updated');
+        assert.equal(readBack.revision, 2);
+
+        // 4. delete_note with revision conflict
+        var deleteConflict = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'delete_note', arguments: { id: created.id, expectedRevision: 1 }
+        }));
+        assert.equal(deleteConflict.code, 'revision_conflict');
+
+        // 5. delete_note success
+        var deleted = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'delete_note', arguments: { id: created.id, expectedRevision: 2 }
+        }));
+        assert.equal(deleted.id, created.id);
+        assert.equal(deleted.deleted, true);
+
+        // Verify get_note now returns not_found
+        assert.equal(toolBody(await rpc(app, aliceToken, 'tools/call', { name: 'get_note', arguments: { id: created.id } })).code, 'not_found');
+
+        // Reject modifying or deleting public or shared notes
+        var publicId = new ObjectId();
+        await db.collection('things').insertOne({
+            _id: publicId, ownerId: aliceId, content: 'public note', tags: [],
+            attachments: [], createdAt: 1, modifiedAt: 1, revision: 1, public: true, shared: false
+        });
+        var sharedId = new ObjectId();
+        await db.collection('things').insertOne({
+            _id: sharedId, ownerId: aliceId, content: 'shared note', tags: [],
+            attachments: [], createdAt: 1, modifiedAt: 1, revision: 1, public: false, shared: true
+        });
+
+        var pubUpdate = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'update_note', arguments: { id: publicId.toHexString(), expectedRevision: 1, content: 'tampered public' }
+        }));
+        assert.equal(pubUpdate.code, 'not_allowed');
+
+        var sharedUpdate = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'update_note', arguments: { id: sharedId.toHexString(), expectedRevision: 1, content: 'tampered shared' }
+        }));
+        assert.equal(sharedUpdate.code, 'not_allowed');
+
+        var pubDelete = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'delete_note', arguments: { id: publicId.toHexString(), expectedRevision: 1 }
+        }));
+        assert.equal(pubDelete.code, 'not_allowed');
+
+        var sharedDelete = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'delete_note', arguments: { id: sharedId.toHexString(), expectedRevision: 1 }
+        }));
+        assert.equal(sharedDelete.code, 'not_allowed');
+    });
+
+    it('restricts legacy grants without stored scopes to read-only access', async function () {
+        var db = config.db;
+        var legacyGrantId = 'legacy-grant-' + Date.now();
+        await db.collection('mcp_grants').insertOne({
+            _id: legacyGrantId, userId: aliceId, clientId: client.client_id, clientName: 'Legacy Client',
+            createdAt: new Date(), expiresAt: new Date(Date.now() + 86400000)
+        });
+        var legacyToken = 'legacy-token-' + Date.now();
+        await db.collection('mcp_tokens').insertOne({
+            _id: hash(legacyToken), clientId: client.client_id, grantId: legacyGrantId,
+            expiresAt: new Date(Date.now() + 86400000)
+        });
+        // Can read
+        var readRes = toolBody(await rpc(app, legacyToken, 'tools/call', { name: 'get_note', arguments: { id: noteId } }));
+        assert.equal(readRes.content, 'private marker #alpha #beta');
+        // Cannot write
+        var writeRes = toolBody(await rpc(app, legacyToken, 'tools/call', {
+            name: 'create_note', arguments: { content: 'legacy write attempt' }
+        }));
+        assert.equal(writeRes.code, 'insufficient_scope');
     });
 
     it('bounds summaries, full responses, input and page depth without silently truncating notes', async function () {

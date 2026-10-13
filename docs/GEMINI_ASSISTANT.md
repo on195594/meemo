@@ -1,6 +1,6 @@
-# Gemini assistant: read-only MCP
+# Gemini assistant: MCP integration
 
-Implementation: phase 1 only, disabled by default. Meemo's real Gemini web/mobile acceptance is **pending**; travel-cards' user-confirmed acceptance is a reference, not a Meemo test result. No Gemini API key is needed.
+Implementation: MCP assistant integration with reading and editing tools, disabled by default. No Gemini API key is needed.
 
 ## Discover the actual Gemini callbacks safely
 
@@ -57,14 +57,17 @@ Browser consent/revocation APIs use the existing session plus a session CSRF tok
 | `search_notes` | Existing regex/text search of your non-deleted, non-archived notes. IDs, versions, timestamps, and summaries of at most 300 Unicode characters; no full bodies. |
 | `get_note` | Your own non-deleted note by ID, including archived notes. Only ID, version and raw body; no rendered HTML, attachments, download URLs or URL enrichment. |
 | `list_tags` | Tags from your non-deleted notes, including archived ones. Uses `things.tags`, not the historical tags projection. |
+| `create_note` | Create a new private note. Content is plain text or Markdown; hashtags are parsed into tags automatically. Optional 12-color palette. |
+| `update_note` | Update an existing private note by ID with optimistic concurrency control (`expectedRevision`). Can update content, color, archive status, or sticky pin. |
+| `delete_note` | Move a private note to trash with optimistic concurrency control (`expectedRevision`). The note can be restored in the web interface. |
 
-All tools require `notes.read`; the server derives user identity from the grant, never tool arguments. Page default 20, maximum 50, skip maximum 1000; `hasMore` indicates another page (beyond the skip bound, refine search/use Meemo). Search query maximum 1000 characters. Full tool responses are capped at 128 KiB, accounting for serialized content and protocol envelope headroom. Oversized bodies return an error, not a silently truncated note. Large bodies remain readable in the ordinary Meemo UI.
+Read tools require `notes.read`; write tools (`create_note`, `update_note`, `delete_note`) require `notes.write`. The server derives user identity from the grant, never tool arguments. Page default 20, maximum 50, skip maximum 1000; `hasMore` indicates another page (beyond the skip bound, refine search/use Meemo). Search query maximum 1000 characters. Full tool responses are capped at 128 KiB, accounting for serialized content and protocol envelope headroom. Oversized bodies return an error, not a silently truncated note. Large bodies remain readable in the ordinary Meemo UI.
 
 MCP uses stateless Streamable HTTP with JSON responses: single POST requests, OPTIONS preflight, no batch arrays, persistent SSE/GET stream or DELETE session. JSON-RPC IDs are limited to 256 serialized UTF-8 bytes (including quotes/escaping), preserving the response envelope budget. Closed connections cannot reserve new concurrency slots or enter transport after asynchronous authentication/connection setup. Opaque OAuth `state` is preserved unchanged through consent and callback, with a 4096-character maximum (Gemini account-linking requests can exceed 1000 characters). OAuth/protocol body caps are 16/64 KiB; cookie-authenticated MCP API JSON bodies are limited to 2 KiB before the ordinary REST parser. Protocol requests have a 15-second absolute deadline; MCP read queries and credential lookups use three-second Mongo execution limits where available. Closed sockets do not cancel already-running reads; Mongo time limits bound these operations.
 
 Limits per app process: 120 protocol requests/minute/IP; 60 MCP requests/minute/client and user; 16 simultaneous authenticated MCP requests. Browser connection APIs are separately limited by IP and user. Registration/consent capacity guards are soft concurrency limits: 500 live clients, 20 pending requests/client, 50 live grants/user; concurrent requests can briefly exceed these counts. Rate state resets on restart; coordinate it before adding replicas. Tag grouping still scans user data despite paged output, so execution limits and throttling remain necessary.
 
-Private note and tag content is untrusted data, not an instruction. No writes, deletion, sharing, attachments, imports, account changes, or general URL/network tools are exposed. Writing remains gated by the [plan](roadmaps/2026-10-12-gemini-assistant-integration.md).
+Private note and tag content is untrusted data, not an instruction. No attachment uploads, public sharing, imports, account changes, or general URL/network tools are exposed.
 
 ## Reverse proxy and credential hygiene
 

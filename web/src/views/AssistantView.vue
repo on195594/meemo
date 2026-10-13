@@ -9,26 +9,31 @@
 
     <template v-if="isAuthenticated && !loading">
       <template v-if="authorizing && consent">
-        <p><strong>{{ consent.clientName }}</strong> is requesting read access to <strong>{{ consent.username }}</strong>'s notes.</p>
-        <p>This allows searching and reading all your private notes, including archived notes by ID, and listing tags. Retrieved content may be sent to Google. It is not limited to public notes.</p>
-        <p>Writing, deleting, sharing and downloading attachments are not allowed. Access expires after 24 hours; reconnect to renew it. You can revoke access here, but cannot take back content already sent.</p>
+        <p><strong>{{ consent.clientName }}</strong> is requesting access to <strong>{{ consent.username }}</strong>'s notes.</p>
+        <p v-if="hasWriteScope">
+          This allows searching, reading, creating, editing, and deleting (moving to trash) your private notes, including archived notes by ID, and listing tags. Retrieved content may be sent to Google. Sharing and downloading attachments are not allowed.
+        </p>
+        <p v-else>
+          This allows searching and reading all your private notes, including archived notes by ID, and listing tags. Retrieved content may be sent to Google. Writing, deleting, sharing and downloading attachments are not allowed.
+        </p>
+        <p>Access expires after 24 hours; reconnect to renew it. You can revoke access here, but cannot take back content already sent.</p>
         <label class="acknowledgement">
           <input v-model="acknowledged" type="checkbox" :disabled="busy" />
           I understand that private note content may be sent to Google.
         </label>
         <div class="actions">
           <button type="button" :disabled="busy" @click="decide(false)">Deny</button>
-          <button type="button" class="primary" :disabled="busy || !acknowledged" @click="decide(true)">Allow read access</button>
+          <button type="button" class="primary" :disabled="busy || !acknowledged" @click="decide(true)">{{ hasWriteScope ? 'Allow read & write access' : 'Allow read access' }}</button>
         </div>
       </template>
       <template v-else-if="!authorizing && connections">
-        <p>Add this HTTPS MCP address as a custom app in Gemini, then sign in and approve read access:</p>
+        <p>Add this HTTPS MCP address as a custom app in Gemini, then sign in and approve access:</p>
         <code class="resource">{{ connections.resource }}</code>
-        <p>Read-only access expires after 24 hours. Reconnect after expiry.</p>
+        <p>Access expires after 24 hours. Reconnect after expiry.</p>
         <p v-if="connections.connections.length === 0">No active assistant connections.</p>
         <ul v-else>
           <li v-for="connection in connections.connections" :key="connection.id">
-            <div><strong>{{ connection.clientName }}</strong><br /><span>Read access · expires {{ formatDate(connection.expiresAt) }}</span></div>
+            <div><strong>{{ connection.clientName }}</strong><br /><span>{{ formatScope(connection.scope) }} · expires {{ formatDate(connection.expiresAt) }}</span></div>
             <button type="button" :disabled="busy" :aria-label="`Revoke ${connection.clientName}`" @click="revoke(connection.id)">Revoke</button>
           </li>
         </ul>
@@ -53,6 +58,7 @@ const openAuthModal = inject<(tab: 'login' | 'register') => void>('openAuthModal
 const authorizing = computed(() => route.name === 'assistant-authorize');
 const requestId = computed(() => typeof route.query.request === 'string' ? route.query.request : '');
 const consent = ref<McpConsentResponse | null>(null);
+const hasWriteScope = computed(() => !!consent.value?.scope && consent.value.scope.includes('notes.write'));
 const connections = ref<McpConnectionsResponse | null>(null);
 const acknowledged = ref(false);
 const loading = ref(false);
@@ -119,6 +125,10 @@ async function revoke(id: string) {
   } finally { busy.value = false; }
 }
 
+function formatScope(scope?: string) {
+  if (scope && scope.includes('write')) return 'Read & write access';
+  return 'Read access';
+}
 function formatDate(value: string) { return new Date(value).toLocaleString(); }
 watch(() => [user.value?.id, route.name, requestId.value], load, { immediate: true });
 onBeforeUnmount(() => { generation++; });

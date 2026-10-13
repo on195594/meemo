@@ -39,6 +39,7 @@ describe('Assistant consent and connections', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('private notes');
     expect(wrapper.text()).toContain('sent to Google');
+    expect(wrapper.text()).toContain('Writing, deleting, sharing and downloading attachments are not allowed');
     expect(wrapper.find('script').exists()).toBe(false);
     const allow = wrapper.findAll('button').find(button => button.text() === 'Allow read access')!;
     expect(allow.attributes('disabled')).toBeDefined();
@@ -47,6 +48,19 @@ describe('Assistant consent and connections', () => {
     await flushPromises();
     expect(mocks.decide).toHaveBeenCalledWith('a'.repeat(43), true, 'synthetic-csrf');
     expect(wrapper.find('[role="alert"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('discloses editing and trash deletion when write scope is requested', async () => {
+    mocks.consent.mockResolvedValueOnce({
+      clientName: 'Gemini Assistant', username: 'Alice', scope: 'notes.read notes.write',
+      expiresIn: 86400, csrfToken: 'synthetic-csrf'
+    });
+    const wrapper = render();
+    await flushPromises();
+    expect(wrapper.text()).toContain('creating, editing, and deleting (moving to trash)');
+    const allowWrite = wrapper.findAll('button').find(button => button.text() === 'Allow read & write access')!;
+    expect(allowWrite.exists()).toBe(true);
     wrapper.unmount();
   });
 
