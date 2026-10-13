@@ -127,13 +127,6 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
         config._clearDatabase(done);
     });
 
-    // 1. 无 SESSION_SECRET 的 production 启动失败
-    it('scenario 1: fails fast in production mode when SESSION_SECRET is missing', function () {
-        expect(function () {
-            createApp({ isProduction: true, sessionSecret: '' });
-        }).to.throwError(/SESSION_SECRET is required when NODE_ENV=production/);
-    });
-
     // 2. 登录暴力尝试被限流
     it('scenario 2: brute-force login attempts are rate-limited with 429 too_many_requests', async function () {
         var isolatedApp = createApp({

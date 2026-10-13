@@ -55,8 +55,6 @@ type ListPublicThingsResponse = JsonResponse<paths['/api/public/{userId}/things'
 type GetPublicThingResponse = JsonResponse<paths['/api/public/{userId}/things/{thingId}']['get'], 200>;
 type ListPublicUsersResponse = JsonResponse<paths['/api/users']['get'], 200>;
 type GetPublicUserResponse = JsonResponse<paths['/api/users/{userId}']['get'], 200>;
-type HealthLiveResponse = JsonResponse<paths['/api/health/live']['get'], 200>;
-type HealthReadyResponse = JsonResponse<paths['/api/health/ready']['get'], 200>;
 
 export type UnauthorizedHandler = (path: string, error: ApiError) => void;
 const unauthorizedHandlers = new Set<UnauthorizedHandler>();
@@ -277,7 +275,6 @@ export const api = {
         xhr.send(formData);
       });
     },
-    exportUrl: () => '/api/export',
   },
 
   settings: {
@@ -304,10 +301,5 @@ export const api = {
     users: () => request<ListPublicUsersResponse>('/api/users'),
     userProfile: (userId: string) =>
       request<GetPublicUserResponse>(`/api/users/${userId}`),
-  },
-
-  health: {
-    live: () => request<HealthLiveResponse>('/api/health/live'),
-    ready: () => request<HealthReadyResponse>('/api/health/ready'),
   },
 };

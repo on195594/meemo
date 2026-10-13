@@ -29,7 +29,7 @@ Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, pers
 
 Interactive login uses username/password authentication. Passwords are stored as bcrypt hashes, and successful login creates a server-side session backed by MongoDB with a stable user ID. Optional MCP clients use separately consented, resource-bound OAuth tokens; these cannot authenticate ordinary REST endpoints.
 
-## Optional read-only MCP
+## Optional MCP assistant
 
 `src/http/app.js` mounts `src/http/mcp.js` protocol routes before static/SPA/session handling and cookie-authenticated connection APIs after session middleware. Enabled mode uses the official MCP SDK's stateless Streamable HTTP and OAuth authorization-code/PKCE handlers; configuration is fixed at startup and defaults off. Reserved protocol/API paths return 404 when disabled rather than falling into SPA routing.
 
@@ -37,7 +37,7 @@ A mutually exclusive, absolute-UTC setup window (`MCP_BOOTSTRAP_UNTIL`, maximum 
 
 `src/services/mcp-auth-service.js` manages grant/user/resource binding and expiry, while `src/database/mcp.js` owns five TTL-backed `mcp_*` collections (clients, requests, codes, grants, tokens). Client registration is shared metadata; user revocation affects only their grant. Opaque credential values are stored as hashes. These collections are sensitive, ephemeral authorization state, not a new note source of truth.
 
-`src/http/mcp-tools.js` exposes `search_notes`, `get_note`, `list_tags`, `create_note`, `update_note`, and `delete_note`; every call revalidates the token and delegates to `src/services/mcp-note-service.js`. Write operations enforce optimistic concurrency control (`expectedRevision`), preventing overwrite conflicts. The repository returns owner-scoped, bounded projections without attachment access, Markdown rendering or URL enrichment. Tag paging extends the existing aggregation compatibly; normal `/api/tags` behavior remains unchanged. Frontend `/assistant/authorize` and `/assistant/connections` reuse the account/session store and CSRF-protected consent/revocation APIs. Configuration, privacy, limits and operational details are documented in [Gemini assistant](GEMINI_ASSISTANT.md).
+`src/http/mcp-tools.js` exposes `search_notes`, `get_note`, `list_tags`, `create_note`, `update_note`, and `delete_note`; every call revalidates the token and its required scope before delegating to `src/services/mcp-note-service.js`. Read tools accept `notes.read` or `notes.write`; writing requires `notes.write`. Updates and deletion require `expectedRevision`; creation starts at revision 1. Writes reuse `thing-service.js`, reject updates/deletion of public or shared notes, and move deleted notes to trash. Reads return owner-scoped, bounded projections without attachment access, Markdown rendering or URL enrichment. Tag paging extends the existing aggregation compatibly; normal `/api/tags` behavior remains unchanged. Frontend `/assistant/authorize` and `/assistant/connections` reuse the account/session store and CSRF-protected consent/revocation APIs. Configuration, privacy, limits and operational details are documented in [Gemini assistant](GEMINI_ASSISTANT.md).
 
 ## Frontend state ownership
 

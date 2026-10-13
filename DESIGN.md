@@ -86,8 +86,8 @@ Meemo relies on two complementary palettes: the Material 3 structural palette an
 - `surface`: `#f8fafd` (Light) / `#121316` (Dark) — App canvas background.
 - `surface-container`: `#ffffff` (Light) / `#1e1f20` (Dark) — Standard note card and dialog base.
 - `surface-container-high`: `#e9eef6` (Light) / `#2b2d30` (Dark) — Search input pills, tag badges, and secondary buttons.
-- `on-surface`: `#1f1f1f` (Light) / `#e3e3e3` (Dark) — High-contrast primary reading text (> 10:1 ratio).
-- `on-surface-variant`: `#3c4043` (Light) / `#c4c7c5` (Dark) — Secondary text, timestamps, and icons (> 4.5:1 ratio).
+- `on-surface`: `#1f1f1f` (Light) / `#f1f1f1` (Dark) — Primary reading text.
+- `on-surface-variant`: `#3c4043` (Light) / `#c7c7c7` (Dark) — Secondary text, timestamps, and icons.
 - `outline-variant`: `#c4c7c5` (Light) / `#444746` (Dark) — Subtle card borders and divider rules.
 
 ### Google Keep 12-Color Note Palette
@@ -119,10 +119,12 @@ System font stack (`--md-sys-typescale-font`) throughout; code uses `--md-sys-ty
 ## Elevation & Depth
 
 Meemo uses M3 tonal elevation layers:
-- `elevation-0`: Flat borders (`border: 1px solid var(--note-border-color)`).
-- `elevation-1`: Subtle resting card depth (`0 1px 3px 0 rgba(60,64,67,0.15), 0 1px 2px 0 rgba(60,64,67,0.08)`).
-- `elevation-2`: Hovered note cards, sticky pinned cards, and dropdown menus (`0 2px 6px 2px rgba(60,64,67,0.15)`).
-- `elevation-3`: Floating modals and detail view dialogs (`0 4px 8px 3px rgba(60,64,67,0.15)`).
+- `elevation-0`: No shadow; borders use `var(--note-border-color)`.
+- `elevation-1`: Subtle resting card depth.
+- `elevation-2`: Hovered note cards, sticky pinned cards, and dropdown menus.
+- `elevation-3`: Floating modals and detail view dialogs.
+
+Use `--md-sys-elevation-*` from `web/src/styles/tokens.css`; light and dark themes define their own shadow values.
 
 ## Shapes
 

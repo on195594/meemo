@@ -6,8 +6,8 @@ Use this checklist for v2.1 release candidates and later releases. Stop on any f
 
 - Keep MCP disabled unless its deployment/configuration is explicitly authorized. See [configuration and privacy](GEMINI_ASSISTANT.md).
 - Verify fixed HTTPS discovery/resource URLs, exact approved callbacks, Host/Origin handling, proxy query/header redaction, session cookies and consent/revocation UI.
-- Confirm only three read-only tools are listed; cross-user reads and revoked/expired tokens must fail, ordinary REST must not accept Bearer tokens. No writing scope/tool may be enabled under phase-1 authorization.
-- Test real Meemo Gemini web/mobile authorization, search/read/tags, expiry/reconnection and user-level revocation; record client/deployment versions and dates without private content. These checks are **pending**, not implied by travel-cards acceptance, local automated tests or scoped AGY PASS.
+- Confirm the six documented tools are listed. Read-only grants must reject writes; cross-user access, revoked/expired tokens, stale write revisions and updates/deletion of public or shared notes must fail. Ordinary REST must not accept Bearer tokens. Deployment authorization must cover the current write-capable implementation; historical phase-1 authorization is insufficient.
+- Test real Meemo Gemini web/mobile read/write consent, search/read/tags, create/update/trash, revision conflicts, read-only grants, expiry/reconnection and user-level revocation; record client/deployment versions and dates without private content. These checks are **pending**, not implied by travel-cards acceptance, local automated tests or scoped AGY PASS.
 - Recovery must invalidate restored MCP authorization state before enabling access; disabling is rollback, not permanent grant revocation. The existing synthetic restore fixture does not yet test MCP state.
 
 ## Authorization boundary

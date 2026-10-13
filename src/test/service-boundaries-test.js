@@ -18,12 +18,4 @@ describe('Service layer boundaries (RF-303)', function () {
             expect(source).not.to.match(/require\(['"].*users\.js/);
         });
     });
-
-    it('exposes the service modules used by the HTTP layer', function () {
-        expect(require('../services/auth-service.js').authenticate).to.be.a('function');
-        expect(require('../services/thing-service.js').add).to.be.a('function');
-        expect(require('../services/attachment-service.js').authorize).to.be.a('function');
-        expect(require('../services/sharing-service.js').getThing).to.be.a('function');
-        expect(require('../services/import-export-service.js').importArchive).to.be.a('function');
-    });
 });

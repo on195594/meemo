@@ -63,7 +63,7 @@ function toolBody(response) {
     return JSON.parse(response.body.result.content[0].text);
 }
 
-describe('Read-only MCP and OAuth isolation', function () {
+describe('MCP read/write tools and OAuth isolation', function () {
     this.timeout(20000);
     var dbClient, db, app, alice, bob, aliceId, bobId, client, aliceToken, bobToken, noteId, archivedId, otherId;
     var logs = [];
@@ -101,7 +101,7 @@ describe('Read-only MCP and OAuth isolation', function () {
         if (dbClient) { await config._clearDatabase(); await dbClient.close(); }
     });
 
-    it('defaults to closed, validates configuration, and advertises resource-bound read-only OAuth', async function () {
+    it('defaults to closed, validates configuration, and advertises resource-bound read/write OAuth', async function () {
         var disabled = createApp({ sessionMemory: true, sessionSecret: 'synthetic-disabled', mcp: { enabled: false } });
         await request(disabled).post('/mcp').expect(404);
         await request(disabled).get('/oauth/token').expect(404);

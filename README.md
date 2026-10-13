@@ -62,7 +62,7 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `MONGO_MAX_POOL_SIZE` | `50` | `50` | Maximum MongoDB connection pool size |
 | `MONGO_MIN_POOL_SIZE` | `1` | `1` | Minimum MongoDB connection pool size |
 | `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |
-| `MCP_ENABLED` | `false` | Not forwarded | Only the exact value `true` enables read-only MCP |
+| `MCP_ENABLED` | `false` | Not forwarded | Only the exact value `true` enables MCP; grants control read/write access |
 | `MCP_PUBLIC_URL` | Unset | Not forwarded | Required fixed HTTPS bare origin in full or setup mode; HTTP loopback allowed in development |
 | `MCP_REDIRECT_URIS` | Unset | Not forwarded | Required exact approved HTTPS callback URLs, comma-separated without spaces |
 | `MCP_ALLOWED_ORIGINS` | Public origin only | Not forwarded | Additional approved HTTPS browser origins, comma-separated without spaces |

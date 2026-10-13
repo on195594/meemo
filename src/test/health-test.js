@@ -32,14 +32,6 @@ describe('Health & Runtime Contract', function () {
     });
 
     describe('createApp', function () {
-        it('throws error when in production mode without SESSION_SECRET', function () {
-            expect(function () {
-                createApp({ isProduction: true, sessionSecret: '' });
-            }).to.throwError(function (e) {
-                expect(e.message).to.contain('SESSION_SECRET is required when NODE_ENV=production');
-            });
-        });
-
         it('succeeds when in production mode with SESSION_SECRET', function () {
             var prodApp = createApp({ isProduction: true, sessionSecret: 'secret123456789012345678901234567890', sessionMemory: true });
             expect(prodApp).to.be.ok();

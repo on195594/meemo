@@ -11,7 +11,7 @@
 - [Design system](../DESIGN.md): Material Design 3 and Google Keep tokens, color palette, and component specs.
 - [Agent instructions](../AGENTS.md): repository-specific working rules.
 - [Security policy](../SECURITY.md): vulnerability reporting and support policy.
-- [Gemini assistant](GEMINI_ASSISTANT.md): implemented, default-disabled read-only MCP, OAuth configuration, privacy, revocation and recovery.
+- [Gemini assistant](GEMINI_ASSISTANT.md): implemented, default-disabled MCP read/write tools, OAuth scopes, configuration, privacy, revocation and recovery.
 
 ## Operations and validation
 
@@ -24,7 +24,7 @@
 
 ## Plans and review snapshots
 
-- [Gemini assistant integration plan](roadmaps/2026-10-12-gemini-assistant-integration.md): staged MCP + OAuth integration; phase-1 read-only candidate implemented, real Meemo acceptance and writing remain pending.
+- [Gemini assistant integration plan](roadmaps/2026-10-12-gemini-assistant-integration.md): historical staged MCP + OAuth proposal; current read/write implementation is documented in the assistant guide, and real Meemo acceptance remains pending.
 - [AGY integration-plan review](reviews/2026-10-12-gemini-assistant-agy-review.md): independent CLI review, verified findings, plan revisions, and scoped PASS on recheck; not implementation acceptance.
 - [AGY MCP implementation review](reviews/2026-10-12-gemini-mcp-implementation-agy-review.md): real independent CLI review, SDK evidence-based adjudication and scoped recheck PASS; not production acceptance.
 - [Codex MCP review and fixes](reviews/2026-10-12-gemini-mcp-codex-review.md): four verified findings repaired, full candidate recheck PASS_WITH_NOTES, local regressions and isolation evidence; not production acceptance.

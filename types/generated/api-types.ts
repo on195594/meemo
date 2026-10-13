@@ -232,7 +232,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Fixed resource /mcp, authorization server, and notes.read scope */
+                /** @description Fixed resource /mcp, authorization server, and supported notes.read / notes.write scopes */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -571,8 +571,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Stateless Streamable HTTP MCP, with JSON responses and only three read-only tools
-         * @description MCP protocol endpoint implemented by the official SDK. Supports initialize, tools/list and tools/call for search_notes, get_note and list_tags. No write tools. Batch arrays are rejected; a single JSON-RPC ID must fit within 256 serialized UTF-8 bytes. CORS for approved origins covers discovery and protocol success/error responses and exposes WWW-Authenticate. Tool responses are bounded to 128 KiB, request bodies to 64 KiB. Search/tag pagination defaults to 20, max 50, skip max 1000. Note bodies are not silently truncated. Bearer authorization is rechecked on each request and tool call.
+         * Stateless Streamable HTTP MCP, with JSON responses and six scoped read/write tools
+         * @description MCP protocol endpoint implemented by the official SDK. Supports initialize, tools/list and tools/call for search_notes, get_note, list_tags, create_note, update_note and delete_note. Read tools accept notes.read or notes.write; write tools require notes.write. All six tools are listed for every grant; insufficient scope returns a tool error. Updates and deletion require expectedRevision and reject public or shared notes. Deletion moves notes to trash. Batch arrays are rejected; a single JSON-RPC ID must fit within 256 serialized UTF-8 bytes. CORS for approved origins covers discovery and protocol success/error responses and exposes WWW-Authenticate. Tool responses are bounded to 128 KiB, request bodies to 64 KiB. Search/tag pagination defaults to 20, max 50, skip max 1000. Note bodies are not silently truncated. Bearer authorization is rechecked on each request and tool call.
          */
         post: {
             parameters: {
