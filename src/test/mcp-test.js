@@ -351,6 +351,141 @@ describe('MCP read/write tools and OAuth isolation', function () {
         assert.equal(writeRes.code, 'insufficient_scope');
     });
 
+    it('rejects concurrent write races with the same expectedRevision to prevent overwrite conflicts', async function () {
+        var created = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'create_note', arguments: { content: 'concurrency test note #race' }
+        }));
+        assert.equal(created.revision, 1);
+
+        var results = await Promise.all([
+            rpc(app, aliceToken, 'tools/call', {
+                name: 'update_note', arguments: { id: created.id, expectedRevision: 1, content: 'race update A' }
+            }),
+            rpc(app, aliceToken, 'tools/call', {
+                name: 'update_note', arguments: { id: created.id, expectedRevision: 1, content: 'race update B' }
+            })
+        ]);
+
+        var bodies = results.map(function (res) { return toolBody(res); });
+        var succeeded = bodies.filter(function (b) { return b.revision === 2; });
+        var conflicts = bodies.filter(function (b) { return b.code === 'revision_conflict'; });
+
+        assert.equal(succeeded.length, 1, 'Exactly one concurrent update must succeed');
+        assert.equal(conflicts.length, 1, 'The competing concurrent update must receive a revision_conflict');
+
+        var current = toolBody(await rpc(app, aliceToken, 'tools/call', { name: 'get_note', arguments: { id: created.id } }));
+        assert.equal(current.revision, 2);
+        assert(['race update A', 'race update B'].includes(current.content));
+    });
+
+    it('preserves attachments, color, sticky, and archived properties when updating only partial fields', async function () {
+        var noteWithAttachmentsId = new ObjectId();
+        var sampleAttachments = [
+            { id: 'att-1', name: 'diagram.png', size: 1024, mime: 'image/png' },
+            { id: 'att-2', name: 'data.csv', size: 2048, mime: 'text/csv' }
+        ];
+        await db.collection('things').insertOne({
+            _id: noteWithAttachmentsId, ownerId: aliceId, content: 'initial note #tagged',
+            tags: [{ name: 'tagged' }], attachments: sampleAttachments,
+            color: 'sage', sticky: true, archived: false,
+            createdAt: 1000, modifiedAt: 1000, revision: 1, public: false, shared: false
+        });
+
+        // 1. Update ONLY content
+        var update1 = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'update_note', arguments: { id: noteWithAttachmentsId.toHexString(), expectedRevision: 1, content: 'updated content #preserved' }
+        }));
+        assert.equal(update1.revision, 2);
+
+        var noteAfter1 = await db.collection('things').findOne({ _id: noteWithAttachmentsId });
+        assert.equal(noteAfter1.content, 'updated content #preserved');
+        assert.deepEqual(noteAfter1.attachments, sampleAttachments, 'Attachments must be preserved across content-only update');
+        assert.equal(noteAfter1.color, 'sage', 'Color must be preserved');
+        assert.equal(noteAfter1.sticky, true, 'Sticky pin must be preserved');
+        assert.equal(noteAfter1.archived, false, 'Archived status must be preserved');
+
+        // 2. Update ONLY color
+        var update2 = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'update_note', arguments: { id: noteWithAttachmentsId.toHexString(), expectedRevision: 2, color: 'coral' }
+        }));
+        assert.equal(update2.revision, 3);
+
+        var noteAfter2 = await db.collection('things').findOne({ _id: noteWithAttachmentsId });
+        assert.equal(noteAfter2.content, 'updated content #preserved', 'Content must be preserved across color-only update');
+        assert.deepEqual(noteAfter2.attachments, sampleAttachments, 'Attachments must be preserved across color-only update');
+        assert.equal(noteAfter2.color, 'coral');
+        assert.equal(noteAfter2.sticky, true);
+
+        // 3. Update ONLY sticky pin
+        var update3 = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'update_note', arguments: { id: noteWithAttachmentsId.toHexString(), expectedRevision: 3, sticky: false }
+        }));
+        assert.equal(update3.revision, 4);
+
+        var noteAfter3 = await db.collection('things').findOne({ _id: noteWithAttachmentsId });
+        assert.equal(noteAfter3.sticky, false);
+        assert.equal(noteAfter3.color, 'coral', 'Color must remain preserved');
+        assert.deepEqual(noteAfter3.attachments, sampleAttachments, 'Attachments must remain preserved');
+    });
+
+    it('rejects create, update, and delete calls after grant revocation', async function () {
+        var verifier = crypto.randomBytes(32).toString('base64url');
+        var writeConsent = await consent(app, alice, client, verifier, true, 'notes.read notes.write');
+        var tokenRes = await exchange(app, client, verifier, writeConsent.redirect.searchParams.get('code'));
+        var revokeToken = tokenRes.body.access_token;
+
+        var created = toolBody(await rpc(app, revokeToken, 'tools/call', {
+            name: 'create_note', arguments: { content: 'pre-revocation note' }
+        }));
+        assert(created.id);
+        assert.equal(created.revision, 1);
+
+        var tokenRecord = await db.collection('mcp_tokens').findOne({ _id: hash(revokeToken) });
+        assert(tokenRecord);
+        var conns = (await alice.get('/api/mcp/connections').expect(200)).body;
+        await alice.delete('/api/mcp/connections/' + tokenRecord.grantId).set('X-CSRF-Token', conns.csrfToken).expect(204);
+
+        var postRevokeCreate = await rpc(app, revokeToken, 'tools/call', {
+            name: 'create_note', arguments: { content: 'post-revocation write attempt' }
+        });
+        assert.equal(postRevokeCreate.status, 401);
+        assert.equal(postRevokeCreate.body.error, 'invalid_token');
+
+        var postRevokeUpdate = await rpc(app, revokeToken, 'tools/call', {
+            name: 'update_note', arguments: { id: created.id, expectedRevision: 1, content: 'post-revocation update' }
+        });
+        assert.equal(postRevokeUpdate.status, 401);
+        assert.equal(postRevokeUpdate.body.error, 'invalid_token');
+
+        var postRevokeDelete = await rpc(app, revokeToken, 'tools/call', {
+            name: 'delete_note', arguments: { id: created.id, expectedRevision: 1 }
+        });
+        assert.equal(postRevokeDelete.status, 401);
+        assert.equal(postRevokeDelete.body.error, 'invalid_token');
+    });
+
+    it('enforces strict two-way isolation between browser sessions and MCP tokens', async function () {
+        // 1. Browser session cookie cannot authenticate /mcp protocol endpoint without Bearer token
+        var sessionToMcp = await alice.post('/mcp').set('Host', 'meemo.example').set('Accept', 'application/json, text/event-stream')
+            .send({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        assert.equal(sessionToMcp.status, 401);
+        assert.equal(sessionToMcp.body.error, 'invalid_token');
+
+        // 2. MCP Bearer token cannot access browser REST endpoints
+        await protocol(app, 'get', '/api/things').set('Authorization', 'Bearer ' + aliceToken).expect(401);
+        await protocol(app, 'post', '/api/things').set('Authorization', 'Bearer ' + aliceToken)
+            .send({ content: 'bypass attempt' }).expect(401);
+        await protocol(app, 'put', '/api/things/' + noteId).set('Authorization', 'Bearer ' + aliceToken)
+            .send({ content: 'bypass attempt' }).expect(401);
+        await protocol(app, 'delete', '/api/things/' + noteId).set('Authorization', 'Bearer ' + aliceToken).expect(401);
+        await protocol(app, 'get', '/api/profile').set('Authorization', 'Bearer ' + aliceToken).expect(401);
+
+        // 3. MCP Bearer token cannot access browser MCP management endpoints (/api/mcp/connections, /api/mcp/consent)
+        await protocol(app, 'get', '/api/mcp/connections').set('Authorization', 'Bearer ' + aliceToken).expect(401);
+        await protocol(app, 'get', '/api/mcp/consent').set('Authorization', 'Bearer ' + aliceToken).query({ request: 'any' }).expect(401);
+        await protocol(app, 'post', '/api/mcp/consent').set('Authorization', 'Bearer ' + aliceToken).send({ request: 'any', allow: true }).expect(401);
+    });
+
     it('bounds summaries, full responses, input and page depth without silently truncating notes', async function () {
         var large = await things.insertFull(aliceId, 'large'.repeat(40000), [], [], [], 5, 5);
         var response = await rpc(app, aliceToken, 'tools/call', { name: 'get_note', arguments: { id: large._id } });

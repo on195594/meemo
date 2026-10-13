@@ -466,7 +466,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Bearer token valid for remaining grant lifetime (up to 24 hours), no refresh token */
+                /** @description Bearer token valid for remaining grant lifetime (indefinite until revoked), no refresh token */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -476,6 +476,7 @@ export interface paths {
                             access_token: string;
                             /** @enum {string} */
                             token_type: "Bearer";
+                            /** @description Token lifetime in seconds; large value for indefinite lifetime */
                             expires_in: number;
                             /** @description Granted scopes (e.g. notes.read notes.write) */
                             scope: string;

@@ -6,9 +6,24 @@ Use this checklist for v2.1 release candidates and later releases. Stop on any f
 
 - Keep MCP disabled unless its deployment/configuration is explicitly authorized. See [configuration and privacy](GEMINI_ASSISTANT.md).
 - Verify fixed HTTPS discovery/resource URLs, exact approved callbacks, Host/Origin handling, proxy query/header redaction, session cookies and consent/revocation UI.
-- Confirm the six documented tools are listed. Read-only grants must reject writes; cross-user access, revoked/expired tokens, stale write revisions and updates/deletion of public or shared notes must fail. Ordinary REST must not accept Bearer tokens. Deployment authorization must cover the current write-capable implementation; historical phase-1 authorization is insufficient.
-- Test real Meemo Gemini web/mobile read/write consent, search/read/tags, create/update/trash, revision conflicts, read-only grants, expiry/reconnection and user-level revocation; record client/deployment versions and dates without private content. These checks are **pending**, not implied by travel-cards acceptance, local automated tests or scoped AGY PASS.
-- Recovery must invalidate restored MCP authorization state before enabling access; disabling is rollback, not permanent grant revocation. The existing synthetic restore fixture does not yet test MCP state.
+- Scopes and permissions gate:
+  - Enforce independent acceptance requirements for `notes.read` and `notes.write`.
+  - Confirm all six documented tools (`search_notes`, `get_note`, `list_tags`, `create_note`, `update_note`, `delete_note`) are registered. Read-only grants must reject writes with `insufficient_scope`; legacy grants without stored scopes must remain strictly read-only unless new consent is granted.
+  - Authorization lifetime: access remains valid indefinitely until explicitly revoked by the user, rather than expiring after 24 hours. Revocation at the user level must immediately reject subsequent read and write requests.
+- Editing and concurrency gate:
+  - Optimistic concurrency control: updates and deletions must enforce `expectedRevision`. Stale revisions and concurrent write races must fail with `revision_conflict`.
+  - Conflict recovery: when a write fails with `revision_conflict`, client/assistant recovery must re-read the latest note state via `get_note` and reconcile before attempting a retry.
+  - Partial updates: verify that updating partial fields (content, color, sticky, or archived) strictly preserves existing attachments and other unmentioned note attributes.
+  - Protection against accidental mutation: note deletion moves to trash (recoverable via Web UI, never permanent purge); public and shared notes must reject assistant updates and deletion with `not_allowed`.
+- Boundary and isolation gate:
+  - Cross-user access, revoked/expired tokens, and unauthenticated calls must fail.
+  - Enforce strict two-way isolation between browser sessions and MCP tokens: browser session cookies must not authenticate `/mcp`, and MCP Bearer tokens must not access browser REST endpoints or `/api/mcp` consent routes.
+  - Deployment authorization must explicitly cover the current write-capable implementation; historical phase-1 read-only authorization is insufficient.
+- Real Gemini client acceptance gate:
+  - Test real Meemo Gemini web/mobile clients across both read and write workflows: consent flow (read-only vs read-and-write disclosures), search/read/tags, create/update/trash, optimistic revision conflict handling, partial-field updates, legacy read-only scope enforcement, and user-level revocation.
+  - Record client/deployment versions and dates without private content. These real-client checks are explicitly **pending** (`NOT_RUN`), and are not implied by travel-cards acceptance, local automated test passes, or historical read-only review conclusions.
+- Recovery gate:
+  - Recovery must invalidate restored MCP authorization state before enabling access; disabling is rollback, not permanent grant revocation. The existing synthetic restore fixture does not yet test MCP state.
 
 ## Authorization boundary
 

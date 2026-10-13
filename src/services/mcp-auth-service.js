@@ -5,7 +5,7 @@ var crypto = require('crypto'),
     createRepository = require('../database/mcp.js'),
     errors = require('@modelcontextprotocol/sdk/server/auth/errors.js');
 
-var ACCESS_SECONDS = 24 * 60 * 60;
+var ACCESS_SECONDS = 100 * 365 * 24 * 60 * 60;
 var ALLOWED_SCOPES = ['notes.read', 'notes.write'];
 
 function grantScopes(grant) {
@@ -73,11 +73,11 @@ function createProvider(settings) {
                 };
                 if (method !== 'none') {
                     info.client_secret = random();
-                    info.client_secret_expires_at = Math.floor(Date.now() / 1000) + 30 * ACCESS_SECONDS;
+                    info.client_secret_expires_at = Math.floor(Date.now() / 1000) + ACCESS_SECONDS;
                 }
                 var stored = Object.assign({}, info);
                 if (stored.client_secret) stored.client_secret = hash(stored.client_secret);
-                await repository.insert('clients', { _id: info.client_id, info: stored, expiresAt: expiry(30 * ACCESS_SECONDS) });
+                await repository.insert('clients', { _id: info.client_id, info: stored, expiresAt: expiry(ACCESS_SECONDS) });
                 return info;
             }
         },

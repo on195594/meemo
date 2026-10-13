@@ -16,7 +16,7 @@
         <p v-else>
           This allows searching and reading all your private notes, including archived notes by ID, and listing tags. Retrieved content may be sent to Google. Writing, deleting, sharing and downloading attachments are not allowed.
         </p>
-        <p>Access expires after 24 hours; reconnect to renew it. You can revoke access here, but cannot take back content already sent.</p>
+        <p>Access remains valid until revoked. You can revoke access here at any time, but cannot take back content already sent.</p>
         <label class="acknowledgement">
           <input v-model="acknowledged" type="checkbox" :disabled="busy" />
           I understand that private note content may be sent to Google.
@@ -29,11 +29,11 @@
       <template v-else-if="!authorizing && connections">
         <p>Add this HTTPS MCP address as a custom app in Gemini, then sign in and approve access:</p>
         <code class="resource">{{ connections.resource }}</code>
-        <p>Access expires after 24 hours. Reconnect after expiry.</p>
+        <p>Access remains valid until revoked. Reconnect only if you revoke access.</p>
         <p v-if="connections.connections.length === 0">No active assistant connections.</p>
         <ul v-else>
           <li v-for="connection in connections.connections" :key="connection.id">
-            <div><strong>{{ connection.clientName }}</strong><br /><span>{{ formatScope(connection.scope) }} · expires {{ formatDate(connection.expiresAt) }}</span></div>
+            <div><strong>{{ connection.clientName }}</strong><br /><span>{{ formatScope(connection.scope) }} · {{ formatExpiry(connection.expiresAt) }}</span></div>
             <button type="button" :disabled="busy" :aria-label="`Revoke ${connection.clientName}`" @click="revoke(connection.id)">Revoke</button>
           </li>
         </ul>
@@ -129,7 +129,12 @@ function formatScope(scope?: string) {
   if (scope && scope.includes('write')) return 'Read & write access';
   return 'Read access';
 }
-function formatDate(value: string) { return new Date(value).toLocaleString(); }
+function formatExpiry(value?: string) {
+  if (!value) return 'Active until revoked';
+  const d = new Date(value);
+  if (d.getFullYear() > 2050) return 'Active until revoked';
+  return `expires ${d.toLocaleString()}`;
+}
 watch(() => [user.value?.id, route.name, requestId.value], load, { immediate: true });
 onBeforeUnmount(() => { generation++; });
 </script>

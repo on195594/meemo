@@ -818,7 +818,7 @@ paths:
                 resource: { type: string, format: uri }
       responses:
         '200':
-          description: Bearer token valid for remaining grant lifetime (up to 24 hours), no refresh token
+          description: Bearer token valid for remaining grant lifetime (indefinite until revoked), no refresh token
           content:
             application/json:
               schema:
@@ -827,7 +827,7 @@ paths:
                 properties:
                   access_token: { type: string }
                   token_type: { type: string, enum: [Bearer] }
-                  expires_in: { type: integer }
+                  expires_in: { type: integer, description: 'Token lifetime in seconds; large value for indefinite lifetime' }
                   scope: { type: string, description: 'Granted scopes (e.g. notes.read notes.write)' }
         '400': { description: Invalid client, code, verifier, target or grant }
         '404': { description: MCP disabled }
