@@ -7,6 +7,8 @@
 - [Long-term architecture](LONG_TERM_ARCHITECTURE.md): normative architectural constraints and complexity budget; planned work is not proof of implementation.
 - [OpenAPI specification](openapi.yaml): authoritative HTTP contract. Regenerate `types/generated/api-types.ts` with `npm run api:generate` when it changes.
 - [Contribution guide](../CONTRIBUTING.md): coding and validation workflow.
+- [Product specification](../PRODUCT.md): target user persona, scope, positioning, and product boundaries.
+- [Design system](../DESIGN.md): Material Design 3 and Google Keep tokens, color palette, and component specs.
 - [Agent instructions](../AGENTS.md): repository-specific working rules.
 - [Security policy](../SECURITY.md): vulnerability reporting and support policy.
 - [Gemini assistant](GEMINI_ASSISTANT.md): implemented, default-disabled read-only MCP, OAuth configuration, privacy, revocation and recovery.

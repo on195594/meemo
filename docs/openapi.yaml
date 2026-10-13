@@ -1138,6 +1138,8 @@ paths:
           $ref: '#/components/responses/PreconditionRequired'
         '500':
           $ref: '#/components/responses/InternalError'
+
+  /api/things/{id}/restore:
     post:
       tags: [things]
       summary: Restore a note from trash

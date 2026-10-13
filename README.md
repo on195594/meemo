@@ -142,6 +142,8 @@ Build and test from the repository. Operate the deployed containers from the pro
 | `web/` | Vue 3 + Vite + TypeScript application and Vitest behavior tests; route query owns note filters |
 | `docs/` | [Documentation index](docs/README.md), current contracts/runbooks, roadmaps, and review snapshots |
 | `public/`, `web/dist/` | Generated frontend output; rebuild rather than edit |
+| `PRODUCT.md` | Target users, product scope, and accessibility commitments |
+| `DESIGN.md` | Material Design 3 and Google Keep tokens, color palette, and layout specs |
 | `runTests`, `localdevelopment` | Root development/test entry points |
 | `Dockerfile`, `start.sh`, `docker-compose.yml`, `deploy.sh` | Container startup and deployment entry points |
 | `.github/` | Continuous integration and repository configuration |
@@ -151,6 +153,8 @@ Do not commit generated `public/`, `web/dist/`, `node_modules/`, `web/node_modul
 ## Contributing and security
 
 - [Documentation index](docs/README.md)
+- [Product specification](PRODUCT.md)
+- [Design system](DESIGN.md)
 - [Contribution guide](CONTRIBUTING.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Long-term architecture](docs/LONG_TERM_ARCHITECTURE.md)

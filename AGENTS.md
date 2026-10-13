@@ -20,6 +20,8 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `src/test/`: Mocha server and verification-script regressions; frontend behavior tests live under `web/src/`.
 - `web/`: modern Vue 3 + Vite + TypeScript browser application.
 - `public/`, `web/dist/`: generated frontend output; never edit or commit it.
+- `PRODUCT.md`: target users, product scope, and accessibility commitments.
+- `DESIGN.md`: Material Design 3 and Google Keep tokens, color palette, and layout specs.
 - `docs/README.md`: documentation index and directory maintenance rules.
 - `docs/ARCHITECTURE.md`: component boundaries, API contracts, and runtime flow.
 - `docs/GEMINI_ASSISTANT.md`: current optional MCP configuration, privacy, limits, revocation, recovery, and pending real-client acceptance.

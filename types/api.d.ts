@@ -21,6 +21,9 @@ export type UpdateThingRequest = components['schemas']['UpdateThingRequest'];
 export type SaveSettingsRequest = components['schemas']['SaveSettingsRequest'];
 export type ImportResult = components['schemas']['ImportResult'];
 export type Settings = SaveSettingsRequest['settings'];
+export type McpConnection = components['schemas']['McpConnection'];
+export type McpConnectionsResponse = components['schemas']['McpConnectionsResponse'];
+export type McpConsentResponse = components['schemas']['McpConsentResponse'];
 
 export type UserStatus = 'active' | 'disabled';
 
@@ -67,6 +70,8 @@ export type GetPublicUserResponse = JsonResponse<paths['/api/users/{userId}']['g
 export type HealthLiveResponse = components['schemas']['HealthLiveResponse'];
 export type HealthReadyResponse = components['schemas']['HealthReadyResponse'];
 export type HealthCheckResponse = JsonResponse<paths['/api/healthcheck']['get'], 200>;
+export type GetMcpConnectionsResponse = JsonResponse<paths['/api/mcp/connections']['get'], 200>;
+export type GetMcpConsentResponse = JsonResponse<paths['/api/mcp/consent']['get'], 200>;
 
 export type ListThingsQuery = paths['/api/things']['get']['parameters']['query'];
 export type ListPublicThingsQuery = paths['/api/public/{userId}/things']['get']['parameters']['query'];

@@ -992,6 +992,55 @@ export interface paths {
                 500: components["responses"]["InternalError"];
             };
         };
+        post?: never;
+        /** Move a note to trash */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 24-character hexadecimal ObjectId of the Thing */
+                    id: components["parameters"]["ThingIdPath"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DeleteThingRequest"];
+                };
+            };
+            responses: {
+                /** @description Note moved to trash successfully */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                428: components["responses"]["PreconditionRequired"];
+                500: components["responses"]["InternalError"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/things/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
         /** Restore a note from trash */
         post: {
             parameters: {
@@ -1028,40 +1077,7 @@ export interface paths {
                 500: components["responses"]["InternalError"];
             };
         };
-        /** Move a note to trash */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description 24-character hexadecimal ObjectId of the Thing */
-                    id: components["parameters"]["ThingIdPath"];
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["DeleteThingRequest"];
-                };
-            };
-            responses: {
-                /** @description Note moved to trash successfully */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                400: components["responses"]["BadRequest"];
-                401: components["responses"]["Unauthorized"];
-                404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
-                428: components["responses"]["PreconditionRequired"];
-                500: components["responses"]["InternalError"];
-            };
-        };
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;

@@ -112,36 +112,6 @@ function updateWithState(userId, name, callback) {
 /**
  * @deprecated Retained for legacy migration test suites only.
  */
-function restoreUpdate(userId, state, callback) {
-    assert.strictEqual(typeof userId, 'string');
-    assert(state && typeof state.name === 'string');
-
-    var collection = getUnifiedCollection();
-    var exactQuery = {
-        _id: state.documentId,
-        ownerId: userId,
-        name: state.name,
-        modifiedAt: state.modifiedAt,
-        usage: state.expectedUsage
-    };
-    var promise;
-    if (state.previous) {
-        promise = collection.replaceOne(exactQuery, state.previous).then(function (result) {
-            if (result.matchedCount) return;
-            return collection.updateOne({ _id: state.documentId, ownerId: userId, usage: { $gt: 0 } }, { $inc: { usage: -1 } });
-        });
-    } else {
-        promise = collection.deleteOne(exactQuery).then(function (result) {
-            if (result.deletedCount) return;
-            return collection.updateOne({ _id: state.documentId, ownerId: userId, usage: { $gt: 0 } }, { $inc: { usage: -1 } });
-        });
-    }
-    return nodeify(promise, callback);
-}
-
-/**
- * @deprecated Retained for legacy migration test suites only.
- */
 function del(userId, tagId, callback) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof tagId, 'string');
@@ -185,7 +155,6 @@ module.exports = {
     del: del,
     update: update,
     updateWithState: updateWithState,
-    restoreUpdate: restoreUpdate,
     replaceAll: replaceAll,
     ensureIndexes: ensureIndexes,
     getUnifiedCollection: getUnifiedCollection,

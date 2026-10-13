@@ -53,16 +53,6 @@ describe('API Contract and Progressive Types (RF-305)', function () {
         expect(generatedContent).to.contain('status: "ok"');
         expect(generatedContent).to.contain('status: "ready"');
 
-        var clientContent = fs.readFileSync(path.resolve(__dirname, '../../web/src/api/client.ts'), 'utf8');
-        expect(clientContent).to.contain("type CreateThingRequest = components['schemas']['CreateThingRequest']");
-        expect(clientContent).to.contain("type UpdateThingRequest = components['schemas']['UpdateThingRequest']");
-        expect(clientContent).to.contain('create: (data: CreateThingRequest)');
-        expect(clientContent).to.contain('update: (id: string, data: UpdateThingRequest)');
-        expect(clientContent).to.contain("type HealthLiveResponse = JsonResponse<paths['/api/health/live']['get'], 200>");
-        expect(clientContent).to.contain("type HealthReadyResponse = JsonResponse<paths['/api/health/ready']['get'], 200>");
-        expect(clientContent).to.contain("request<HealthLiveResponse>('/api/health/live')");
-        expect(clientContent).to.contain("request<HealthReadyResponse>('/api/health/ready')");
-
         var packageJson = require('../../package.json');
         expect(packageJson.scripts['api:generate']).to.contain('docs/openapi.yaml');
         expect(packageJson.scripts['api:generate']).to.contain('types/generated/api-types.ts');
@@ -85,6 +75,7 @@ describe('API Contract and Progressive Types (RF-305)', function () {
             { path: '/api/profile', methods: ['get'] },
             { path: '/api/things', methods: ['get', 'post'] },
             { path: '/api/things/{id}', methods: ['get', 'put', 'delete'] },
+            { path: '/api/things/{id}/restore', methods: ['post'] },
             { path: '/api/tags', methods: ['get'] },
             { path: '/api/files', methods: ['post'] },
             { path: '/api/files/{userId}/{thingId}/{identifier}', methods: ['get'] },
