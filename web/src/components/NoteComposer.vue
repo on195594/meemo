@@ -27,7 +27,7 @@
     <!-- Upload Progress Indicator -->
     <div v-if="isUploading" class="upload-progress-box">
       <div class="progress-bar">
-        <div class="progress-fill" :style="{ width: uploadProgress + '%' }"></div>
+        <div class="progress-fill" :style="{ transform: `scaleX(${uploadProgress / 100})` }"></div>
       </div>
       <span class="progress-text">Uploading {{ uploadingFileName }}... {{ uploadProgress }}%</span>
     </div>
@@ -431,7 +431,7 @@ defineExpose({
   display: block;
   min-height: 28px;
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: var(--md-sys-typescale-body-large);
   line-height: 1.5;
   color: var(--md-sys-color-on-surface);
   background: transparent;
@@ -449,19 +449,21 @@ defineExpose({
 }
 
 .progress-bar {
-  height: 6px;
+  height: 4px;
   background-color: var(--md-sys-color-surface-container-high);
-  border-radius: 3px;
+  border-radius: var(--md-sys-shape-corner-xs);
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
   background-color: var(--md-sys-color-primary);
+  transform-origin: left;
+  transition: transform var(--md-sys-motion-duration-short) linear;
 }
 
 .progress-text {
-  font-size: 0.75rem;
+  font-size: var(--md-sys-typescale-body-small);
   color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -480,9 +482,9 @@ defineExpose({
   gap: 0.35rem;
   background-color: var(--md-sys-color-surface-container-high);
   border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 12px;
+  border-radius: var(--md-sys-shape-corner-sm);
   padding: 0.15rem 0.5rem;
-  font-size: 0.8rem;
+  font-size: var(--md-sys-typescale-label-medium);
   color: var(--md-sys-color-on-surface);
 }
 
@@ -501,11 +503,10 @@ defineExpose({
 
 .composer-error {
   background-color: var(--md-sys-color-error-container);
-  color: var(--md-sys-color-error);
-  border: 1px solid var(--md-sys-color-error);
-  border-radius: 4px;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.85rem;
+  color: var(--md-sys-color-on-error-container);
+  border-radius: var(--md-sys-shape-corner-sm);
+  padding: 0.5rem 0.75rem;
+  font-size: var(--md-sys-typescale-body-medium);
   margin-top: 0.5rem;
 }
 
@@ -533,15 +534,16 @@ defineExpose({
   color: var(--md-sys-color-on-surface-variant);
   background: none;
   border: 1px solid transparent;
-  border-radius: var(--md-sys-shape-corner-full, 9999px);
+  border-radius: var(--md-sys-shape-corner-full);
   cursor: pointer;
   font-size: 0.95rem;
-  padding: 0.35rem 0.45rem;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  transition: all var(--md-sys-motion-duration-short) ease;
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              color var(--md-sys-motion-duration-short) ease;
 }
 
 .btn-icon:focus-visible {
@@ -550,12 +552,22 @@ defineExpose({
 }
 
 .btn-icon:hover:not(:disabled) {
-  background-color: var(--md-sys-color-surface-container-high);
+  background-color: var(--md-sys-state-hover);
+  color: var(--md-sys-color-on-surface);
+}
+
+.btn-icon:active:not(:disabled) {
+  background-color: var(--md-sys-state-pressed);
 }
 
 .btn-icon.active {
-  background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container);
+  background-color: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.btn-icon:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
 }
 
 .composer-color-wrapper {
@@ -568,9 +580,9 @@ defineExpose({
   bottom: 100%;
   left: 0;
   margin-bottom: 8px;
-  background: var(--md-sys-color-surface-container, #ffffff);
-  border: 1px solid var(--md-sys-color-outline-variant, #c4c7c5);
-  border-radius: var(--md-sys-shape-corner-md, 12px);
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-lg);
   box-shadow: var(--md-sys-elevation-2);
   padding: 8px;
   display: grid;
@@ -582,24 +594,29 @@ defineExpose({
 .color-swatch-btn {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
-  border: 8px solid transparent;
+  border-radius: var(--md-sys-shape-corner-full);
+  /* 40px touch target around a 28px swatch */
+  border: 6px solid transparent;
   background-clip: content-box;
   cursor: pointer;
   padding: 0;
-  box-shadow: inset 0 0 0 1px var(--note-border-color);
-  transition: transform var(--md-sys-motion-duration-short) ease,
-              border-color var(--md-sys-motion-duration-short) ease;
+  box-shadow: inset 0 0 0 1px var(--md-sys-color-outline-variant);
+  transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
 }
 
-.color-swatch-btn:hover,
-.color-swatch-btn:focus-visible {
-  transform: scale(1.15);
-  outline: 2px solid var(--md-sys-color-primary);
+.color-swatch-btn:hover {
+  transform: scale(1.1);
 }
 
+/* Selection ring sits in the transparent border, 2px off the swatch */
 .color-swatch-btn.active {
-  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -4px;
+}
+
+.color-swatch-btn:focus-visible {
+  outline: 2px solid var(--md-sys-color-on-surface);
+  outline-offset: -2px;
 }
 
 .hidden-file-input {
@@ -607,17 +624,18 @@ defineExpose({
 }
 
 .shortcut-hint {
-  font-size: 0.75rem;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  font-size: var(--md-sys-typescale-body-small);
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .shortcut-hint kbd {
   background: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
-  border-radius: var(--md-sys-shape-corner-xs, 4px);
-  padding: 0.1rem 0.35rem;
-  font-size: 0.7rem;
-  font-family: inherit;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-bottom-width: 2px;
+  border-radius: var(--md-sys-shape-corner-xs);
+  padding: 0.05rem 0.35rem;
+  font-size: var(--md-sys-typescale-label-small);
+  font-family: var(--md-sys-typescale-font-mono);
 }
 
 .btn-group {
@@ -631,12 +649,18 @@ defineExpose({
   max-width: 100%;
   min-height: 44px;
   padding: 0.5rem 1.15rem;
-  border-radius: var(--md-sys-shape-corner-full, 9999px);
-  font-size: 0.875rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: var(--md-sys-typescale-label-large);
   font-weight: 500;
   cursor: pointer;
   border: none;
-  transition: all var(--md-sys-motion-duration-short) ease;
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              box-shadow var(--md-sys-motion-duration-short) ease,
+              transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
+}
+
+.btn-composer:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .btn-composer:focus-visible {
@@ -645,26 +669,25 @@ defineExpose({
 }
 
 .btn-composer.primary {
-  background-color: var(--md-sys-color-primary, #0b57d0);
-  color: var(--md-sys-color-on-primary, #ffffff);
+  background-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
 }
 
 .btn-composer.primary:hover:not(:disabled) {
   box-shadow: var(--md-sys-elevation-1);
-  opacity: 0.95;
 }
 
 .btn-composer.secondary {
   background-color: transparent;
-  color: var(--md-sys-color-primary, #0b57d0);
+  color: var(--md-sys-color-primary);
 }
 
 .btn-composer.secondary:hover:not(:disabled) {
-  background-color: var(--md-sys-color-surface-container-high);
+  background-color: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
 }
 
 .btn-composer:disabled {
-  opacity: 0.45;
+  opacity: 0.38;
   cursor: not-allowed;
 }
 @media (max-width: 600px) {

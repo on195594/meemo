@@ -52,21 +52,34 @@ watch(() => String(route.params.thingId), loadThing, { immediate: true });
   max-width: 700px;
   margin: 2rem auto;
   padding: 1.5rem;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 .status-indicator {
   text-align: center;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-medium);
+  margin-top: 2rem;
 }
 .error-banner {
-  background: #fed7d7;
-  color: #9b2c2c;
-  padding: 0.75rem;
-  border-radius: 4px;
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  padding: 0.75rem 1rem;
+  border-radius: var(--md-sys-shape-corner-md);
+  font-size: var(--md-sys-typescale-body-medium);
 }
 .back-link {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
   margin-bottom: 1rem;
-  color: var(--md-sys-color-primary, #2563eb);
+  padding: 0.25rem 0.75rem 0.25rem 0.5rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  color: var(--md-sys-color-primary);
+  font-size: var(--md-sys-typescale-label-large);
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color var(--md-sys-motion-duration-short) ease;
+}
+.back-link:hover {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
 }
 </style>

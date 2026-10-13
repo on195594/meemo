@@ -67,16 +67,18 @@ onMounted(async () => {
   max-width: 700px;
   margin: 2rem auto;
   padding: 1.5rem;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 .status-indicator {
   text-align: center;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-medium);
+  margin-top: 2rem;
 }
 .error-banner {
-  background: #fed7d7;
-  color: #9b2c2c;
-  padding: 0.75rem;
-  border-radius: 4px;
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  padding: 0.75rem 1rem;
+  border-radius: var(--md-sys-shape-corner-md);
+  font-size: var(--md-sys-typescale-body-medium);
 }
 </style>

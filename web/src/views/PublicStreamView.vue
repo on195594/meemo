@@ -100,31 +100,38 @@ onMounted(async () => {
   max-width: 800px;
   margin: 0 auto;
   padding: 1.5rem;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 .stream-header {
-  border-bottom: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
   padding-bottom: 1rem;
   margin-bottom: 1.5rem;
 }
 .stream-header h1 {
-  font-size: 1.5rem;
-  color: var(--md-sys-color-on-surface, #2d3748);
+  font-size: var(--md-sys-typescale-headline-small);
+  font-weight: 400;
+  color: var(--md-sys-color-on-surface);
+}
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 .status-indicator {
   text-align: center;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-medium);
   margin-top: 2rem;
 }
 .error-banner {
-  background: #fed7d7;
-  color: #9b2c2c;
-  padding: 0.75rem;
-  border-radius: 4px;
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  padding: 0.75rem 1rem;
+  border-radius: var(--md-sys-shape-corner-md);
+  font-size: var(--md-sys-typescale-body-medium);
 }
 .empty-state {
   text-align: center;
-  color: #a0aec0;
+  color: var(--md-sys-color-on-surface-variant);
   margin-top: 3rem;
 }
 </style>

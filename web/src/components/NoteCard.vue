@@ -775,7 +775,7 @@ async function confirmDelete() {
 .note-card {
   background-color: var(--note-color-default);
   border: 1px solid var(--note-border-color);
-  border-radius: var(--md-sys-shape-corner-lg, 16px);
+  border-radius: var(--md-sys-shape-corner-lg);
   padding: 1rem;
   box-shadow: var(--md-sys-elevation-0);
   transition: box-shadow var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
@@ -785,7 +785,7 @@ async function confirmDelete() {
 }
 
 .note-card:hover {
-  box-shadow: var(--md-sys-elevation-1);
+  box-shadow: var(--md-sys-elevation-2);
   border-color: var(--note-border-hover);
 }
 
@@ -795,7 +795,7 @@ async function confirmDelete() {
 
 .note-card.is-sticky {
   box-shadow: var(--md-sys-elevation-2);
-  border-color: var(--md-sys-color-primary);
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
 }
 
 .note-card.is-sticky:hover {
@@ -829,7 +829,7 @@ async function confirmDelete() {
 }
 
 .note-time {
-  font-size: 0.825rem;
+  font-size: var(--md-sys-typescale-body-small);
   color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -837,30 +837,31 @@ async function confirmDelete() {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: 0.725rem;
+  font-size: var(--md-sys-typescale-label-small);
   font-weight: 500;
-  padding: 0.12rem 0.45rem;
-  border-radius: 10px;
+  padding: 0.12rem 0.5rem;
+  border-radius: var(--md-sys-shape-corner-sm);
   line-height: 1.3;
 }
 
-.badge-sticky,
-.badge-shared {
-  background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
+.badge-sticky {
+  background-color: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-on-tertiary-container);
 }
 
 .badge-public {
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+.badge-shared {
   background-color: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .badge-archived {
   background-color: var(--md-sys-color-surface-container-high);
   color: var(--md-sys-color-on-surface-variant);
-  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .badge .ui-icon {
@@ -882,16 +883,17 @@ async function confirmDelete() {
   color: var(--md-sys-color-on-surface-variant);
   background: none;
   border: 1px solid transparent;
-  border-radius: var(--md-sys-shape-corner-full, 9999px);
+  border-radius: var(--md-sys-shape-corner-full);
   font-size: 0.95rem;
   cursor: pointer;
-  padding: 0.35rem 0.45rem;
+  padding: 0;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  transition: all var(--md-sys-motion-duration-short) ease;
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              color var(--md-sys-motion-duration-short) ease;
 }
 
 .action-btn:focus-visible {
@@ -900,17 +902,22 @@ async function confirmDelete() {
 }
 
 .action-btn:hover {
-  background-color: var(--md-sys-color-surface-container-high);
+  background-color: var(--md-sys-state-hover);
+  color: var(--md-sys-color-on-surface);
+}
+
+.action-btn:active {
+  background-color: var(--md-sys-state-pressed);
 }
 
 .action-btn.active {
-  background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container);
+  background-color: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
 }
 
 .action-btn.delete-btn:hover {
   background-color: var(--md-sys-color-error-container);
-  color: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error-container);
 }
 
 .color-picker-wrapper {
@@ -923,9 +930,9 @@ async function confirmDelete() {
   bottom: 100%;
   left: 0;
   margin-bottom: 8px;
-  background: var(--md-sys-color-surface-container, #ffffff);
-  border: 1px solid var(--md-sys-color-outline-variant, #c4c7c5);
-  border-radius: var(--md-sys-shape-corner-md, 12px);
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-lg);
   box-shadow: var(--md-sys-elevation-2);
   padding: 8px;
   display: grid;
@@ -937,24 +944,29 @@ async function confirmDelete() {
 .color-swatch-btn {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
-  border: 8px solid transparent;
+  border-radius: var(--md-sys-shape-corner-full);
+  /* 40px touch target around a 28px swatch */
+  border: 6px solid transparent;
   background-clip: content-box;
   cursor: pointer;
   padding: 0;
-  box-shadow: inset 0 0 0 1px var(--note-border-color);
-  transition: transform var(--md-sys-motion-duration-short) ease,
-              border-color var(--md-sys-motion-duration-short) ease;
+  box-shadow: inset 0 0 0 1px var(--md-sys-color-outline-variant);
+  transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
 }
 
-.color-swatch-btn:hover,
-.color-swatch-btn:focus-visible {
-  transform: scale(1.15);
-  outline: 2px solid var(--md-sys-color-primary);
+.color-swatch-btn:hover {
+  transform: scale(1.1);
 }
 
+/* Selection ring sits in the transparent border, 2px off the swatch */
 .color-swatch-btn.active {
-  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -4px;
+}
+
+.color-swatch-btn:focus-visible {
+  outline: 2px solid var(--md-sys-color-on-surface);
+  outline-offset: -2px;
 }
 
 .color-swatch-btn[aria-disabled="true"] {
@@ -963,18 +975,17 @@ async function confirmDelete() {
 
 .action-error {
   background-color: var(--md-sys-color-error-container);
-  color: var(--md-sys-color-error);
-  border: 1px solid var(--md-sys-color-error);
-  border-radius: var(--md-sys-shape-corner-xs);
-  padding: 0.4rem 0.6rem;
+  color: var(--md-sys-color-on-error-container);
+  border-radius: var(--md-sys-shape-corner-sm);
+  padding: 0.5rem 0.75rem;
   margin-bottom: 0.75rem;
-  font-size: 0.85rem;
+  font-size: var(--md-sys-typescale-body-medium);
 }
 
 .card-body {
-  font-size: 0.95rem;
+  font-size: var(--md-sys-typescale-body-large);
   line-height: 1.6;
-  color: var(--md-sys-color-on-surface, #1f1f1f);
+  color: var(--md-sys-color-on-surface);
   word-break: break-word;
   overflow-wrap: break-word;
 }
@@ -1019,7 +1030,7 @@ async function confirmDelete() {
 .card-body :deep(mark) {
   background: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
-  border-radius: 2px;
+  border-radius: var(--md-sys-shape-corner-xs);
   padding: 0 2px;
 }
 
@@ -1028,34 +1039,32 @@ async function confirmDelete() {
   color: var(--md-sys-color-primary);
   background-color: var(--md-sys-color-primary-container);
   border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-xs);
   padding: 1px 6px;
   font-size: 0.9em;
   font-weight: 500;
   text-decoration: none;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--md-sys-motion-duration-short) ease;
 }
 
 .card-body :deep(.wikilink):hover {
-  opacity: 0.85;
   text-decoration: underline;
 }
 
 .card-body :deep(img) {
   max-width: 100%;
   height: auto;
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-md);
   display: block;
   margin: 0.75rem 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .card-body :deep(picture),
 .card-body :deep(video) {
   max-width: 100%;
   height: auto;
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-md);
   display: block;
   margin: 0.75rem 0;
 }
@@ -1063,10 +1072,10 @@ async function confirmDelete() {
 .card-body :deep(pre) {
   max-width: 100%;
   overflow-x: auto;
-  background-color: var(--md-sys-color-surface-container-high, #e9eef6);
-  color: var(--md-sys-color-on-surface, #1f1f1f);
-  border: 1px solid var(--md-sys-color-outline-variant, #edf2f7);
-  border-radius: var(--md-sys-shape-corner-md, 12px);
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-md);
   padding: 0.75rem 1rem;
   margin: 0.75rem 0;
 }
@@ -1092,7 +1101,7 @@ async function confirmDelete() {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.85rem;
+  font-size: var(--md-sys-typescale-body-medium);
   color: var(--md-sys-color-primary);
   text-decoration: none;
 }
@@ -1124,18 +1133,18 @@ async function confirmDelete() {
   background-color: var(--md-sys-color-surface-container-high);
   border: 1px solid transparent;
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 0.8rem;
+  font-size: var(--md-sys-typescale-label-medium);
   font-weight: 500;
-  padding: 0.15rem 0.5rem;
-  border-radius: 12px;
+  padding: 0.15rem 0.625rem;
+  border-radius: var(--md-sys-shape-corner-sm);
   cursor: pointer;
-  transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              color var(--md-sys-motion-duration-short) ease;
 }
 
 .tag-pill:hover {
-  background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container);
-  border-color: var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
 }
 
 /* Inline Edit Styles */
@@ -1147,11 +1156,11 @@ async function confirmDelete() {
 
 .edit-textarea {
   width: 100%;
-  padding: 0.6rem;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 6px;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-corner-sm);
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: var(--md-sys-typescale-body-large);
   line-height: 1.5;
   color: var(--md-sys-color-on-surface);
   background: transparent;
@@ -1161,15 +1170,15 @@ async function confirmDelete() {
 
 .edit-textarea:focus {
   border-color: var(--md-sys-color-primary);
+  box-shadow: inset 0 0 0 1px var(--md-sys-color-primary);
 }
 
 .edit-error {
   background-color: var(--md-sys-color-error-container);
-  color: var(--md-sys-color-error);
-  border: 1px solid var(--md-sys-color-error);
-  border-radius: 4px;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.85rem;
+  color: var(--md-sys-color-on-error-container);
+  border-radius: var(--md-sys-shape-corner-sm);
+  padding: 0.5rem 0.75rem;
+  font-size: var(--md-sys-typescale-body-medium);
 }
 
 .edit-actions {
@@ -1182,17 +1191,17 @@ async function confirmDelete() {
 }
 
 .edit-hint {
-  font-size: 0.75rem;
+  font-size: var(--md-sys-typescale-body-small);
   color: var(--md-sys-color-on-surface-variant);
 }
 
 .edit-hint kbd {
   background: var(--md-sys-color-surface-container-high);
   border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 3px;
+  border-radius: var(--md-sys-shape-corner-xs);
   padding: 0.1rem 0.3rem;
-  font-size: 0.7rem;
-  font-family: monospace;
+  font-size: var(--md-sys-typescale-label-small);
+  font-family: var(--md-sys-typescale-font-mono);
 }
 
 .edit-btn-group {
@@ -1201,12 +1210,14 @@ async function confirmDelete() {
 }
 
 .btn-edit {
-  padding: 0.35rem 0.8rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  min-height: 36px;
+  padding: 0.35rem 1rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: var(--md-sys-typescale-label-large);
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              box-shadow var(--md-sys-motion-duration-short) ease;
 }
 
 .btn-edit.primary {
@@ -1216,25 +1227,24 @@ async function confirmDelete() {
 }
 
 .btn-edit.primary:hover:not(:disabled) {
-  opacity: 0.9;
+  box-shadow: var(--md-sys-elevation-1);
 }
 
 .btn-edit.secondary {
   background-color: transparent;
-  color: var(--md-sys-color-on-surface-variant);
-  border: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-primary);
+  border: 1px solid var(--md-sys-color-outline);
 }
 
 .btn-edit.secondary:hover:not(:disabled) {
-  background-color: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-on-surface);
+  background-color: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
 }
 
 /* Delete Modal */
 .delete-modal-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.4);
+  background-color: var(--md-sys-color-scrim);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1243,24 +1253,26 @@ async function confirmDelete() {
 }
 
 .delete-modal-card {
-  background: var(--md-sys-color-surface-container-high, #ffffff);
-  border-radius: var(--md-sys-shape-corner-2xl, 28px);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-2xl);
   padding: 1.75rem;
   max-width: 420px;
   width: 90%;
   box-shadow: var(--md-sys-elevation-3);
-  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .delete-modal-card h3 {
-  font-size: 1.25rem;
-  color: var(--md-sys-color-error, #e53e3e);
+  font-size: var(--md-sys-typescale-headline-small);
+  font-weight: 400;
+  color: var(--md-sys-color-on-surface);
   margin-bottom: 0.75rem;
 }
 
 .delete-modal-card p {
-  font-size: 0.95rem;
-  color: var(--md-sys-color-on-surface-variant, #4a5568);
+  font-size: var(--md-sys-typescale-body-medium);
+  color: var(--md-sys-color-on-surface-variant);
   line-height: 1.5;
   margin-bottom: 1.5rem;
 }
@@ -1272,13 +1284,15 @@ async function confirmDelete() {
 }
 
 .btn-modal {
-  padding: 0.5rem 1.1rem;
-  border-radius: var(--md-sys-shape-corner-full, 9999px);
-  font-size: 0.875rem;
+  min-height: 40px;
+  padding: 0.5rem 1.25rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: var(--md-sys-typescale-label-large);
   font-weight: 500;
   cursor: pointer;
   border: none;
-  transition: all var(--md-sys-motion-duration-short) ease;
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              box-shadow var(--md-sys-motion-duration-short) ease;
 }
 
 .btn-modal:focus-visible {
@@ -1288,20 +1302,20 @@ async function confirmDelete() {
 
 .btn-modal.cancel {
   background-color: transparent;
-  color: var(--md-sys-color-primary, #0b57d0);
+  color: var(--md-sys-color-primary);
 }
 
 .btn-modal.cancel:hover:not(:disabled) {
-  background-color: var(--md-sys-color-surface-container-high);
+  background-color: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
 }
 
 .btn-modal.confirm-delete {
-  background-color: var(--md-sys-color-error, #ba1a1a);
-  color: var(--md-sys-color-on-error, #ffffff);
+  background-color: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error);
 }
 
 .btn-modal.confirm-delete:hover:not(:disabled) {
-  opacity: 0.9;
+  box-shadow: var(--md-sys-elevation-1);
 }
 
 /* Card Selection Checkbox */
@@ -1311,19 +1325,22 @@ async function confirmDelete() {
   left: -6px;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
-  border: 2px solid var(--md-sys-color-outline, #79747e);
-  background-color: var(--md-sys-color-surface, #fff);
-  color: var(--md-sys-color-on-primary, #fff);
+  border-radius: var(--md-sys-shape-corner-full);
+  border: 2px solid var(--md-sys-color-outline);
+  background-color: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
   transform: scale(0.85);
-  transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+  transition: opacity var(--md-sys-motion-duration-short) ease,
+              transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing),
+              background-color var(--md-sys-motion-duration-short) ease,
+              border-color var(--md-sys-motion-duration-short) ease;
   z-index: 5;
-  box-shadow: var(--md-sys-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.2));
+  box-shadow: var(--md-sys-elevation-1);
   padding: 0;
 }
 
@@ -1350,12 +1367,12 @@ async function confirmDelete() {
 .card-select-btn.is-selected {
   opacity: 1;
   transform: scale(1);
-  background-color: var(--md-sys-color-primary, #6750a4);
-  border-color: var(--md-sys-color-primary, #6750a4);
+  background-color: var(--md-sys-color-primary);
+  border-color: var(--md-sys-color-primary);
 }
 
 .note-card.is-selected {
-  outline: 2px solid var(--md-sys-color-primary, #6750a4);
+  outline: 2px solid var(--md-sys-color-primary);
   outline-offset: 1px;
 }
 
@@ -1391,16 +1408,16 @@ async function confirmDelete() {
   margin-right: 0.55rem;
   margin-top: 0.2rem;
   cursor: pointer;
-  accent-color: var(--md-sys-color-primary, #6750a4);
+  accent-color: var(--md-sys-color-primary);
   flex-shrink: 0;
 }
 
 /* Markdown Image Lightbox Cursor */
 :deep(.markdown-body img) {
   cursor: zoom-in;
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-corner-md);
   max-width: 100%;
-  transition: transform 0.15s ease;
+  transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
 }
 
 :deep(.markdown-body img:hover) {

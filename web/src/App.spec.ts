@@ -211,6 +211,24 @@ describe('App authenticated note flows', () => {
     expect(localStorage.getItem('meemo_theme')).toBe('auto');
   });
 
+  it('keeps the stored theme when logout resets user-scoped settings', async () => {
+    const { fetchMock } = backend();
+    const rendered = await renderApp(fetchMock);
+    wrapper = rendered.wrapper;
+
+    await wrapper.get('.theme-toggle-btn').trigger('click');
+    await settle();
+    expect(localStorage.getItem('meemo_theme')).toBe('dark');
+
+    await wrapper.get('.user-profile-btn').trigger('click');
+    await wrapper.get('.logout-btn').trigger('click');
+    await settle();
+
+    expect(localStorage.getItem('meemo_theme')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(wrapper.get('.theme-toggle-btn').text()).toContain('Dark');
+  });
+
   it.each([
     { query: { archived: 'true' }, title: 'Archive', empty: 'No archived notes' },
     { query: { deleted: 'true' }, title: 'Trash', empty: 'Trash is empty' },

@@ -48,9 +48,9 @@ export interface AppSettings {
   backgroundImageDataUrl?: string;
 }
 
+// theme is intentionally absent: the device-local meemo_theme is the fallback, not 'auto'.
 const defaultSettings: AppSettings = {
   title: 'Meemo',
-  theme: 'auto',
   wide: false,
   wideNavbar: false,
   publicBackground: false,
@@ -59,7 +59,7 @@ const defaultSettings: AppSettings = {
   backgroundImageDataUrl: '',
 };
 
-const settings = ref<AppSettings>({ ...defaultSettings });
+const settings = ref<AppSettings>({ ...defaultSettings, theme: getStoredTheme() });
 const isLoading = ref(false);
 const error = ref<string | null>(null);
 let requestGeneration = 0;
@@ -86,7 +86,7 @@ if (typeof document !== 'undefined') {
 
 export function resetSettingsState(): void {
   requestGeneration++;
-  settings.value = { ...defaultSettings };
+  settings.value = { ...defaultSettings, theme: getStoredTheme() };
   isLoading.value = false;
   error.value = null;
   applyToDOM(settings.value);

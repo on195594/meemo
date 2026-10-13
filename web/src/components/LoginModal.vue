@@ -288,98 +288,143 @@ async function handleRegister() {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.45);
+  background-color: var(--md-sys-color-scrim);
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 1rem;
   z-index: 1000;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: overlay-in var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
 .modal-card {
-  background: var(--md-sys-color-surface-container, #ffffff);
-  border: 1px solid var(--md-sys-color-outline-variant, rgba(0, 0, 0, 0.1));
-  border-radius: var(--md-sys-shape-corner-2xl, 28px);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-2xl);
   width: 100%;
   max-width: 440px;
-  box-shadow: var(--md-sys-elevation-3, 0 10px 25px rgba(0, 0, 0, 0.15));
+  box-shadow: var(--md-sys-elevation-3);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  animation: card-in var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.25rem 1.5rem 0.75rem;
+  padding: 1.5rem 1rem 0.75rem 1.5rem;
 }
 
 .modal-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--md-sys-color-on-surface, #1a202c);
+  font-size: var(--md-sys-typescale-headline-small);
+  font-weight: 400;
+  color: var(--md-sys-color-on-surface);
   margin: 0;
 }
 
 .close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   background: none;
   border: none;
   font-size: 1.5rem;
   line-height: 1;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
-  padding: 0.25rem;
-  border-radius: var(--md-sys-shape-corner-xs, 4px);
+  border-radius: var(--md-sys-shape-corner-full);
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              color var(--md-sys-motion-duration-short) ease;
 }
 
 .close-btn:hover {
-  color: var(--md-sys-color-on-surface, #2d3748);
+  background: var(--md-sys-state-hover);
+  color: var(--md-sys-color-on-surface);
 }
 
 .first-user-banner {
   margin: 0.5rem 1.5rem 0.75rem;
-  padding: 0.75rem;
-  background-color: var(--md-sys-color-primary-container, #ebf8ff);
-  border: 1px solid var(--md-sys-color-outline-variant, #bee3f8);
-  color: var(--md-sys-color-on-primary-container, #2b6cb0);
-  border-radius: var(--md-sys-shape-corner-sm, 8px);
-  font-size: 0.9rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  border-radius: var(--md-sys-shape-corner-md);
+  font-size: var(--md-sys-typescale-body-medium);
 }
 
 .tab-switcher {
   display: flex;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant, #e2e8f0);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
   margin: 0 1.5rem;
 }
 
 .tab-btn {
+  position: relative;
   flex: 1;
+  min-height: 48px;
   background: none;
   border: none;
   padding: 0.75rem;
-  font-size: 0.95rem;
+  font-size: var(--md-sys-typescale-title-small);
   font-weight: 500;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: all 0.2s ease;
+  border-radius: var(--md-sys-shape-corner-sm) var(--md-sys-shape-corner-sm) 0 0;
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              color var(--md-sys-motion-duration-short) ease;
+}
+
+.tab-btn:hover {
+  background: var(--md-sys-state-hover);
+  color: var(--md-sys-color-on-surface);
+}
+
+/* M3 primary tab indicator: 3px, rounded top, grows from the center */
+.tab-btn::after {
+  content: '';
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--md-sys-color-primary);
+  transform: scaleX(0);
+  transition: transform var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
 .tab-btn.active {
-  color: var(--md-sys-color-primary, #0b57d0);
-  border-bottom-color: var(--md-sys-color-primary, #0b57d0);
+  color: var(--md-sys-color-primary);
+}
+
+.tab-btn.active::after {
+  transform: scaleX(1);
 }
 
 .error-banner {
   margin: 1rem 1.5rem 0;
-  padding: 0.6rem 0.8rem;
-  background-color: var(--md-sys-color-error-container, #fff5f5);
-  border: 1px solid var(--md-sys-color-error, #fed7d7);
-  color: var(--md-sys-color-on-error-container, #c53030);
-  border-radius: var(--md-sys-shape-corner-sm, 8px);
-  font-size: 0.875rem;
+  padding: 0.625rem 1rem;
+  background-color: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+  border-radius: var(--md-sys-shape-corner-md);
+  font-size: var(--md-sys-typescale-body-medium);
 }
 
 .auth-form {
@@ -396,30 +441,44 @@ async function handleRegister() {
 }
 
 .form-group label {
-  font-size: 0.875rem;
+  font-size: var(--md-sys-typescale-label-large);
   font-weight: 500;
-  color: var(--md-sys-color-on-surface, #4a5568);
+  color: var(--md-sys-color-on-surface-variant);
+  transition: color var(--md-sys-motion-duration-short) ease;
+}
+
+.form-group:focus-within label {
+  color: var(--md-sys-color-primary);
 }
 
 .form-input {
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--md-sys-color-outline-variant, #cbd5e0);
-  border-radius: var(--md-sys-shape-corner-sm, 8px);
-  font-size: 0.95rem;
-  background-color: var(--md-sys-color-surface, #ffffff);
-  color: var(--md-sys-color-on-surface, inherit);
+  min-height: 48px;
+  padding: 0.625rem 1rem;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-corner-xs);
+  font-size: var(--md-sys-typescale-body-large);
+  background-color: transparent;
+  color: var(--md-sys-color-on-surface);
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color var(--md-sys-motion-duration-short) ease,
+              box-shadow var(--md-sys-motion-duration-short) ease;
 }
 
-.form-input:focus {
-  border-color: var(--md-sys-color-primary, #0b57d0);
-  box-shadow: 0 0 0 2px var(--md-sys-color-primary-container, rgba(11, 87, 208, 0.2));
+.form-input:hover {
+  border-color: var(--md-sys-color-on-surface);
+}
+
+/* M3 outlined field focus: 2px primary stroke without layout shift */
+.form-input:focus,
+.form-input:focus-visible {
+  outline: none;
+  border-color: var(--md-sys-color-primary);
+  box-shadow: inset 0 0 0 1px var(--md-sys-color-primary);
 }
 
 .field-hint {
-  font-size: 0.75rem;
-  color: var(--md-sys-color-on-surface-variant, #718096);
+  font-size: var(--md-sys-typescale-body-small);
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .form-actions {
@@ -428,26 +487,35 @@ async function handleRegister() {
 
 .submit-btn {
   width: 100%;
-  padding: 0.65rem 1rem;
+  min-height: 48px;
+  padding: 0.65rem 1.5rem;
   border: none;
-  border-radius: var(--md-sys-shape-corner-sm, 8px);
-  font-size: 0.95rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: var(--md-sys-typescale-label-large);
   font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: box-shadow var(--md-sys-motion-duration-short) ease,
+              transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing),
+              opacity var(--md-sys-motion-duration-short) ease;
 }
 
 .submit-btn.primary {
-  background-color: var(--md-sys-color-primary, #0b57d0);
-  color: var(--md-sys-color-on-primary, #ffffff);
+  background-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
 }
 
 .submit-btn.primary:hover:not(:disabled) {
-  opacity: 0.92;
+  box-shadow: var(--md-sys-elevation-1);
+}
+
+.submit-btn.primary:active:not(:disabled) {
+  transform: scale(0.98);
+  box-shadow: none;
 }
 
 .submit-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.38;
   cursor: not-allowed;
 }
 </style>

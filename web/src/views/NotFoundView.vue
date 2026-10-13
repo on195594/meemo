@@ -8,29 +8,43 @@
 
 <style scoped>
 .not-found-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  padding: 4rem 1.5rem;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  max-width: 480px;
+  margin: 4rem auto;
+  padding: 3rem 1.5rem;
+  background: var(--md-sys-color-surface-container-low);
+  border-radius: var(--md-sys-shape-corner-2xl);
 }
 h1 {
-  font-size: 4rem;
-  color: #e53e3e;
+  font-size: 4.5rem;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--md-sys-color-primary);
   margin-bottom: 1rem;
 }
 p {
-  color: #718096;
-  font-size: 1.2rem;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-large);
   margin-bottom: 2rem;
 }
 .home-link {
-  display: inline-block;
-  background: #3182ce;
-  color: #fff;
-  padding: 0.5rem 1.25rem;
-  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  padding: 0.5rem 1.5rem;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: var(--md-sys-typescale-label-large);
+  font-weight: 500;
   text-decoration: none;
+  transition: box-shadow var(--md-sys-motion-duration-short) ease;
 }
 .home-link:hover {
-  background: #2b6cb0;
+  box-shadow: var(--md-sys-elevation-1);
 }
 </style>

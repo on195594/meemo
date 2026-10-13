@@ -79,7 +79,7 @@ Key attributes:
 
 ## Colors
 
-Meemo relies on two complementary palettes: the Material 3 structural palette and the Google Keep 12-color note palette.
+Meemo relies on two complementary palettes: the Material 3 structural palette and the Google Keep 12-color note palette. Each color token is declared once as `light-dark(<light>, <dark>)` and resolves against the root `color-scheme` (auto follows the OS; `data-theme="light|dark"` forces one side).
 
 ### Structural Surface & Accent Tokens
 - `primary`: `#0b57d0` (Light) / `#a8c7fa` (Dark) — Google Standard Blue, used for primary actions, active tabs, and focused controls.
@@ -107,7 +107,7 @@ Every note color is calibrated as a background tone that preserves comfortable r
 
 ## Typography
 
-System font stack (`-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, ...`) throughout; code uses `monospace`. Sizes are set per component in `rem` (e.g. modal titles 1.2-1.25rem, card body ~0.95rem, meta 0.725-0.825rem); there is no shared type-scale token yet.
+System font stack (`--md-sys-typescale-font`) throughout; code uses `--md-sys-typescale-font-mono`. Font sizes come from the M3 type scale tokens in `web/src/styles/tokens.css` (`--md-sys-typescale-{display,headline,title,body,label}-{large,medium,small}`).
 
 ## Layout
 
