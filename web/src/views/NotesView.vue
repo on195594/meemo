@@ -265,12 +265,13 @@
         :open="isNoteModalOpen"
         :thing="activeModalNote"
         :can-edit="!isDeleted"
-        :on-save-edit="updateNote"
+        :busy="isModalMutating"
+        :on-save-edit="saveModalNote"
         @close="closeNoteModal"
         @delete="handleModalDelete"
         @toggle-sticky="handleToggleSticky"
         @toggle-public="handleTogglePublic"
-        @toggle-archive="handleToggleArchive"
+        @toggle-archive="handleModalArchive"
         @image-click="handleImageClick"
         @tag-click="handleTagClick"
         @wikilink-click="handleWikilinkClick"
@@ -438,10 +439,21 @@ async function handleToggleArchive(thing: Thing) {
   } else if (result.error) {
     showToast(result.error);
   }
+  return result.success;
+}
+
+async function handleModalArchive(thing: Thing) {
+  if (isModalMutating.value) return;
+  isModalMutating.value = true;
+  try {
+    if (await handleToggleArchive(thing)) closeNoteModal();
+  } finally {
+    isModalMutating.value = false;
+  }
 }
 
 async function handleDeleteNote(thing: Thing): Promise<boolean> {
-  const result = await deleteNote(thing._id);
+  const result = await deleteNote(thing._id, thing);
   if (result.success) {
     const deleted = result.thing || thing;
     showToast('Note moved to Trash', () => undoMany([deleted], undoDelete));
@@ -453,7 +465,13 @@ async function handleDeleteNote(thing: Thing): Promise<boolean> {
 
 // Close only after the delete lands, so a failed delete keeps the open draft.
 async function handleModalDelete(thing: Thing) {
-  if (await handleDeleteNote(thing)) closeNoteModal();
+  if (isModalMutating.value) return;
+  isModalMutating.value = true;
+  try {
+    if (await handleDeleteNote(thing)) closeNoteModal();
+  } finally {
+    isModalMutating.value = false;
+  }
 }
 
 async function handleRestoreNote(thing: Thing) {
@@ -462,6 +480,7 @@ async function handleRestoreNote(thing: Thing) {
   else if (result.error) showToast(result.error);
 }
 
+const isModalMutating = ref(false);
 const isNoteModalOpen = ref(false);
 const activeModalNoteId = ref<string | null>(null);
 const fallbackModalNote = ref<Thing | null>(null);
@@ -470,6 +489,12 @@ const activeModalNote = computed<Thing | null>(() => {
   if (!activeModalNoteId.value) return null;
   return things.value.find((t) => t._id === activeModalNoteId.value) || fallbackModalNote.value;
 });
+
+async function saveModalNote(id: string, updates: Partial<Thing>) {
+  const result = await updateNote(id, updates, activeModalNote.value || undefined);
+  if (result.success && result.thing) fallbackModalNote.value = result.thing;
+  return result;
+}
 
 function openNoteModal(thing: Thing) {
   if (isSelectionMode.value) {

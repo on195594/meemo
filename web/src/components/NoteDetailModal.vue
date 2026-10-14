@@ -42,6 +42,7 @@
                 type="text"
                 placeholder="Title"
                 aria-label="Title"
+                :disabled="busy"
                 @keydown="handleTextareaKeydown"
                 @input="handleTextareaInput"
               />
@@ -56,6 +57,7 @@
                 :title="currentNote.sticky ? 'Unpin note' : 'Pin note'"
                 :aria-label="currentNote.sticky ? 'Unpin note' : 'Pin note to top'"
                 :aria-pressed="Boolean(currentNote.sticky)"
+                :disabled="busy"
                 @click="togglePin"
               >
                 <UiIcon name="pin" />
@@ -76,6 +78,7 @@
                 placeholder="Note"
                 aria-label="Note"
                 rows="1"
+                :disabled="busy"
                 @keydown="handleTextareaKeydown"
                 @input="handleTextareaInput"
               ></textarea>
@@ -126,7 +129,7 @@
                   aria-label="Note color"
                   aria-haspopup="true"
                   :aria-expanded="showColorPicker"
-                  :disabled="isColorSaving"
+                  :disabled="isColorSaving || busy"
                   @click="toggleColorPicker"
                 >
                   <UiIcon name="palette" />
@@ -162,6 +165,7 @@
                 :class="{ active: currentNote.archived }"
                 :title="currentNote.archived ? 'Unarchive' : 'Archive'"
                 :aria-label="currentNote.archived ? 'Restore note from archive' : 'Archive note'"
+                :disabled="busy"
                 @click="toggleArchive"
               >
                 <UiIcon :name="currentNote.archived ? 'restore' : 'archive'" />
@@ -174,6 +178,7 @@
                 :title="currentNote.public ? 'Make private' : 'Make public'"
                 :aria-label="currentNote.public ? 'Make note private' : 'Make note public'"
                 :aria-pressed="Boolean(currentNote.public)"
+                :disabled="busy"
                 @click="togglePublic"
               >
                 <UiIcon name="globe" />
@@ -184,6 +189,7 @@
                 class="action-btn delete-btn"
                 title="Delete note"
                 aria-label="Move note to trash"
+                :disabled="busy"
                 @click="requestDelete"
               >
                 <UiIcon name="trash" />
@@ -192,11 +198,11 @@
             <div v-else class="footer-placeholder"></div>
 
             <div class="footer-right">
-              <span v-if="isSaving" class="save-status" role="status">Saving…</span>
+              <span v-if="isSaving || busy" class="save-status" role="status">Saving…</span>
               <button
                 type="button"
                 class="done-btn"
-                :disabled="isSaving"
+                :disabled="isSaving || busy"
                 @click="closeWithSave"
               >
                 Close
@@ -223,6 +229,7 @@ const props = withDefaults(
     open: boolean;
     thing: Thing | null;
     canEdit?: boolean;
+    busy?: boolean;
     highlightQuery?: string;
     onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; thing?: Thing; error?: string }>;
   }>(),
@@ -501,7 +508,7 @@ function handleTextareaKeydown(e: KeyboardEvent) {
 }
 
 async function saveContent(): Promise<boolean> {
-  if (!props.canEdit || isSaving.value || !currentNote.value) return false;
+  if (!props.canEdit || props.busy || isSaving.value || !currentNote.value) return false;
   const trimmed = editDraft.value.trim();
   if (!trimmed) {
     actionError.value = 'Note content cannot be empty';
@@ -545,17 +552,19 @@ async function saveContent(): Promise<boolean> {
 
 const isClosing = ref(false);
 
+async function savePendingDraft(): Promise<boolean> {
+  if (props.busy) return false;
+  if (!hasUnsavedChanges.value) return true;
+  const generation = draftGeneration;
+  return await saveContent() && generation === draftGeneration;
+}
+
 async function closeWithSave() {
-  if (isClosing.value || isSaving.value) return;
+  if (props.busy || isClosing.value || isSaving.value) return;
   isClosing.value = true;
   try {
-    if (hasUnsavedChanges.value && editDraft.value.trim()) {
-      const saved = await saveContent();
-      if (!saved) {
-        // Save failed — keep modal open so user can retry or discard
-        return;
-      }
-    }
+    // Keep the dialog open if saving failed or the user typed during the save.
+    if (editDraft.value.trim() && !await savePendingDraft()) return;
     emit('close');
   } finally {
     isClosing.value = false;
@@ -592,6 +601,7 @@ function closeColorPicker(returnFocus = false) {
 }
 
 function toggleColorPicker() {
+  if (props.busy) return;
   if (showColorPicker.value) {
     closeColorPicker();
     return;
@@ -634,7 +644,7 @@ function handleColorKeydown(event: KeyboardEvent, index: number) {
 }
 
 async function selectColor(color: NoteColor) {
-  if (isColorSaving.value || !currentNote.value) return;
+  if (props.busy || isColorSaving.value || !currentNote.value) return;
   if (color === (currentNote.value.color || 'default')) {
     closeColorPicker(true);
     return;
@@ -666,7 +676,7 @@ async function selectColor(color: NoteColor) {
 
 // Action Toggles
 async function togglePin() {
-  if (!currentNote.value || !props.canEdit) return;
+  if (props.busy || !currentNote.value || !props.canEdit) return;
   if (hasStickyListener.value) {
     emit('toggleSticky', props.thing || currentNote.value);
     return;
@@ -687,7 +697,7 @@ async function togglePin() {
 }
 
 async function togglePublic() {
-  if (!currentNote.value || !props.canEdit) return;
+  if (props.busy || !currentNote.value || !props.canEdit) return;
   if (hasPublicListener.value) {
     emit('togglePublic', props.thing || currentNote.value);
     return;
@@ -708,9 +718,10 @@ async function togglePublic() {
 }
 
 async function toggleArchive() {
-  if (!currentNote.value || !props.canEdit) return;
+  if (!currentNote.value || !props.canEdit || isSaving.value || isClosing.value) return;
+  if (!await savePendingDraft()) return;
   if (hasArchiveListener.value) {
-    emit('toggleArchive', props.thing || currentNote.value);
+    emit('toggleArchive', currentNote.value);
     return;
   }
   const nextArchived = !currentNote.value.archived;
@@ -728,9 +739,10 @@ async function toggleArchive() {
   }
 }
 
-function requestDelete() {
-  if (!currentNote.value) return;
-  emit('delete', props.thing || currentNote.value);
+async function requestDelete() {
+  if (!currentNote.value || isSaving.value || isClosing.value) return;
+  if (!await savePendingDraft()) return;
+  emit('delete', currentNote.value);
 }
 
 // Lifecycle and Sync

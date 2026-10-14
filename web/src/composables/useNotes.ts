@@ -155,18 +155,7 @@ export function useNotes() {
       }
       const res = await api.things.create(payload);
       if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-      if (!isArchived.value && !isDeleted.value) {
-        if (res.thing.sticky) {
-          things.value.unshift(res.thing);
-        } else {
-          const firstNonStickyIndex = things.value.findIndex((t) => !t.sticky);
-          if (firstNonStickyIndex === -1) {
-            things.value.push(res.thing);
-          } else {
-            things.value.splice(firstNonStickyIndex, 0, res.thing);
-          }
-        }
-      }
+      placeNoteInCurrentView(res.thing);
       return { success: true, thing: res.thing };
     } catch (err: any) {
       if (generation !== userGeneration) return { success: false, error: 'Session changed' };
@@ -189,11 +178,12 @@ export function useNotes() {
 
   async function updateNote(
     id: string,
-    updates: Partial<Thing>
+    updates: Partial<Thing>,
+    snapshot?: Thing
   ): Promise<NoteMutationResult> {
     const generation = userGeneration;
     return enqueueNoteMutation(id, generation, async () => {
-      const existing = things.value.find((t) => t._id === id);
+      const existing = things.value.find((t) => t._id === id) || (snapshot?._id === id ? snapshot : undefined);
       if (!existing) {
         return { success: false, error: 'Note is no longer available', code: 'not_found' };
       }
@@ -218,18 +208,7 @@ export function useNotes() {
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
         const updated = res.thing;
 
-        if (updated.archived !== isArchived.value) {
-          things.value = things.value.filter((t) => t._id !== id);
-        } else {
-          const index = things.value.findIndex((t) => t._id === id);
-          if (index !== -1) {
-            things.value.splice(index, 1, updated);
-            things.value.sort((a, b) => {
-              if (a.sticky !== b.sticky) return a.sticky ? -1 : 1;
-              return (b.modifiedAt || 0) - (a.modifiedAt || 0);
-            });
-          }
-        }
+        placeNoteInCurrentView(updated);
         return { success: true, thing: updated };
       } catch (err: any) {
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
@@ -269,10 +248,10 @@ export function useNotes() {
     }));
   }
 
-  async function deleteNote(id: string): Promise<{ success: boolean; thing?: Thing; error?: string; code?: string }> {
+  async function deleteNote(id: string, snapshot?: Thing): Promise<{ success: boolean; thing?: Thing; error?: string; code?: string }> {
     const generation = userGeneration;
     return enqueueNoteMutation(id, generation, async () => {
-      const existing = things.value.find((t) => t._id === id);
+      const existing = things.value.find((t) => t._id === id) || (snapshot?._id === id ? snapshot : undefined);
       if (!existing) return { success: false, error: 'Note is no longer available', code: 'not_found' };
       try {
         await api.things.delete(id, existing.revision);
@@ -308,8 +287,8 @@ export function useNotes() {
     };
   }
 
-  // Undo support: a note that comes back is shown only if it matches the current view.
-  function placeRestoredNote(thing: Thing) {
+  // Search matching belongs to the server; other views can place notes locally.
+  function placeNoteInCurrentView(thing: Thing) {
     things.value = things.value.filter((t) => t._id !== thing._id);
     if (thing.archived !== isArchived.value || isDeleted.value) return;
     if (searchQuery.value.trim() && !selectedTag.value) {
@@ -338,7 +317,7 @@ export function useNotes() {
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
         restored = pinned.thing;
       }
-      placeRestoredNote(restored);
+      placeNoteInCurrentView(restored);
       return { success: true, thing: restored };
     }).catch((err: any) => ({ success: false, error: err.message || 'Failed to undo', code: err.code }));
   }
@@ -349,21 +328,21 @@ export function useNotes() {
     return enqueueNoteMutation(changed._id, generation, async () => {
       const res = await api.things.update(changed._id, snapshotPayload(changed, { archived: !changed.archived }));
       if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-      placeRestoredNote(res.thing);
+      placeNoteInCurrentView(res.thing);
       return { success: true, thing: res.thing };
     }).catch((err: any) => ({ success: false, error: err.message || 'Failed to undo', code: err.code }));
   }
 
   async function toggleSticky(thing: Thing) {
-    return updateNote(thing._id, { sticky: !thing.sticky });
+    return updateNote(thing._id, { sticky: !thing.sticky }, thing);
   }
 
   async function togglePublic(thing: Thing) {
-    return updateNote(thing._id, { public: !thing.public });
+    return updateNote(thing._id, { public: !thing.public }, thing);
   }
 
   async function toggleArchive(thing: Thing) {
-    return updateNote(thing._id, { archived: !thing.archived });
+    return updateNote(thing._id, { archived: !thing.archived }, thing);
   }
 
   async function batchUpdateNotes(

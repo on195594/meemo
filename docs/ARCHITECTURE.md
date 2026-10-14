@@ -41,8 +41,9 @@ A mutually exclusive, absolute-UTC setup window (`MCP_BOOTSTRAP_UNTIL`, maximum 
 
 ## Frontend state ownership
 
-- The route query is the source of truth for search, tag, and archive filters.
-- Auth, notes, and settings use explicit composable stores.
+- The route query is the source of truth for search, tag, archive, and trash filters.
+- Auth, notes, and settings use explicit composable stores. Creates, edits, and Undo place notes against the current view; text search membership is revalidated by the server.
+- The detail dialog retains its last server snapshot and revision when a filtered edit leaves the visible list. Close preserves input typed during an in-flight save. Archive/delete first save the draft, lock editing during the pending mutation, and close only on success; Undo restores the saved content.
 - User/session changes reset scoped state, and request generations prevent stale responses from updating a later user's store.
 - Note cards expose a native keyboard-accessible detail button, manage focus and Escape handling within confirmation dialogs, and keep mutation controls below note content. The composer expands on focus; batch controls wrap on narrow screens with complete focus management. These surfaces reuse theme tokens and `UiIcon.vue`, documented in the [UI audit](reviews/2026-10-08-impeccable-ui-audit.md).
 

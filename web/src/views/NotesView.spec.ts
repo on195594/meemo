@@ -34,7 +34,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 function backend(settings: Record<string, unknown> = {}) {
-  const state = { deleted: false, archived: false, failDelete: false };
+  const state = { deleted: false, archived: false, failDelete: false, content: NOTE.content, revision: NOTE.revision };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method || 'GET';
@@ -43,21 +43,25 @@ function backend(settings: Record<string, unknown> = {}) {
     if (url === '/api/tags') return json({ tags: [{ name: 'zeta', usage: 9 }, { name: 'work', usage: 1 }] });
     if (url.startsWith('/api/things?')) {
       const wantsArchived = url.includes('archived=true');
-      return json({ things: state.deleted || state.archived !== wantsArchived ? [] : [NOTE] });
+      return json({ things: state.deleted || state.archived !== wantsArchived ? [] : [{ ...NOTE, ...state }] });
     }
     if (url === '/api/things/note-1' && method === 'DELETE') {
       if (state.failDelete) return json({ code: 'revision_conflict', message: 'Changed elsewhere' }, 409);
       state.deleted = true;
+      state.revision++;
       return json({});
     }
     if (url === '/api/things/note-1' && method === 'PUT') {
       const body = JSON.parse(String(init?.body));
       state.archived = body.archived;
-      return json({ thing: { ...NOTE, archived: body.archived, revision: body.expectedRevision + 1 } });
+      state.content = body.content;
+      state.revision = body.expectedRevision + 1;
+      return json({ thing: { ...NOTE, ...state } });
     }
     if (url === '/api/things/note-1/restore' && method === 'POST') {
       state.deleted = false;
-      return json({ thing: { ...NOTE, revision: 3 } });
+      state.revision++;
+      return json({ thing: { ...NOTE, ...state } });
     }
     throw new Error(`Unexpected request: ${method} ${url}`);
   });
@@ -146,6 +150,65 @@ describe('Keep-style notes workspace', () => {
     await settle();
     expect(state.archived).toBe(false);
     expect(wrapper.find('.note-card').exists()).toBe(true);
+  });
+
+  it.each(['Archive note', 'Move note to trash'])('saves a dialog draft before %s and Undo restores that draft', async (action) => {
+    const { fetchMock, state } = backend();
+    wrapper = (await renderApp(fetchMock)).wrapper;
+    await wrapper.get('.note-card .card-body').trigger('click');
+    await settle();
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.value = 'Draft preserved through Undo';
+    body.dispatchEvent(new Event('input'));
+    (document.querySelector(`.note-modal-card [aria-label="${action}"]`) as HTMLButtonElement).click();
+    await settle();
+
+    expect(state.content).toBe('Draft preserved through Undo');
+    expect(document.querySelector('.note-modal-overlay')).toBeNull();
+    expect(wrapper.find('.note-card').exists()).toBe(false);
+    await wrapper.get('.snackbar-action').trigger('click');
+    await settle();
+    expect(wrapper.get('.note-card').text()).toContain('Draft preserved through Undo');
+    const writes = fetchMock.mock.calls.filter(([, init]) => init?.method);
+    expect(writes).toHaveLength(3);
+    expect(JSON.parse(String(writes[0][1]?.body))).toMatchObject({ content: state.content, expectedRevision: 1 });
+    expect(JSON.parse(String(writes[1][1]?.body))).toMatchObject({ expectedRevision: 2 });
+    expect(JSON.parse(String(writes[2][1]?.body))).toMatchObject({ expectedRevision: 3 });
+  });
+
+  it.each(['Archive note', 'Move note to trash'])('locks the dialog during a delayed %s instead of losing subsequent edits', async (action) => {
+    const { fetchMock } = backend();
+    const respond = fetchMock.getMockImplementation()!;
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method === 'DELETE' || (init?.method === 'PUT' && JSON.parse(String(init.body)).archived)) await pending;
+      return respond(input, init);
+    });
+    wrapper = (await renderApp(fetchMock)).wrapper;
+    await wrapper.get('.note-card .card-body').trigger('click');
+    await settle();
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.value = 'Draft before delayed action';
+    body.dispatchEvent(new Event('input'));
+    const button = document.querySelector(`.note-modal-card [aria-label="${action}"]`) as HTMLButtonElement;
+    button.click();
+    await settle();
+
+    expect(body.disabled).toBe(true);
+    expect(button.disabled).toBe(true);
+    button.click();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await settle();
+    expect(document.querySelector('.note-modal-overlay')).not.toBeNull();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method)).toHaveLength(2);
+
+    release();
+    await settle();
+    expect(document.querySelector('.note-modal-overlay')).toBeNull();
+    await wrapper.get('.snackbar-action').trigger('click');
+    await settle();
+    expect(wrapper.get('.note-card').text()).toContain('Draft before delayed action');
   });
 
   it('keeps the note dialog and its draft open when deleting fails', async () => {

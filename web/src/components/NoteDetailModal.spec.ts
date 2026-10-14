@@ -158,7 +158,7 @@ describe('NoteDetailModal', () => {
     wrapper.unmount();
   });
 
-  it('keeps newer input when an older save resolves', async () => {
+  it.each(['shortcut', 'Close', 'Escape', 'backdrop'])('keeps newer input when an older %s save resolves', async (action) => {
     let resolveSave!: (value: { success: boolean; thing: Thing }) => void;
     const onSaveEdit = vi.fn(() => new Promise<{ success: boolean; thing: Thing }>((resolve) => {
       resolveSave = resolve;
@@ -174,7 +174,10 @@ describe('NoteDetailModal', () => {
     const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
     textarea.value = 'Saved A';
     textarea.dispatchEvent(new Event('input'));
-    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
+    if (action === 'shortcut') textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
+    else if (action === 'Close') (document.querySelector('.done-btn') as HTMLButtonElement).click();
+    else if (action === 'Escape') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    else (document.querySelector('.note-modal-overlay') as HTMLElement).click();
     await flushPromises();
 
     textarea.value = 'Newer B';
@@ -184,6 +187,31 @@ describe('NoteDetailModal', () => {
 
     expect(textarea.value).toBe('Newer B');
     expect(wrapper.emitted('close')).toBeUndefined();
+
+    onSaveEdit.mockResolvedValueOnce({ success: true, thing: note({ content: 'Newer B', revision: 3 }) });
+    (document.querySelector('.done-btn') as HTMLButtonElement).click();
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenLastCalledWith('note-1', { content: 'Newer B' });
+    expect(wrapper.emitted('close')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it.each(['Archive note', 'Move note to trash'])('does not run %s when saving its draft fails', async (action) => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: false, error: 'Synthetic failure' });
+    const wrapper = mount(NoteDetailModal, {
+      props: { open: true, thing: note(), onSaveEdit, onToggleArchive: vi.fn() },
+    });
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'Draft before action';
+    textarea.dispatchEvent(new Event('input'));
+    (document.querySelector(`[aria-label="${action}"]`) as HTMLButtonElement).click();
+    await flushPromises();
+
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Draft before action' });
+    expect(wrapper.emitted('delete')).toBeUndefined();
+    expect(wrapper.emitted('toggleArchive')).toBeUndefined();
+    expect(textarea.value).toBe('Draft before action');
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('Synthetic failure');
     wrapper.unmount();
   });
 
@@ -339,6 +367,7 @@ describe('NoteDetailModal', () => {
     const archiveBtn = document.querySelector('[aria-label="Archive note"]') as HTMLButtonElement;
     expect(archiveBtn).not.toBeNull();
     archiveBtn.click();
+    await flushPromises();
     expect(onToggleArchive).toHaveBeenCalledWith(current);
 
     wrapper.unmount();

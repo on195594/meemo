@@ -106,6 +106,57 @@ describe('useNotes behavior', () => {
     expect(store.things.value).toEqual([created]);
   });
 
+  it.each([
+    { search: 'unmatched', tag: null, archived: false },
+    { search: '', tag: 'other-label', archived: false },
+    { search: '', tag: null, archived: true },
+    { search: '', tag: null, archived: false, deleted: true },
+  ])('places a delayed create in the current view, not the view it started in: %j', async (filters) => {
+    const pending = deferred<{ thing: Thing }>();
+    apiMock.create.mockReturnValue(pending.promise);
+    apiMock.list.mockResolvedValue({ things: [] });
+    const store = useNotes();
+    const saving = store.createNote('new note');
+    await store.setFilters(filters);
+
+    pending.resolve({ thing: note('new') });
+    expect((await saving).success).toBe(true);
+    expect(store.things.value).toEqual([]);
+    if (filters.search) {
+      expect(apiMock.list).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'unmatched' }));
+      expect(apiMock.list).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('keeps the dialog snapshot revision after an edit leaves the current search results', async () => {
+    const original = note('one');
+    apiMock.list.mockResolvedValueOnce({ things: [original] }).mockResolvedValue({ things: [] });
+    apiMock.update
+      .mockResolvedValueOnce({ thing: note('one', { content: 'unmatched', revision: 2 }) })
+      .mockResolvedValueOnce({ thing: note('one', { content: 'newer draft', revision: 3 }) });
+    apiMock.delete.mockResolvedValue({});
+    const store = useNotes();
+    await store.setFilters({ search: 'one', tag: null, archived: false });
+    const first = await store.updateNote('one', { content: 'unmatched' });
+    expect(store.things.value).toEqual([]);
+
+    const second = await store.updateNote('one', { content: 'newer draft' }, first.thing);
+    expect(second.success).toBe(true);
+    expect(apiMock.update).toHaveBeenLastCalledWith('one', expect.objectContaining({ expectedRevision: 2 }));
+    expect(store.things.value).toEqual([]);
+    const deleted = await store.deleteNote('one', second.thing);
+    expect(apiMock.delete).toHaveBeenCalledWith('one', 3);
+    expect(deleted).toEqual({ success: true, thing: second.thing });
+  });
+
+  it('does not use another note as an off-list mutation snapshot', async () => {
+    const store = useNotes();
+    expect((await store.updateNote('one', { content: 'edit' }, note('other'))).success).toBe(false);
+    expect((await store.deleteNote('one', note('other'))).success).toBe(false);
+    expect(apiMock.update).not.toHaveBeenCalled();
+    expect(apiMock.delete).not.toHaveBeenCalled();
+  });
+
   it('updates content and public state', async () => {
     const original = note('one');
     const updated = note('one', { content: 'edited', public: true, modifiedAt: 2 });
