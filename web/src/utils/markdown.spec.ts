@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { highlightKeyword, renderMarkdown, toggleTaskItem } from './markdown';
+import {
+  highlightKeyword,
+  isImageAttachment,
+  renderMarkdown,
+  stripImageAttachmentReferences,
+  toggleTaskItem,
+} from './markdown';
 
 describe('renderMarkdown', () => {
   it('renders standard markdown elements', () => {
@@ -171,5 +177,54 @@ describe('highlightKeyword', () => {
     const first = highlightKeyword(big, 'world');
     expect(first).toContain('<mark>world</mark>');
     expect(highlightKeyword(big, 'world')).toBe(first);
+  });
+});
+
+describe('isImageAttachment', () => {
+  it('identifies image attachments by type, mime, or extension', () => {
+    expect(isImageAttachment({ identifier: '1', type: 'image' })).toBe(true);
+    expect(isImageAttachment({ identifier: '2', mime: 'image/jpeg' })).toBe(true);
+    expect(isImageAttachment({ identifier: '3', fileName: 'photo.PNG' })).toBe(true);
+    expect(isImageAttachment({ identifier: '4', fileName: 'photo.webp' })).toBe(true);
+    expect(isImageAttachment({ identifier: '5', fileName: 'doc.pdf' })).toBe(false);
+    expect(isImageAttachment(null)).toBe(false);
+  });
+});
+
+describe('stripImageAttachmentReferences', () => {
+  const attachments = [
+    { identifier: 'hash123.jpg', fileName: 'sunset.jpg', type: 'image' as const },
+    { identifier: 'hash456.png', fileName: 'diagram.png', type: 'image' as const },
+    { identifier: 'doc789.pdf', fileName: 'report.pdf', type: 'unknown' as const },
+  ];
+
+  it('strips markdown image syntax referencing image attachment identifier or filename', () => {
+    const content = '# Holiday\n![sunset.jpg](/api/files/me/note1/hash123.jpg)\nGreat sunset!';
+    const result = stripImageAttachmentReferences(content, attachments);
+    expect(result).toBe('# Holiday\n\nGreat sunset!');
+  });
+
+  it('strips bracket filename token created during historical uploads', () => {
+    const content = '# Photo\n [sunset.jpg] \n#tag';
+    const result = stripImageAttachmentReferences(content, attachments);
+    expect(result).toBe('# Photo\n\n#tag');
+  });
+
+  it('strips raw HTML img tags referencing image attachment identifier', () => {
+    const content = 'Before <img src="/api/files/me/note1/hash123.jpg" alt="test" /> After';
+    const result = stripImageAttachmentReferences(content, attachments);
+    expect(result).toBe('Before  After');
+  });
+
+  it('preserves non-image attachment references and external image markdown', () => {
+    const content = '# Files\n[report.pdf]\n![External Cat](https://example.com/cat.jpg)';
+    const result = stripImageAttachmentReferences(content, attachments);
+    expect(result).toContain('[report.pdf]');
+    expect(result).toContain('![External Cat](https://example.com/cat.jpg)');
+  });
+
+  it('returns empty string when note contains only an image attachment reference', () => {
+    expect(stripImageAttachmentReferences('[sunset.jpg]', attachments)).toBe('');
+    expect(stripImageAttachmentReferences('![/api/files/me/n/hash123.jpg](/api/files/me/n/hash123.jpg)', attachments)).toBe('');
   });
 });

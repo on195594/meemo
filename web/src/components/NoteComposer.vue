@@ -163,6 +163,7 @@ import UiIcon from './UiIcon.vue';
 import { api, type AttachmentDescriptor, type NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import { joinTitle } from '../utils/noteTitle';
+import { isImageAttachment } from '../utils/markdown';
 
 const props = withDefaults(defineProps<{
   onSave: (content: string, attachments?: AttachmentDescriptor[], color?: NoteColor) => Promise<{ success: boolean; error?: string }>;
@@ -246,13 +247,6 @@ function startChecklist() {
   });
 }
 const fileInputRef = ref<HTMLInputElement | null>(null);
-
-function isImageAttachment(att: AttachmentDescriptor): boolean {
-  if (att.type === 'image') return true;
-  if (att.mime?.startsWith('image/')) return true;
-  const name = att.fileName?.toLowerCase() || '';
-  return /\.(png|jpe?g|gif|webp|svg)$/.test(name);
-}
 
 function handleBlur() {
   setTimeout(() => {
@@ -390,11 +384,13 @@ async function uploadFiles(files: File[]) {
       });
       attachments.value.push(uploaded);
 
-      // Append file reference token to content
-      if (content.value.length > 0 && !content.value.endsWith(' ') && !content.value.endsWith('\n')) {
-        content.value += ' ';
+      // Append file reference token to content for non-image files (images display as Keep attachments)
+      if (!isImageAttachment(uploaded)) {
+        if (content.value.length > 0 && !content.value.endsWith(' ') && !content.value.endsWith('\n')) {
+          content.value += ' ';
+        }
+        content.value += `[${uploaded.fileName || file.name}] `;
       }
-      content.value += `[${uploaded.fileName || file.name}] `;
     } catch (err: any) {
       error.value = err.message || `Failed to upload ${file.name}`;
       break;

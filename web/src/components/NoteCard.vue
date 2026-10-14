@@ -62,7 +62,7 @@
       {{ actionError }}
     </div>
 
-    <div ref="cardBodyRef" class="card-body markdown-body" v-html="renderedBody" @click="handleBodyClick"></div>
+    <div v-if="renderedBody || !imageAttachments.length" ref="cardBodyRef" class="card-body markdown-body" v-html="renderedBody" @click="handleBodyClick"></div>
 
     <!-- Non-image attachments -->
     <div v-if="fileAttachments.length > 0" class="card-attachments">
@@ -188,7 +188,7 @@ import { ref, computed, nextTick, onUnmounted, getCurrentInstance } from 'vue';
 import UiIcon from './UiIcon.vue';
 import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
-import { renderMarkdown, highlightKeyword, toggleTaskItem } from '../utils/markdown';
+import { renderMarkdown, highlightKeyword, toggleTaskItem, stripImageAttachmentReferences, isImageAttachment } from '../utils/markdown';
 import type { LightboxImage } from './ImageLightbox.vue';
 
 const showColorPicker = ref(false);
@@ -343,25 +343,22 @@ const relativeDate = computed(() => {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 });
 
-const renderedMarkdown = computed(() => renderMarkdown(props.thing.richContent || props.thing.content || ''));
-const renderedBody = computed(() => {
-  const html = renderedMarkdown.value;
-  return props.highlightQuery ? highlightKeyword(html, props.highlightQuery) : html;
-});
-
-function isImageAttachment(att: AttachmentDescriptor): boolean {
-  if (att.type === 'image') return true;
-  if (att.mime?.startsWith('image/')) return true;
-  const name = att.fileName?.toLowerCase() || '';
-  return /\.(png|jpe?g|gif|webp|svg)$/.test(name);
-}
-
 function attachmentUrl(att: AttachmentDescriptor): string {
   return `/api/files/${props.thing.ownerId || 'me'}/${props.thing._id}/${att.identifier}`;
 }
 
 const imageAttachments = computed(() => (props.thing.attachments || []).filter(isImageAttachment));
 const fileAttachments = computed(() => (props.thing.attachments || []).filter((att) => !isImageAttachment(att)));
+
+const renderedMarkdown = computed(() => {
+  const raw = props.thing.richContent || props.thing.content || '';
+  const stripped = stripImageAttachmentReferences(raw, imageAttachments.value);
+  return renderMarkdown(stripped);
+});
+const renderedBody = computed(() => {
+  const html = renderedMarkdown.value;
+  return props.highlightQuery ? highlightKeyword(html, props.highlightQuery) : html;
+});
 
 function formatFileSize(bytes?: number): string {
   if (!bytes || bytes <= 0) return '';
@@ -614,6 +611,10 @@ async function handleBodyClick(event: MouseEvent) {
 .card-body {
   padding: 12px 16px 0;
   min-height: 46px;
+}
+
+.card-body:empty {
+  display: none;
 }
 
 .card-body:has(> h1:first-child) {

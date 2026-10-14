@@ -213,7 +213,7 @@
 import { ref, reactive, computed, watch, nextTick, onUnmounted, getCurrentInstance } from 'vue';
 import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
-import { renderMarkdown, highlightKeyword, toggleTaskItem } from '../utils/markdown';
+import { renderMarkdown, highlightKeyword, toggleTaskItem, stripImageAttachmentReferences, isImageAttachment } from '../utils/markdown';
 import type { LightboxImage } from './ImageLightbox.vue';
 import UiIcon from './UiIcon.vue';
 import { splitTitle, joinTitle } from '../utils/noteTitle';
@@ -322,24 +322,19 @@ const editedLabel = computed(() => {
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }));
 });
 
-const renderedHtml = computed(() => {
-  const html = renderMarkdown(currentNote.value.richContent || currentNote.value.content || '');
-  return props.highlightQuery ? highlightKeyword(html, props.highlightQuery) : html;
-});
-
-function isImageAttachment(att: AttachmentDescriptor): boolean {
-  if (att.type === 'image') return true;
-  if (att.mime?.startsWith('image/')) return true;
-  const name = att.fileName?.toLowerCase() || '';
-  return /\.(png|jpe?g|gif|webp|svg)$/.test(name);
-}
-
 function attachmentUrl(att: AttachmentDescriptor): string {
   return `/api/files/${currentNote.value.ownerId || 'me'}/${currentNote.value._id}/${att.identifier}`;
 }
 
 const imageAttachments = computed(() => (currentNote.value.attachments || []).filter(isImageAttachment));
 const fileAttachments = computed(() => (currentNote.value.attachments || []).filter((att) => !isImageAttachment(att)));
+
+const renderedHtml = computed(() => {
+  const raw = currentNote.value.richContent || currentNote.value.content || '';
+  const stripped = stripImageAttachmentReferences(raw, imageAttachments.value);
+  const html = renderMarkdown(stripped);
+  return props.highlightQuery ? highlightKeyword(html, props.highlightQuery) : html;
+});
 
 function formatFileSize(bytes?: number): string {
   if (!bytes || bytes <= 0) return '';

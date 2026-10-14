@@ -304,6 +304,30 @@ describe('NoteCard behavior', () => {
     expect(wrapper.emitted('imageClick')).toBeUndefined();
   });
 
+  it('does not duplicate image attachments in markdown body when rendered as card images', () => {
+    const wrapper = mount(NoteCard, {
+      props: {
+        thing: note({
+          content: '# Summer\n [sunset.jpg] \nSunny day!',
+          richContent: '# Summer\n\n![/api/files/user-1/note-1/photo-1](/api/files/user-1/note-1/photo-1)\n\nSunny day!',
+          attachments: [{ identifier: 'photo-1', fileName: 'sunset.jpg', size: 1024, type: 'image' }],
+        }),
+      },
+    });
+
+    // Renders the banner image at the top
+    expect(wrapper.findAll('.card-images img')).toHaveLength(1);
+    expect(wrapper.get('.card-images img').attributes('src')).toBe('/api/files/user-1/note-1/photo-1');
+
+    // Does NOT render the duplicate image in the markdown body
+    expect(wrapper.findAll('.card-body img')).toHaveLength(0);
+    expect(wrapper.get('.card-body').text()).toContain('Summer');
+    expect(wrapper.get('.card-body').text()).toContain('Sunny day!');
+
+    // Overall exactly 1 image in the entire card
+    expect(wrapper.findAll('img')).toHaveLength(1);
+  });
+
   it('reverts checkbox state and shows error when task toggle save fails', async () => {
     const onSaveEdit = vi.fn().mockResolvedValue({ success: false, error: 'Task save failed' });
     const wrapper = mount(NoteCard, {

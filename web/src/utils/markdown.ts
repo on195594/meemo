@@ -1,5 +1,6 @@
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
+import type { AttachmentDescriptor } from '../api/client';
 
 const md = new MarkdownIt({
   breaks: true,
@@ -284,4 +285,67 @@ export function highlightKeyword(html: string, keyword: string): string {
     highlightCache.set(cacheKey, result);
   }
   return result;
+}
+
+export function isImageAttachment(att?: AttachmentDescriptor | null): boolean {
+  if (!att) return false;
+  if (att.type === 'image') return true;
+  if (att.mime?.startsWith('image/')) return true;
+  const name = att.fileName?.toLowerCase() || '';
+  return /\.(png|jpe?g|gif|webp|svg)$/.test(name);
+}
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Strips image attachment references from markdown text so that attachments rendered
+ * as edge-to-edge card/modal banners are not duplicated inside the markdown body.
+ */
+export function stripImageAttachmentReferences(
+  content: string,
+  attachments?: AttachmentDescriptor[],
+): string {
+  if (!content || !attachments || attachments.length === 0) {
+    return content || '';
+  }
+
+  const imageAttachments = attachments.filter(isImageAttachment);
+  if (imageAttachments.length === 0) return content;
+
+  let result = content;
+
+  for (const att of imageAttachments) {
+    if (att.identifier && att.identifier.trim()) {
+      const idRaw = att.identifier.trim();
+      const idEscaped = escapeRegExp(idRaw);
+      const idEncoded = escapeRegExp(encodeURIComponent(idRaw));
+      const idPattern = idEscaped === idEncoded ? idEscaped : `(?:${idEscaped}|${idEncoded})`;
+
+      // Strip markdown image: ![...](...identifier...)
+      result = result.replace(new RegExp(`!\\[[^\\]]*\\]\\([^)]*${idPattern}[^)]*\\)`, 'gi'), '');
+
+      // Strip raw html img: <img ... src="...identifier..." ...>
+      result = result.replace(new RegExp(`<img\\b[^>]*src=["'][^"']*${idPattern}[^"']*["'][^>]*\\/?>`, 'gi'), '');
+    }
+
+    if (att.fileName && att.fileName.trim()) {
+      const nameRaw = att.fileName.trim();
+      const nameEscaped = escapeRegExp(nameRaw);
+      const nameEncoded = escapeRegExp(encodeURIComponent(nameRaw));
+      const namePattern = nameEscaped === nameEncoded ? nameEscaped : `(?:${nameEscaped}|${nameEncoded})`;
+
+      // Strip bracket filename reference: [fileName.jpg]
+      result = result.replace(new RegExp(`\\[${nameEscaped}\\]`, 'gi'), '');
+
+      // Strip markdown image referencing the filename: ![...](...fileName...) or ![fileName](...)
+      result = result.replace(new RegExp(`!\\[[^\\]]*\\]\\([^)]*${namePattern}[^)]*\\)`, 'gi'), '');
+    }
+  }
+
+  // Clean up residual whitespace caused by stripped references
+  result = result.replace(/^[ \t]+$/gm, '');
+  result = result.replace(/\n{3,}/g, '\n\n');
+  return result.trim();
 }
