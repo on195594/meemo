@@ -127,36 +127,39 @@
                   :class="{ active: showColorPicker }"
                   title="Note color"
                   aria-label="Note color"
-                  aria-haspopup="true"
+                  :aria-controls="showColorPicker ? colorPaletteId : undefined"
                   :aria-expanded="showColorPicker"
                   :disabled="isColorSaving || busy"
                   @click="toggleColorPicker"
                 >
                   <UiIcon name="palette" />
                 </button>
-                <div
-                  v-if="showColorPicker"
-                  ref="colorPaletteRef"
-                  class="color-palette-popover"
-                  role="group"
-                  aria-label="Note modal color"
-                >
-                  <button
-                    v-for="(c, index) in NOTE_COLORS"
-                    :key="c.key"
-                    type="button"
-                    class="color-swatch-btn"
-                    :class="{ active: (currentNote.color || 'default') === c.key, 'is-default': c.key === 'default' }"
-                    :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
-                    :title="c.name"
-                    :aria-label="c.name"
-                    :aria-pressed="(currentNote.color || 'default') === c.key"
-                    :aria-disabled="isColorSaving"
-                    :tabindex="focusedColorIndex === index ? 0 : -1"
-                    @click="selectColor(c.key)"
-                    @keydown="handleColorKeydown($event, index)"
-                  ></button>
-                </div>
+                <Teleport to="body">
+                  <div
+                    v-if="showColorPicker"
+                    ref="colorPaletteRef"
+                    :id="colorPaletteId"
+                    class="color-palette-popover"
+                    role="group"
+                    aria-label="Note modal color"
+                  >
+                    <button
+                      v-for="(c, index) in NOTE_COLORS"
+                      :key="c.key"
+                      type="button"
+                      class="color-swatch-btn"
+                      :class="{ active: (currentNote.color || 'default') === c.key, 'is-default': c.key === 'default' }"
+                      :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
+                      :title="c.name"
+                      :aria-label="c.name"
+                      :aria-pressed="(currentNote.color || 'default') === c.key"
+                      :aria-disabled="isColorSaving"
+                      :tabindex="focusedColorIndex === index ? 0 : -1"
+                      @click="selectColor(c.key)"
+                      @keydown="handleColorKeydown($event, index)"
+                    ></button>
+                  </div>
+                </Teleport>
               </div>
 
               <button
@@ -171,29 +174,15 @@
                 <UiIcon :name="currentNote.archived ? 'restore' : 'archive'" />
               </button>
 
-              <button
-                type="button"
-                class="action-btn"
-                :class="{ active: currentNote.public }"
-                :title="currentNote.public ? 'Make private' : 'Make public'"
-                :aria-label="currentNote.public ? 'Make note private' : 'Make note public'"
-                :aria-pressed="Boolean(currentNote.public)"
-                :disabled="busy"
-                @click="togglePublic"
-              >
-                <UiIcon name="globe" />
-              </button>
-
-              <button
-                type="button"
-                class="action-btn delete-btn"
-                title="Delete note"
-                aria-label="Move note to trash"
-                :disabled="busy"
-                @click="requestDelete"
-              >
-                <UiIcon name="trash" />
-              </button>
+              <ActionMenu v-model:open="showMoreMenu" label="More note actions" :disabled="busy || isSaving || isColorSaving" @update:open="onMoreMenuChange">
+                <template #trigger><UiIcon name="more" /></template>
+                <button type="button" role="menuitem" tabindex="-1" :aria-label="currentNote.public ? 'Make note private' : 'Make note public'" @click="togglePublic">
+                  <UiIcon name="globe" /> {{ currentNote.public ? 'Make private' : 'Make public' }}
+                </button>
+                <button type="button" role="menuitem" tabindex="-1" class="menu-danger delete-btn" aria-label="Move note to trash" @click="requestDelete">
+                  <UiIcon name="trash" /> Delete note
+                </button>
+              </ActionMenu>
             </div>
             <div v-else class="footer-placeholder"></div>
 
@@ -222,6 +211,8 @@ import { NOTE_COLORS } from '../constants/noteColors';
 import { renderMarkdown, highlightKeyword, toggleTaskItem, stripImageAttachmentReferences, isImageAttachment } from '../utils/markdown';
 import type { LightboxImage } from './ImageLightbox.vue';
 import UiIcon from './UiIcon.vue';
+import ActionMenu from './ActionMenu.vue';
+import { usePopoverPosition } from '../composables/usePopoverPosition';
 import { splitTitle, joinTitle } from '../utils/noteTitle';
 
 const props = withDefaults(
@@ -287,6 +278,7 @@ const actionError = ref<string | null>(null);
 let draftGeneration = 0;
 
 const showColorPicker = ref(false);
+const showMoreMenu = ref(false);
 const focusedColorIndex = ref(0);
 
 const overlayRef = ref<HTMLElement | null>(null);
@@ -302,6 +294,11 @@ const renderedBodyRef = ref<HTMLElement | null>(null);
 const colorWrapperRef = ref<HTMLElement | null>(null);
 const colorTriggerRef = ref<HTMLButtonElement | null>(null);
 const colorPaletteRef = ref<HTMLElement | null>(null);
+usePopoverPosition(colorTriggerRef, colorPaletteRef, showColorPicker);
+
+function onMoreMenuChange(open: boolean) {
+  if (open) closeColorPicker();
+}
 
 const hasUnsavedChanges = computed(() => {
   if (!props.canEdit || !currentNote.value) return false;
@@ -383,6 +380,7 @@ function collectImages(): LightboxImage[] {
 }
 
 const instance = getCurrentInstance();
+const colorPaletteId = `note-colors-${instance!.uid}`;
 const hasImageClickListener = computed(() => Boolean(instance?.vnode.props?.onImageClick));
 const hasStickyListener = computed(() => Boolean(instance?.vnode.props?.onToggleSticky));
 const hasPublicListener = computed(() => Boolean(instance?.vnode.props?.onTogglePublic));
@@ -595,9 +593,11 @@ function focusColor(index: number) {
 }
 
 function closeColorPicker(returnFocus = false) {
+  const shouldRestoreFocus = returnFocus && showColorPicker.value;
   showColorPicker.value = false;
   document.removeEventListener('pointerdown', handleOutsideColorPicker);
-  if (returnFocus) nextTick(() => colorTriggerRef.value?.focus());
+  document.removeEventListener('focusin', handleOutsideColorPicker);
+  if (shouldRestoreFocus) nextTick(() => colorTriggerRef.value?.focus());
 }
 
 function toggleColorPicker() {
@@ -609,12 +609,13 @@ function toggleColorPicker() {
   actionError.value = null;
   showColorPicker.value = true;
   document.addEventListener('pointerdown', handleOutsideColorPicker);
+  document.addEventListener('focusin', handleOutsideColorPicker);
   const selected = NOTE_COLORS.findIndex((color) => color.key === (currentNote.value.color || 'default'));
   focusColor(selected < 0 ? 0 : selected);
 }
 
-function handleOutsideColorPicker(event: PointerEvent) {
-  if (showColorPicker.value && !colorWrapperRef.value?.contains(event.target as Node)) {
+function handleOutsideColorPicker(event: Event) {
+  if (showColorPicker.value && !colorWrapperRef.value?.contains(event.target as Node) && !colorPaletteRef.value?.contains(event.target as Node)) {
     closeColorPicker();
   }
 }
@@ -622,7 +623,14 @@ function handleOutsideColorPicker(event: PointerEvent) {
 function handleColorKeydown(event: KeyboardEvent, index: number) {
   if (event.key === 'Escape') {
     event.preventDefault();
+    event.stopPropagation();
     closeColorPicker(true);
+    return;
+  }
+
+  if (event.key === 'Tab') {
+    colorTriggerRef.value?.focus();
+    closeColorPicker();
     return;
   }
 
@@ -756,12 +764,15 @@ watch(
         currentNote.value = { ...props.thing };
         setDraft(props.thing.content || '');
         draftGeneration = 0;
-        nextTick(() => overlayRef.value?.focus());
+        nextTick(() => {
+          if (!showColorPicker.value && !showMoreMenu.value) overlayRef.value?.focus();
+        });
       }
     } else {
       document.body.style.overflow = '';
       window.removeEventListener('keydown', handleWindowKeydown);
       closeColorPicker();
+      showMoreMenu.value = false;
       actionError.value = null;
       isClosing.value = false;
       isSaving.value = false;
@@ -788,6 +799,7 @@ onUnmounted(() => {
   document.body.style.overflow = '';
   window.removeEventListener('keydown', handleWindowKeydown);
   document.removeEventListener('pointerdown', handleOutsideColorPicker);
+  document.removeEventListener('focusin', handleOutsideColorPicker);
 });
 </script>
 
@@ -890,8 +902,8 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: var(--keep-control-size);
+  height: var(--keep-control-size);
   flex-shrink: 0;
   padding: 0;
   border: none;
@@ -913,11 +925,6 @@ onUnmounted(() => {
 
 .action-btn:disabled {
   cursor: wait;
-}
-
-.pin-btn {
-  width: 40px;
-  height: 40px;
 }
 
 .pin-btn.active :deep(path) {
@@ -1054,6 +1061,7 @@ onUnmounted(() => {
 
 .modal-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -1072,38 +1080,40 @@ onUnmounted(() => {
 }
 
 .color-palette-popover {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
+  position: fixed;
   z-index: 1050;
   display: grid;
-  grid-template-columns: repeat(4, 32px);
-  gap: 8px;
-  padding: 12px;
+  grid-template-columns: repeat(4, var(--keep-control-size));
+  gap: 4px;
+  padding: 8px;
   background-color: var(--md-sys-color-surface-container);
   border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-lg);
-  box-shadow: var(--md-sys-elevation-2);
+  border-radius: var(--keep-card-radius);
+  box-shadow: var(--keep-shadow-raised);
 }
 
 .color-swatch-btn {
-  width: 32px;
-  height: 32px;
+  width: var(--keep-control-size);
+  height: var(--keep-control-size);
   border-radius: var(--md-sys-shape-corner-full);
-  border: 1px solid var(--md-sys-color-outline-variant);
+  border: calc((var(--keep-control-size) - 28px) / 2) solid transparent;
+  background-clip: content-box;
+  padding: 0;
+  box-shadow: inset 0 0 0 1px var(--md-sys-color-outline-variant);
   cursor: pointer;
-  transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing),
-              box-shadow var(--md-sys-motion-duration-short) ease;
+  transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
 }
 
-.color-swatch-btn:hover {
-  transform: scale(1.1);
-  box-shadow: var(--md-sys-elevation-1);
-}
+.color-swatch-btn:hover { transform: scale(1.1); }
 
 .color-swatch-btn.active {
-  border-color: var(--md-sys-color-primary);
-  box-shadow: 0 0 0 2px var(--md-sys-color-surface-container), 0 0 0 4px var(--md-sys-color-primary);
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -4px;
+}
+
+.color-swatch-btn:focus-visible {
+  outline: 2px solid var(--md-sys-color-on-surface);
+  outline-offset: -2px;
 }
 
 .color-swatch-btn.is-default {
@@ -1114,6 +1124,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
 }
 
 .save-status {
@@ -1122,7 +1133,7 @@ onUnmounted(() => {
 }
 
 .done-btn {
-  min-height: 36px;
+  min-height: var(--keep-control-size);
   padding: 0 24px;
   border: none;
   border-radius: var(--md-sys-shape-corner-xs);

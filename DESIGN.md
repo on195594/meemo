@@ -146,14 +146,19 @@ The older `--md-sys-elevation-*` tokens remain for auth, settings, and import di
 - Card surface tinted with the note's color; colored cards drop the outline.
 - A leading `# Heading` renders as the title (16px/500); body text is 14px. Clickable stream cards clip at 400px with a fade.
 - Image attachments sit edge-to-edge at the top; other attachments are compact links.
-- Hover/focus reveals the pin (top-right), the selection check (top-left, outside the corner), and the toolbar (color, archive, public, trash). On touch devices the toolbar and pin are always visible.
+- Hover/focus reveals the pin (top-right), the selection check (top-left, outside the corner), and the toolbar (color, archive, More). Public/private and Delete note live in More, reducing accidental taps. The card's controls remain visible while its menu is open. On touch devices the toolbar and pin are always visible.
 - No timestamp on editable cards; read-only views (shared/public) show it in the footer.
 - Checklist items toggle in place; clicking anywhere else, or Enter on the focused card, opens the dialog.
 
 ### Note Dialog
 - Opens ready to edit: Title input and auto-growing body textarea (Markdown source). No preview toggle.
-- Footer: color, archive, public, trash on the left; "Edited <time>" and `Close` on the right. Close, Escape or a backdrop click saves with revision checks and stays open if the save fails.
+- Footer: color, archive, More on the left; `Close` on the right. Close, Escape or a backdrop click saves with revision checks and stays open if the save fails. Escape inside a color or More popup closes only that popup, restores its trigger focus, and does not save the draft.
 - Read-only notes (Trash, public stream) render Markdown instead of the editor.
+
+### Action Menus & Color Popovers
+- Note More and account options share `ActionMenu.vue`: menu roles, initial focus, Up/Down wrapping, Home/End, first-letter navigation, Escape focus restoration, and native Tab traversal. Clicking or focusing outside dismisses without stealing focus.
+- Menus and all three color palettes use shared viewport-clamped positioning: flip above when needed, track scrolling/resizing, and stay inside an 8px viewport gutter.
+- `--keep-control-size`: 40px icon/swatch hit areas, 44px on coarse pointers; swatches retain a 28px color circle. Card titles reserve pin space without narrowing the note body.
 
 ### Search Box
 - Shows the `/` shortcut hint when empty, a clear `×` when populated; results show a "Results for …" line with Clear search.

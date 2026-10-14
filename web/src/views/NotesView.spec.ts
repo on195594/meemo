@@ -74,6 +74,15 @@ async function settle() {
   await flushPromises();
 }
 
+async function dialogAction(action: string) {
+  if (action === 'Move note to trash') {
+    (document.querySelector('.note-modal-card [aria-label="More note actions"]') as HTMLButtonElement).click();
+    await settle();
+  }
+  const owner = action === 'Move note to trash' ? '[role="menu"]' : '.note-modal-card';
+  return document.querySelector(`${owner} [aria-label="${action}"]`) as HTMLButtonElement;
+}
+
 async function renderApp(fetchMock: ReturnType<typeof backend>['fetchMock']) {
   vi.stubGlobal('fetch', fetchMock);
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: NotesView }] });
@@ -123,7 +132,9 @@ describe('Keep-style notes workspace', () => {
     const { fetchMock } = backend();
     wrapper = (await renderApp(fetchMock)).wrapper;
 
-    await wrapper.get('.note-card [aria-label="Delete note"]').trigger('click');
+    await wrapper.get('.note-card [aria-label="More note actions"]').trigger('click');
+    await settle();
+    (document.querySelector('[role="menu"] [aria-label="Delete note"]') as HTMLButtonElement).click();
     await settle();
     expect(wrapper.find('.note-card').exists()).toBe(false);
     expect(wrapper.get('.snackbar').text()).toContain('Note moved to Trash');
@@ -160,7 +171,7 @@ describe('Keep-style notes workspace', () => {
     const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
     body.value = 'Draft preserved through Undo';
     body.dispatchEvent(new Event('input'));
-    (document.querySelector(`.note-modal-card [aria-label="${action}"]`) as HTMLButtonElement).click();
+    (await dialogAction(action)).click();
     await settle();
 
     expect(state.content).toBe('Draft preserved through Undo');
@@ -191,13 +202,14 @@ describe('Keep-style notes workspace', () => {
     const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
     body.value = 'Draft before delayed action';
     body.dispatchEvent(new Event('input'));
-    const button = document.querySelector(`.note-modal-card [aria-label="${action}"]`) as HTMLButtonElement;
+    const button = await dialogAction(action);
     button.click();
     await settle();
 
     expect(body.disabled).toBe(true);
-    expect(button.disabled).toBe(true);
-    button.click();
+    const lockedControl = document.querySelector(`.note-modal-card [aria-label="${action === 'Move note to trash' ? 'More note actions' : action}"]`) as HTMLButtonElement;
+    expect(lockedControl.disabled).toBe(true);
+    lockedControl.click();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     await settle();
     expect(document.querySelector('.note-modal-overlay')).not.toBeNull();
@@ -221,7 +233,7 @@ describe('Keep-style notes workspace', () => {
     const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
     body.value = 'Unsaved edit';
     body.dispatchEvent(new Event('input'));
-    (document.querySelector('.note-modal-card .delete-btn') as HTMLButtonElement).click();
+    (await dialogAction('Move note to trash')).click();
     await settle();
 
     expect(document.querySelector('.note-modal-overlay')).not.toBeNull();

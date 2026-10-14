@@ -1,13 +1,14 @@
 <template>
   <article
     class="note-card"
+    :data-note-id="thing._id"
     :class="{
       'is-sticky': thing.sticky,
       'is-selected': selected,
       'is-selecting': selectable,
       'is-tinted': (thing.color || 'default') !== 'default',
       'is-clickable': hasOpenDetailListener,
-      'has-menu-open': showColorPicker
+      'has-menu-open': showColorPicker || showMoreMenu
     }"
     :style="{ backgroundColor: 'var(--note-color-' + (thing.color || 'default') + ')' }"
     :tabindex="hasOpenDetailListener ? 0 : undefined"
@@ -115,7 +116,7 @@
             :class="{ active: showColorPicker }"
             title="Note color"
             aria-label="Note color"
-            aria-haspopup="true"
+            :aria-controls="showColorPicker ? colorPaletteId : undefined"
             :aria-expanded="showColorPicker"
             :disabled="isColorSaving"
             @click="toggleColorPicker"
@@ -125,6 +126,7 @@
           <div
             v-if="showColorPicker"
             ref="colorPaletteRef"
+            :id="colorPaletteId"
             class="color-palette-popover"
             role="group"
             aria-label="Note card color"
@@ -157,27 +159,15 @@
           <UiIcon :name="thing.archived ? 'restore' : 'archive'" />
         </button>
 
-        <button
-          type="button"
-          class="action-btn"
-          :class="{ active: thing.public }"
-          :title="thing.public ? 'Make private' : 'Make public'"
-          :aria-label="thing.public ? 'Make private' : 'Make public'"
-          :aria-pressed="!!thing.public"
-          @click="$emit('togglePublic', thing)"
-        >
-          <UiIcon name="globe" />
-        </button>
-
-        <button
-          type="button"
-          class="action-btn delete-btn"
-          title="Delete note"
-          aria-label="Delete note"
-          @click="$emit('delete', thing)"
-        >
-          <UiIcon name="trash" />
-        </button>
+        <ActionMenu v-model:open="showMoreMenu" label="More note actions" :disabled="isColorSaving" @update:open="onMoreMenuChange">
+          <template #trigger><UiIcon name="more" /></template>
+          <button type="button" role="menuitem" tabindex="-1" :aria-label="thing.public ? 'Make private' : 'Make public'" @click="$emit('togglePublic', thing)">
+            <UiIcon name="globe" /> {{ thing.public ? 'Make private' : 'Make public' }}
+          </button>
+          <button type="button" role="menuitem" tabindex="-1" class="menu-danger delete-btn" aria-label="Delete note" @click="$emit('delete', thing)">
+            <UiIcon name="trash" /> Delete note
+          </button>
+        </ActionMenu>
       </template>
     </div>
   </article>
@@ -186,18 +176,26 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onUnmounted, getCurrentInstance } from 'vue';
 import UiIcon from './UiIcon.vue';
+import ActionMenu from './ActionMenu.vue';
+import { usePopoverPosition } from '../composables/usePopoverPosition';
 import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import { renderMarkdown, highlightKeyword, toggleTaskItem, stripImageAttachmentReferences, isImageAttachment } from '../utils/markdown';
 import type { LightboxImage } from './ImageLightbox.vue';
 
 const showColorPicker = ref(false);
+const showMoreMenu = ref(false);
 const isColorSaving = ref(false);
 const actionError = ref<string | null>(null);
 const focusedColorIndex = ref(0);
 const colorPickerWrapperRef = ref<HTMLElement | null>(null);
 const colorTriggerRef = ref<HTMLButtonElement | null>(null);
 const colorPaletteRef = ref<HTMLElement | null>(null);
+usePopoverPosition(colorTriggerRef, colorPaletteRef, showColorPicker);
+
+function onMoreMenuChange(open: boolean) {
+  if (open) closeColorPicker();
+}
 
 function focusColor(index: number) {
   focusedColorIndex.value = index;
@@ -207,9 +205,15 @@ function focusColor(index: number) {
 }
 
 function closeColorPicker(returnFocus = false) {
+  const shouldRestoreFocus = returnFocus && showColorPicker.value;
   showColorPicker.value = false;
   document.removeEventListener('pointerdown', handleOutsideColorPicker);
-  if (returnFocus) nextTick(() => colorTriggerRef.value?.focus());
+  document.removeEventListener('focusin', handleOutsideColorPicker);
+  if (shouldRestoreFocus) nextTick(() => {
+    // Saving can move the note between masonry columns and replace its card.
+    const card = Array.from(document.querySelectorAll<HTMLElement>('.note-card')).find(el => el.dataset.noteId === props.thing._id);
+    (colorTriggerRef.value || card?.querySelector<HTMLButtonElement>('.color-btn'))?.focus();
+  });
 }
 
 function toggleColorPicker() {
@@ -220,6 +224,7 @@ function toggleColorPicker() {
   actionError.value = null;
   showColorPicker.value = true;
   document.addEventListener('pointerdown', handleOutsideColorPicker);
+  document.addEventListener('focusin', handleOutsideColorPicker);
   const selected = NOTE_COLORS.findIndex((color) => color.key === (props.thing.color || 'default'));
   focusColor(selected < 0 ? 0 : selected);
 }
@@ -227,6 +232,7 @@ function toggleColorPicker() {
 function handleColorKeydown(event: KeyboardEvent, index: number) {
   if (event.key === 'Escape') {
     event.preventDefault();
+    event.stopPropagation();
     closeColorPicker(true);
     return;
   }
@@ -248,7 +254,7 @@ function handleColorKeydown(event: KeyboardEvent, index: number) {
   focusColor(nextIndex);
 }
 
-function handleOutsideColorPicker(event: PointerEvent) {
+function handleOutsideColorPicker(event: Event) {
   if (showColorPicker.value && !colorPickerWrapperRef.value?.contains(event.target as Node)) {
     closeColorPicker();
   }
@@ -281,6 +287,7 @@ async function selectColor(color: NoteColor, closeAfterSave = true) {
 
 onUnmounted(() => {
   document.removeEventListener('pointerdown', handleOutsideColorPicker);
+  document.removeEventListener('focusin', handleOutsideColorPicker);
 });
 
 const props = withDefaults(
@@ -368,6 +375,7 @@ function formatFileSize(bytes?: number): string {
 }
 
 const instance = getCurrentInstance();
+const colorPaletteId = `note-colors-${instance!.uid}`;
 const hasOpenDetailListener = computed(() => Boolean(instance?.vnode.props?.onOpenDetail));
 
 function handleCardClick(event: MouseEvent) {
@@ -617,16 +625,16 @@ async function handleBodyClick(event: MouseEvent) {
   display: none;
 }
 
-.card-body:has(> h1:first-child) {
-  padding-right: 40px;
+.card-body :deep(> h1:first-child) {
+  padding-right: calc(var(--keep-control-size) - 4px);
 }
 
 .action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: var(--keep-control-size);
+  height: var(--keep-control-size);
   flex-shrink: 0;
   padding: 0;
   border: none;
@@ -661,7 +669,7 @@ async function handleBodyClick(event: MouseEvent) {
 
 .note-card:hover :is(.card-pin-btn, .card-select-btn, .card-actions),
 .note-card:focus-within :is(.card-pin-btn, .card-select-btn, .card-actions),
-.note-card.has-menu-open .card-actions,
+.note-card.has-menu-open :is(.card-pin-btn, .card-select-btn, .card-actions),
 .card-select-btn.is-visible,
 .note-card.is-selecting .card-select-btn {
   opacity: 1;
@@ -711,24 +719,14 @@ async function handleBodyClick(event: MouseEvent) {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 34px;
+  min-height: var(--keep-control-size);
   margin: 4px 0;
   padding: 0 8px;
 }
 
-.action-btn.delete-btn {
-  margin-left: auto;
-}
-
-.color-btn,
 .action-btn .ui-icon {
-  width: 18px;
-  height: 18px;
-}
-
-.color-btn {
-  width: 34px;
-  height: 34px;
+  width: 20px;
+  height: 20px;
 }
 
 .color-picker-wrapper {
@@ -737,27 +735,24 @@ async function handleBodyClick(event: MouseEvent) {
 }
 
 .color-palette-popover {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  margin-top: 4px;
+  position: fixed;
   background: var(--md-sys-color-surface-container);
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--keep-card-radius);
   box-shadow: var(--keep-shadow-raised);
   padding: 8px;
   display: grid;
-  grid-template-columns: repeat(4, 40px);
+  grid-template-columns: repeat(4, var(--keep-control-size));
   gap: 4px;
   z-index: 50;
 }
 
 .color-swatch-btn {
-  width: 40px;
-  height: 40px;
+  width: var(--keep-control-size);
+  height: var(--keep-control-size);
   border-radius: var(--md-sys-shape-corner-full);
-  /* 40px touch target around a 28px swatch */
-  border: 6px solid transparent;
+  /* The hit area grows on touch screens; the color remains 28px. */
+  border: calc((var(--keep-control-size) - 28px) / 2) solid transparent;
   background-clip: content-box;
   cursor: pointer;
   padding: 0;
@@ -1044,5 +1039,9 @@ async function handleBodyClick(event: MouseEvent) {
   .card-pin-btn {
     opacity: 1;
   }
+}
+
+@media (pointer: coarse) {
+  .card-actions { gap: 0; padding: 0 4px; }
 }
 </style>

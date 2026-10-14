@@ -94,80 +94,26 @@
           <div class="nav-auth">
             <!-- Authenticated User Profile Dropdown -->
             <div v-if="isAuthenticated && user" class="user-menu-wrapper">
-            <button
-              type="button"
-              ref="userProfileRef"
-              class="user-profile-btn"
-              aria-controls="account-options"
-              :aria-label="`Account options for ${user.displayName || user.username}`"
-              @click="toggleUserMenu"
-              :aria-expanded="showUserMenu"
-            >
-              <span class="user-avatar">{{ userAvatarInitial }}</span>
-            </button>
-
-            <nav v-if="showUserMenu" id="account-options" class="user-dropdown-menu" aria-label="Account options" @keydown.esc.stop.prevent="closeUserMenu(true)">
-              <div class="dropdown-header">
-                <span class="header-name">{{ user.displayName }}</span>
-                <span class="header-username">@{{ user.username }}</span>
-              </div>
-              <hr class="dropdown-divider" />
-              <button
-                type="button"
-                class="dropdown-item"
-                @click="openSettings"
-              >
-                Settings
-              </button>
-              <button
-                type="button"
-                class="dropdown-item"
-                @click="openCheatsheet"
-              >
-                Cheatsheet
-              </button>
-              <router-link
-                :to="`/public/${user.username}`"
-                class="dropdown-item"
-                @click="closeUserMenu()"
-              >
-                Public Feed
-              </router-link>
-              <a
-                :href="`/api/rss/${user.username}`"
-                target="_blank"
-                rel="noopener"
-                class="dropdown-item"
-                @click="closeUserMenu()"
-              >
-                RSS Feed
-              </a>
-              <hr class="dropdown-divider" />
-              <button
-                type="button"
-                class="dropdown-item"
-                @click="openImport"
-              >
-                Import
-              </button>
-              <a
-                href="/api/export"
-                class="dropdown-item"
-                download="meemo-export.tar"
-                @click="closeUserMenu()"
-              >
-                Export
-              </a>
-              <hr class="dropdown-divider" />
-              <button
-                type="button"
-                class="dropdown-item logout-btn"
-                @click="handleLogout"
-              >
-                Log Out
-              </button>
-            </nav>
-          </div>
+              <ActionMenu ref="userMenuRef" v-model:open="showUserMenu" class="user-profile-btn" :label="`Account options for ${user.displayName || user.username}`">
+                <template #trigger><span class="user-avatar">{{ userAvatarInitial }}</span></template>
+                <div role="none">
+                  <div class="dropdown-header">
+                    <span class="header-name">{{ user.displayName }}</span>
+                    <span class="header-username">@{{ user.username }}</span>
+                  </div>
+                  <hr class="dropdown-divider" role="separator" />
+                  <button type="button" role="menuitem" tabindex="-1" class="dropdown-item" @click="openSettings">Settings</button>
+                  <button type="button" role="menuitem" tabindex="-1" class="dropdown-item" @click="openCheatsheet">Cheatsheet</button>
+                  <router-link :to="`/public/${user.username}`" role="menuitem" tabindex="-1" class="dropdown-item" @click="closeUserMenu()">Public Feed</router-link>
+                  <a :href="`/api/rss/${user.username}`" target="_blank" rel="noopener" role="menuitem" tabindex="-1" class="dropdown-item" @click="closeUserMenu()">RSS Feed</a>
+                  <hr class="dropdown-divider" role="separator" />
+                  <button type="button" role="menuitem" tabindex="-1" class="dropdown-item" @click="openImport">Import</button>
+                  <a href="/api/export" download="meemo-export.tar" role="menuitem" tabindex="-1" class="dropdown-item" @click="closeUserMenu()">Export</a>
+                  <hr class="dropdown-divider" role="separator" />
+                  <button type="button" role="menuitem" tabindex="-1" class="dropdown-item logout-btn menu-danger" @click="handleLogout">Log Out</button>
+                </div>
+              </ActionMenu>
+            </div>
 
           <!-- Unauthenticated Action Buttons -->
           <div v-else class="auth-buttons">
@@ -237,6 +183,7 @@ import { useAuth } from './composables/useAuth';
 import { useSettings, type ThemeMode, getStoredTheme, setStoredTheme } from './composables/useSettings';
 import LoginModal from './components/LoginModal.vue';
 import UiIcon from './components/UiIcon.vue';
+import ActionMenu from './components/ActionMenu.vue';
 import AppSidebar from './components/AppSidebar.vue';
 
 const router = useRouter();
@@ -397,7 +344,7 @@ function cycleTheme() {
 const showAuthModal = ref(false);
 const authModalTab = ref<'login' | 'register'>('login');
 const showUserMenu = ref(false);
-const userProfileRef = ref<HTMLButtonElement | null>(null);
+const userMenuRef = ref<InstanceType<typeof ActionMenu> | null>(null);
 
 const showSettingsModal = ref(false);
 const showImportModal = ref(false);
@@ -435,13 +382,9 @@ provide('openSettingsModal', openSettings);
 provide('openImportModal', openImport);
 provide('openCheatsheetModal', openCheatsheet);
 
-function toggleUserMenu() {
-  showUserMenu.value = !showUserMenu.value;
-}
-
 function closeUserMenu(returnFocus = false) {
   showUserMenu.value = false;
-  if (returnFocus) userProfileRef.value?.focus();
+  userMenuRef.value?.close(returnFocus);
 }
 
 function onAuthSuccess() {
@@ -461,13 +404,6 @@ async function handleLogout() {
   await logout();
 }
 
-function handleGlobalClick(e: MouseEvent) {
-  const target = e.target as HTMLElement | null;
-  if (!target?.closest('.user-menu-wrapper')) {
-    showUserMenu.value = false;
-  }
-}
-
 watch(isAuthenticated, (authed) => {
   if (authed) {
     loadSettings();
@@ -479,14 +415,12 @@ onMounted(() => {
   if (isAuthenticated.value || (typeof localStorage !== 'undefined' && localStorage.getItem('meemo_has_session') === '1')) {
     loadSettings();
   }
-  document.addEventListener('click', handleGlobalClick);
   window.addEventListener('keydown', handleGlobalKeydown);
   mobileQuery?.addEventListener('change', syncMobileNav);
 
 });
 
 onUnmounted(() => {
-  document.removeEventListener('click', handleGlobalClick);
   window.removeEventListener('keydown', handleGlobalKeydown);
   mobileQuery?.removeEventListener('change', syncMobileNav);
   if (headerSearchTimer) clearTimeout(headerSearchTimer);
@@ -740,28 +674,8 @@ video {
   font-weight: 500;
 }
 
-.user-dropdown-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.5rem);
-  width: min(248px, calc(100vw - 2rem));
-  background-color: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-md);
-  box-shadow: var(--md-sys-elevation-2);
-  padding: 0.5rem 0;
-  display: flex;
-  flex-direction: column;
-  z-index: 101;
-  transform-origin: top right;
-  animation: menu-in var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
-}
-
-@keyframes menu-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96) translateY(-4px);
-  }
+.action-menu-panel:has(.dropdown-header) {
+  width: 248px;
 }
 
 .dropdown-header {

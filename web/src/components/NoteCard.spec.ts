@@ -220,7 +220,12 @@ describe('NoteCard behavior', () => {
     const thing = note();
     const wrapper = mount(NoteCard, { props: { thing } });
 
-    await wrapper.get(`[title="${title}"]`).trigger('click');
+    if (event === 'togglePublic') {
+      await wrapper.get('[aria-label="More note actions"]').trigger('click');
+      await flushPromises();
+      (document.querySelector('[role="menu"] [aria-label="Make public"]') as HTMLButtonElement).click();
+      await flushPromises();
+    } else await wrapper.get(`[title="${title}"]`).trigger('click');
 
     expect(wrapper.emitted(event)).toEqual([[thing]]);
   });
@@ -229,7 +234,11 @@ describe('NoteCard behavior', () => {
     const thing = note();
     const wrapper = mount(NoteCard, { props: { thing } });
 
-    await wrapper.get('[title="Delete note"]').trigger('click');
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    await wrapper.get('[aria-label="More note actions"]').trigger('click');
+    await flushPromises();
+    (document.querySelector('[role="menu"] [aria-label="Delete note"]') as HTMLButtonElement).click();
+    await flushPromises();
 
     expect(wrapper.emitted('delete')).toEqual([[thing]]);
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);

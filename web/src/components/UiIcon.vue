@@ -1,6 +1,6 @@
 <template>
   <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-    <path :d="paths[name]" />
+    <path :d="paths[name]" :stroke-width="name === 'more' ? 3.5 : undefined" />
   </svg>
 </template>
 
@@ -23,6 +23,7 @@ const paths = {
   lock: 'M5 10h14v11H5z M8 10V7a4 4 0 0 1 8 0v3 M12 14v3',
   close: 'M6 6l12 12 M6 18L18 6',
   menu: 'M4 6h16 M4 12h16 M4 18h16',
+  more: 'M12 5h.01 M12 12h.01 M12 19h.01',
   grid: 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z',
   list: 'M4 5h16v6H4z M4 13h16v6H4z',
   checkbox: 'M4 4h16v16H4z M8 12l3 3 5-6',

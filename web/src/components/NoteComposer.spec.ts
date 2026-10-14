@@ -109,6 +109,23 @@ describe('NoteComposer behavior', () => {
     expect(wrapper.emitted('created')).toHaveLength(2);
   });
 
+  it('consumes palette Escape first, then saves from its toolbar trigger on the next Escape', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteComposer, { props: { onSave }, attachTo: document.body });
+    await wrapper.get('textarea').setValue('Draft from the toolbar');
+    await wrapper.get('button[aria-label="Note color"]').trigger('click');
+    await flushPromises();
+    await wrapper.get('[aria-label="Default"]').trigger('keydown', { key: 'Escape' });
+    await flushPromises();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(wrapper.find('.color-palette-popover').exists()).toBe(false);
+    await wrapper.get('button[aria-label="Note color"]').trigger('keydown', { key: 'Escape' });
+    await flushPromises();
+    expect(onSave).toHaveBeenCalledOnce();
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('');
+    wrapper.unmount();
+  });
+
   it('preserves content and stays open when the save fails', async () => {
     const onSave = vi.fn().mockResolvedValue({ success: false, error: 'Try again' });
     const wrapper = mount(NoteComposer, { props: { onSave } });

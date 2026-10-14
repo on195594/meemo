@@ -26,6 +26,11 @@ function note(overrides: Partial<Thing> = {}): Thing {
   };
 }
 
+async function openMoreMenu() {
+  (document.querySelector('.note-modal-card [aria-label="More note actions"]') as HTMLButtonElement).click();
+  await flushPromises();
+}
+
 describe('NoteDetailModal', () => {
   afterEach(() => {
     // Clean up any remaining teleported modals in document.body
@@ -204,6 +209,7 @@ describe('NoteDetailModal', () => {
     const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
     textarea.value = 'Draft before action';
     textarea.dispatchEvent(new Event('input'));
+    if (action === 'Move note to trash') await openMoreMenu();
     (document.querySelector(`[aria-label="${action}"]`) as HTMLButtonElement).click();
     await flushPromises();
 
@@ -358,6 +364,7 @@ describe('NoteDetailModal', () => {
     expect(onToggleSticky).toHaveBeenCalledWith(current);
 
     // Public toggle in footer
+    await openMoreMenu();
     const publicBtn = document.querySelector('[aria-label="Make note public"]') as HTMLButtonElement;
     expect(publicBtn).not.toBeNull();
     publicBtn.click();
@@ -446,6 +453,27 @@ describe('NoteDetailModal', () => {
     wrapper.unmount();
   });
 
+  it.each(['More note actions', 'Note color'])('closes only %s on Escape without saving or losing a dialog draft', async (action) => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteDetailModal, { props: { open: true, thing: note(), onSaveEdit } });
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.value = 'Draft while browsing actions';
+    body.dispatchEvent(new Event('input'));
+    if (action === 'More note actions') await openMoreMenu();
+    else {
+      (document.querySelector('.note-modal-card [aria-label="Note color"]') as HTMLButtonElement).click();
+      await flushPromises();
+    }
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await flushPromises();
+    expect(document.querySelector('[role="menu"], .color-palette-popover')).toBeNull();
+    expect(wrapper.emitted('close')).toBeUndefined();
+    expect(onSaveEdit).not.toHaveBeenCalled();
+    expect(body.value).toBe('Draft while browsing actions');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(action);
+    wrapper.unmount();
+  });
+
   it('emits delete without a confirmation dialog', async () => {
     const current = note();
     const wrapper = mount(NoteDetailModal, {
@@ -455,6 +483,7 @@ describe('NoteDetailModal', () => {
       },
     });
 
+    await openMoreMenu();
     (document.querySelector('.delete-btn') as HTMLButtonElement).click();
     await flushPromises();
 

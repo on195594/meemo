@@ -166,7 +166,8 @@ describe('App authenticated note flows', () => {
     expect(wrapper.text()).toContain('A private note');
 
     await wrapper.get('.user-profile-btn').trigger('click');
-    await wrapper.get('.logout-btn').trigger('click');
+    await settle();
+    (document.querySelector('.action-menu-panel .logout-btn') as HTMLButtonElement).click();
     await settle();
 
     expect(state.current).toBeNull();
@@ -223,7 +224,8 @@ describe('App authenticated note flows', () => {
     expect(localStorage.getItem('meemo_theme')).toBe('dark');
 
     await wrapper.get('.user-profile-btn').trigger('click');
-    await wrapper.get('.logout-btn').trigger('click');
+    await settle();
+    (document.querySelector('.action-menu-panel .logout-btn') as HTMLButtonElement).click();
     await settle();
 
     expect(localStorage.getItem('meemo_theme')).toBe('dark');
@@ -328,7 +330,8 @@ describe('App authenticated note flows', () => {
       expect(document.body.classList.contains('has-custom-bg')).toBe(true);
 
       await wrapper.get('.user-profile-btn').trigger('click');
-      await wrapper.get('.logout-btn').trigger('click');
+      await settle();
+      (document.querySelector('.action-menu-panel .logout-btn') as HTMLButtonElement).click();
       await settle();
 
       expect(wrapper.get('#meemo-app').classes()).not.toContain('has-custom-bg');

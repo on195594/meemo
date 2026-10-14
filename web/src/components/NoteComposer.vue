@@ -1,6 +1,7 @@
 <template>
   <div
     ref="composerRef"
+    @keydown.esc="handleKeyDown"
     class="note-composer-card"
     :class="{ focused: isExpanded, dragging: isDragging, 'is-tinted': selectedColor !== 'default' }"
     :style="{ backgroundColor: 'var(--note-color-' + selectedColor + ')' }"
@@ -99,7 +100,7 @@
             :class="{ active: showColorPicker }"
             title="Note color"
             aria-label="Note color"
-            aria-haspopup="true"
+            :aria-controls="showColorPicker ? colorPaletteId : undefined"
             :aria-expanded="showColorPicker"
             @click="toggleColorPicker"
           >
@@ -108,6 +109,7 @@
           <div
             v-if="showColorPicker"
             ref="colorPaletteRef"
+            :id="colorPaletteId"
             class="color-palette-popover"
             role="group"
             aria-label="Note color"
@@ -158,8 +160,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onUnmounted, getCurrentInstance } from 'vue';
 import UiIcon from './UiIcon.vue';
+import { usePopoverPosition } from '../composables/usePopoverPosition';
 import { api, type AttachmentDescriptor, type NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import { joinTitle } from '../utils/noteTitle';
@@ -182,6 +185,8 @@ const composerRef = ref<HTMLElement | null>(null);
 const colorPickerWrapperRef = ref<HTMLElement | null>(null);
 const colorTriggerRef = ref<HTMLButtonElement | null>(null);
 const colorPaletteRef = ref<HTMLElement | null>(null);
+const colorPaletteId = `note-colors-${getCurrentInstance()!.uid}`;
+usePopoverPosition(colorTriggerRef, colorPaletteRef, showColorPicker);
 
 const title = ref('');
 const content = ref('');
@@ -265,9 +270,11 @@ function focusColor(index: number) {
 }
 
 function closeColorPicker(returnFocus = false) {
+  const shouldRestoreFocus = returnFocus && showColorPicker.value;
   showColorPicker.value = false;
   document.removeEventListener('pointerdown', handleOutsideColorPicker);
-  if (returnFocus) nextTick(() => colorTriggerRef.value?.focus());
+  document.removeEventListener('focusin', handleOutsideColorPicker);
+  if (shouldRestoreFocus) nextTick(() => colorTriggerRef.value?.focus());
 }
 
 function toggleColorPicker() {
@@ -277,6 +284,7 @@ function toggleColorPicker() {
   }
   showColorPicker.value = true;
   document.addEventListener('pointerdown', handleOutsideColorPicker);
+  document.addEventListener('focusin', handleOutsideColorPicker);
   const selected = NOTE_COLORS.findIndex((color) => color.key === selectedColor.value);
   focusColor(selected < 0 ? 0 : selected);
 }
@@ -289,6 +297,7 @@ function selectColor(color: NoteColor) {
 function handleColorKeydown(event: KeyboardEvent, index: number) {
   if (event.key === 'Escape') {
     event.preventDefault();
+    event.stopPropagation();
     closeColorPicker(true);
     return;
   }
@@ -311,7 +320,7 @@ function handleColorKeydown(event: KeyboardEvent, index: number) {
   focusColor(nextIndex);
 }
 
-function handleOutsideColorPicker(event: PointerEvent) {
+function handleOutsideColorPicker(event: Event) {
   const target = event.target as Node;
   if (showColorPicker.value && !colorPickerWrapperRef.value?.contains(target)) {
     closeColorPicker();
@@ -320,10 +329,12 @@ function handleOutsideColorPicker(event: PointerEvent) {
 
 onUnmounted(() => {
   document.removeEventListener('pointerdown', handleOutsideColorPicker);
+  document.removeEventListener('focusin', handleOutsideColorPicker);
   document.removeEventListener('pointerdown', handleOutsidePointer);
 });
 
 function handleKeyDown(e: KeyboardEvent) {
+  if (e.defaultPrevented) return;
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault();
     handleSubmit();
@@ -663,27 +674,24 @@ defineExpose({
 }
 
 .color-palette-popover {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  margin-top: 4px;
+  position: fixed;
   background: var(--md-sys-color-surface-container);
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--keep-card-radius);
   box-shadow: var(--keep-shadow-raised);
   padding: 8px;
   display: grid;
-  grid-template-columns: repeat(4, 40px);
+  grid-template-columns: repeat(4, var(--keep-control-size));
   gap: 4px;
   z-index: 50;
 }
 
 .color-swatch-btn {
-  width: 40px;
-  height: 40px;
+  width: var(--keep-control-size);
+  height: var(--keep-control-size);
   border-radius: var(--md-sys-shape-corner-full);
-  /* 40px touch target around a 28px swatch */
-  border: 6px solid transparent;
+  /* The hit area grows on touch screens; the color remains 28px. */
+  border: calc((var(--keep-control-size) - 28px) / 2) solid transparent;
   background-clip: content-box;
   cursor: pointer;
   padding: 0;
@@ -715,7 +723,7 @@ defineExpose({
 }
 
 .btn-close {
-  min-height: 36px;
+  min-height: var(--keep-control-size);
   padding: 0 24px;
   border: none;
   border-radius: var(--md-sys-shape-corner-xs);
