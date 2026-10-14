@@ -132,4 +132,37 @@ describe('NoteComposer behavior', () => {
     expect((wrapper.get('.composer-textarea').element as HTMLTextAreaElement).value).toBe('- [ ] ');
     expect(wrapper.find('.composer-title').exists()).toBe(true);
   });
+
+  it('leaves focus where the outside click put it after the save finishes', async () => {
+    let finish!: (value: { success: boolean }) => void;
+    const onSave = vi.fn(() => new Promise<{ success: boolean }>((resolve) => { finish = resolve; }));
+    const elsewhere = document.createElement('input');
+    document.body.appendChild(elsewhere);
+    const wrapper = mount(NoteComposer, { attachTo: document.body, props: { onSave } });
+
+    await wrapper.get('.composer-textarea').setValue('Draft');
+    elsewhere.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    elsewhere.focus();
+    finish({ success: true });
+    await flushPromises();
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(elsewhere);
+    wrapper.unmount();
+    elsewhere.remove();
+  });
+
+  it('ignores outside clicks while hidden in Archive or Trash', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteComposer, { attachTo: document.body, props: { onSave } });
+
+    await wrapper.get('.composer-textarea').setValue('Keep for later');
+    await wrapper.setProps({ active: false });
+    clickOutside();
+    await flushPromises();
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect((wrapper.get('.composer-textarea').element as HTMLTextAreaElement).value).toBe('Keep for later');
+    wrapper.unmount();
+  });
 });

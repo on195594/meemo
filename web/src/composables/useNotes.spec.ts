@@ -219,7 +219,7 @@ describe('useNotes behavior', () => {
 
     const result = await store.deleteNote('delete');
 
-    expect(result).toEqual({ success: true });
+    expect(result).toMatchObject({ success: true, thing: { _id: 'delete', revision: 1 } });
     expect(apiMock.delete).toHaveBeenCalledWith('delete', 1);
     expect(store.things.value.map((thing) => thing._id)).toEqual(['keep']);
   });
@@ -286,26 +286,60 @@ describe('useNotes behavior', () => {
     apiMock.update.mockResolvedValue({ thing: note('a', { revision: 6, sticky: true }) });
     const store = useNotes();
     await store.setFilters({ search: '', tag: null, archived: false });
-    const original = store.things.value[0];
 
-    await store.deleteNote('a');
+    const deleted = await store.deleteNote('a');
     expect(store.things.value).toHaveLength(0);
 
-    const result = await store.undoDelete(original);
+    const result = await store.undoDelete(deleted.thing!);
     expect(result.success).toBe(true);
     expect(apiMock.restore).toHaveBeenCalledWith('a', 4);
     expect(apiMock.update).toHaveBeenCalledWith('a', expect.objectContaining({ sticky: true, expectedRevision: 5 }));
     expect(store.things.value.map((t) => [t._id, t.sticky])).toEqual([['a', true]]);
   });
 
-  it('reinserts only notes that belong to the current view', async () => {
-    apiMock.list.mockResolvedValue({ things: [] });
+  it('undoes a delete using the revision current when the queued delete actually ran', async () => {
+    apiMock.list.mockResolvedValue({ things: [note('a', { revision: 1 })] });
+    apiMock.update.mockResolvedValue({ thing: note('a', { revision: 2, color: 'coral' }) });
+    apiMock.delete.mockResolvedValue({});
+    apiMock.restore.mockResolvedValue({ thing: note('a', { revision: 4 }) });
     const store = useNotes();
     await store.setFilters({ search: '', tag: null, archived: false });
 
-    store.reinsertNote(note('archived', { archived: true }));
-    store.reinsertNote(note('active'));
-    store.reinsertNote(note('active'));
-    expect(store.things.value.map((t) => t._id)).toEqual(['active']);
+    const colorChange = store.updateNote('a', { color: 'coral' });
+    const deletion = store.deleteNote('a');
+    await colorChange;
+    const deleted = await deletion;
+
+    expect(apiMock.delete).toHaveBeenCalledWith('a', 2);
+    await store.undoDelete(deleted.thing!);
+    expect(apiMock.restore).toHaveBeenCalledWith('a', 3);
+  });
+
+  it('undoes an archive from the active view even though the note left the list', async () => {
+    apiMock.list.mockResolvedValue({ things: [note('a', { revision: 1 })] });
+    apiMock.update
+      .mockResolvedValueOnce({ thing: note('a', { revision: 2, archived: true }) })
+      .mockResolvedValueOnce({ thing: note('a', { revision: 3, archived: false }) });
+    const store = useNotes();
+    await store.setFilters({ search: '', tag: null, archived: false });
+
+    const archived = await store.toggleArchive(store.things.value[0]);
+    expect(store.things.value).toHaveLength(0);
+
+    const result = await store.undoArchive(archived.thing!);
+    expect(result.success).toBe(true);
+    expect(apiMock.update).toHaveBeenLastCalledWith('a', expect.objectContaining({ archived: false, expectedRevision: 2 }));
+    expect(store.things.value.map((t) => t._id)).toEqual(['a']);
+  });
+
+  it('does not show a restored note in a label view it does not belong to', async () => {
+    apiMock.list.mockResolvedValue({ things: [] });
+    apiMock.restore.mockResolvedValue({ thing: note('a', { revision: 3, tags: ['work'] }) });
+    const store = useNotes();
+    await store.setFilters({ search: '', tag: 'home', archived: false });
+
+    const result = await store.undoDelete(note('a', { revision: 2, tags: ['work'] }));
+    expect(result.success).toBe(true);
+    expect(store.things.value).toEqual([]);
   });
 });

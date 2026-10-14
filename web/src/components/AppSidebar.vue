@@ -1,7 +1,7 @@
 <template>
   <div class="app-sidebar-slot" :class="{ expanded, 'mobile-open': mobileOpen }">
     <div v-if="mobileOpen" class="sidebar-scrim" @click="$emit('close')"></div>
-    <nav class="app-sidebar" aria-label="Notes navigation" @keydown.esc="$emit('close')">
+    <nav ref="navRef" class="app-sidebar" aria-label="Notes navigation" @keydown.esc="$emit('close')" @keydown.tab="trapTab">
       <button
         v-for="item in items"
         :key="item.key"
@@ -20,13 +20,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router';
 import UiIcon from './UiIcon.vue';
 import { useNotes } from '../composables/useNotes';
 import { useSettings } from '../composables/useSettings';
 
-defineProps<{ expanded: boolean; mobileOpen: boolean }>();
+const props = defineProps<{ expanded: boolean; mobileOpen: boolean }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 
 const route = useRoute();
@@ -62,6 +62,30 @@ function navigate(query: LocationQueryRaw) {
   if (route.path !== '/') router.push({ path: '/', query });
   else router.replace({ query });
   emit('close');
+}
+
+// Mobile drawer acts as a modal: focus moves in on open and Tab stays inside.
+const navRef = ref<HTMLElement | null>(null);
+function drawerItems() {
+  return Array.from(navRef.value?.querySelectorAll<HTMLElement>('.sidebar-item') || []);
+}
+watch(() => props.mobileOpen, (open) => {
+  if (!open) return;
+  nextTick(() => (navRef.value?.querySelector<HTMLElement>('.sidebar-item.active') || drawerItems()[0])?.focus());
+});
+function trapTab(event: KeyboardEvent) {
+  if (!props.mobileOpen) return;
+  const items = drawerItems();
+  if (items.length === 0) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 // Refresh labels when the visible notes' tags change (create/edit/delete).

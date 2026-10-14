@@ -34,17 +34,26 @@ function json(body: unknown, status = 200): Response {
 }
 
 function backend(settings: Record<string, unknown> = {}) {
-  const state = { deleted: false };
+  const state = { deleted: false, archived: false, failDelete: false };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method || 'GET';
     if (url === '/api/profile') return json({ user: { id: 'user-a', username: 'alice', displayName: 'Alice' } });
     if (url === '/api/settings') return json({ settings });
     if (url === '/api/tags') return json({ tags: [{ name: 'zeta', usage: 9 }, { name: 'work', usage: 1 }] });
-    if (url.startsWith('/api/things?')) return json({ things: state.deleted ? [] : [NOTE] });
+    if (url.startsWith('/api/things?')) {
+      const wantsArchived = url.includes('archived=true');
+      return json({ things: state.deleted || state.archived !== wantsArchived ? [] : [NOTE] });
+    }
     if (url === '/api/things/note-1' && method === 'DELETE') {
+      if (state.failDelete) return json({ code: 'revision_conflict', message: 'Changed elsewhere' }, 409);
       state.deleted = true;
       return json({});
+    }
+    if (url === '/api/things/note-1' && method === 'PUT') {
+      const body = JSON.parse(String(init?.body));
+      state.archived = body.archived;
+      return json({ thing: { ...NOTE, archived: body.archived, revision: body.expectedRevision + 1 } });
     }
     if (url === '/api/things/note-1/restore' && method === 'POST') {
       state.deleted = false;
@@ -122,5 +131,64 @@ describe('Keep-style notes workspace', () => {
     expect(JSON.parse(String(restore?.[1]?.body))).toEqual({ expectedRevision: 2 });
     expect(wrapper.find('.note-card').exists()).toBe(true);
     expect(wrapper.find('.snackbar').exists()).toBe(false);
+  });
+
+  it('undoes an archive from the snackbar', async () => {
+    const { fetchMock, state } = backend();
+    wrapper = (await renderApp(fetchMock)).wrapper;
+
+    await wrapper.get('.note-card [aria-label="Archive note"]').trigger('click');
+    await settle();
+    expect(state.archived).toBe(true);
+    expect(wrapper.find('.note-card').exists()).toBe(false);
+
+    await wrapper.get('.snackbar-action').trigger('click');
+    await settle();
+    expect(state.archived).toBe(false);
+    expect(wrapper.find('.note-card').exists()).toBe(true);
+  });
+
+  it('keeps the note dialog and its draft open when deleting fails', async () => {
+    const { fetchMock, state } = backend();
+    state.failDelete = true;
+    wrapper = (await renderApp(fetchMock)).wrapper;
+
+    await wrapper.get('.note-card .card-body').trigger('click');
+    await settle();
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.value = 'Unsaved edit';
+    body.dispatchEvent(new Event('input'));
+    (document.querySelector('.note-modal-card .delete-btn') as HTMLButtonElement).click();
+    await settle();
+
+    expect(document.querySelector('.note-modal-overlay')).not.toBeNull();
+    expect((document.querySelector('.modal-textarea') as HTMLTextAreaElement).value).toBe('Unsaved edit');
+    expect(wrapper.get('.snackbar').text()).toContain('This note changed elsewhere');
+  });
+
+  it('moves focus into the mobile drawer, traps Tab, and returns focus on Escape', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    const { fetchMock } = backend();
+    wrapper = (await renderApp(fetchMock)).wrapper;
+
+    const menu = wrapper.get('.menu-btn');
+    await menu.trigger('click');
+    await settle();
+    const items = wrapper.findAll('.sidebar-item');
+    expect(document.activeElement).toBe(items[0].element);
+
+    (items[items.length - 1].element as HTMLElement).focus();
+    await items[items.length - 1].trigger('keydown', { key: 'Tab' });
+    expect(document.activeElement).toBe(items[0].element);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await settle();
+    expect(wrapper.find('.app-sidebar-slot.mobile-open').exists()).toBe(false);
+    expect(document.activeElement).toBe(menu.element);
   });
 });

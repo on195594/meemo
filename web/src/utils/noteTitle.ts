@@ -9,7 +9,8 @@ export function splitTitle(content: string): { title: string; body: string } {
 
 export function joinTitle(title: string, body: string): string {
   const t = title.replace(/\s*\n\s*/g, ' ').trim();
-  const b = body.trim();
-  if (!t) return b;
+  // Drop blank lines and trailing space only; leading indentation is Markdown (e.g. code blocks).
+  const b = body.replace(/^(?:[ \t]*\r?\n)+/, '').trimEnd();
+  if (!t) return b.trim(); // the store trims untitled content on save anyway
   return b ? `# ${t}\n\n${b}` : `# ${t}`;
 }

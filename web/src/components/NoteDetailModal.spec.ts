@@ -92,6 +92,32 @@ describe('NoteDetailModal', () => {
     wrapper.unmount();
   });
 
+  it('keeps body indentation when only the title changes and treats whitespace edits as changes', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteDetailModal, {
+      props: { open: true, thing: note({ content: '# Code\n\n    const answer = 42;' }), onSaveEdit },
+    });
+
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    expect(body.value).toBe('    const answer = 42;');
+    body.value = '        const answer = 42;';
+    body.dispatchEvent(new Event('input'));
+    (document.querySelector('.done-btn') as HTMLButtonElement).click();
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: '# Code\n\n        const answer = 42;' });
+    wrapper.unmount();
+  });
+
+  it('shows a Setext heading in read-only notes because it is not split into the title', () => {
+    const wrapper = mount(NoteDetailModal, {
+      props: { open: true, thing: note({ content: 'Heading\n===\n\nbody' }), canEdit: false },
+    });
+
+    expect(document.querySelector('.modal-markdown-body')?.classList.contains('has-split-title')).toBe(false);
+    expect(document.querySelector('.modal-markdown-body h1')?.textContent).toBe('Heading');
+    wrapper.unmount();
+  });
+
   it('does not rewrite a note whose title spacing merely differs from the canonical form', async () => {
     const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
     const wrapper = mount(NoteDetailModal, {

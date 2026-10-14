@@ -83,6 +83,7 @@
                 v-else
                 ref="renderedBodyRef"
                 class="modal-markdown-body markdown-body"
+                :class="{ 'has-split-title': !!titleDraft }"
                 v-html="renderedHtml"
                 @click="handleBodyClick"
               ></div>
@@ -209,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onUnmounted, getCurrentInstance } from 'vue';
+import { ref, reactive, computed, watch, nextTick, onUnmounted, getCurrentInstance } from 'vue';
 import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import { renderMarkdown, highlightKeyword, toggleTaskItem } from '../utils/markdown';
@@ -264,10 +265,12 @@ const currentNote = ref<Thing>({
 const titleDraft = ref('');
 const bodyDraft = ref('');
 const editDraft = computed(() => joinTitle(titleDraft.value, bodyDraft.value));
+// Field values as last loaded from the server; any difference from them is an unsaved edit.
+const baseline = reactive({ title: '', body: '' });
 function setDraft(content: string) {
   const parts = splitTitle(content);
-  titleDraft.value = parts.title;
-  bodyDraft.value = parts.body;
+  titleDraft.value = baseline.title = parts.title;
+  bodyDraft.value = baseline.body = parts.body;
   nextTick(autosize);
 }
 const isSaving = ref(false);
@@ -295,9 +298,7 @@ const colorPaletteRef = ref<HTMLElement | null>(null);
 
 const hasUnsavedChanges = computed(() => {
   if (!props.canEdit || !currentNote.value) return false;
-  // Compare normalized forms so merely opening a note never rewrites it.
-  const original = splitTitle(currentNote.value.content || '');
-  return editDraft.value !== joinTitle(original.title, original.body);
+  return titleDraft.value !== baseline.title || bodyDraft.value !== baseline.body;
 });
 
 const dateValue = computed(() => {
@@ -958,7 +959,8 @@ onUnmounted(() => {
   overflow-wrap: anywhere;
 }
 
-.modal-markdown-body :deep(h1:first-child) {
+/* Hide only the heading already shown as the title above. */
+.modal-markdown-body.has-split-title :deep(h1:first-child) {
   display: none;
 }
 

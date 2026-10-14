@@ -18,6 +18,7 @@ describe('noteTitle', () => {
     expect(joinTitle('  ', ' body ')).toBe('body');
     expect(joinTitle('Title', '')).toBe('# Title');
     expect(joinTitle('a\nb', 'x')).toBe('# a b\n\nx');
+    expect(joinTitle('Code', '\n    const answer = 42;\n')).toBe('# Code\n\n    const answer = 42;');
     const content = '# Trip\n\nDay 1\nDay 2';
     const { title, body } = splitTitle(content);
     expect(joinTitle(title, body)).toBe(content);

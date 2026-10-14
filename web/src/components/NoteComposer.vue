@@ -164,9 +164,11 @@ import { api, type AttachmentDescriptor, type NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import { joinTitle } from '../utils/noteTitle';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   onSave: (content: string, attachments?: AttachmentDescriptor[], color?: NoteColor) => Promise<{ success: boolean; error?: string }>;
-}>();
+  // false while hidden (Archive/Trash) so clicks there don't trigger saves.
+  active?: boolean;
+}>(), { active: true });
 
 const emit = defineEmits<{
   (e: 'created'): void;
@@ -206,7 +208,14 @@ watch(content, () => nextTick(autosize));
 
 // Keep behavior: clicking anywhere outside the open composer saves (or collapses) it.
 function handleOutsidePointer(event: PointerEvent) {
+  if (!props.active) return;
   if (!composerRef.value?.contains(event.target as Node)) closeComposer();
+}
+
+// Drop focus only if it is still ours; an outside click may have moved it elsewhere.
+function blurIfInside() {
+  const el = document.activeElement as HTMLElement | null;
+  if (el && composerRef.value?.contains(el)) el.blur();
 }
 watch(isExpanded, (open) => {
   if (open) document.addEventListener('pointerdown', handleOutsidePointer);
@@ -221,7 +230,7 @@ async function closeComposer() {
   }
   isFocused.value = false;
   error.value = null;
-  (document.activeElement as HTMLElement | null)?.blur?.();
+  blurIfInside();
 }
 
 function startChecklist() {
@@ -422,7 +431,7 @@ async function handleSubmit() {
     selectedColor.value = 'default';
     showColorPicker.value = false;
     isFocused.value = false;
-    (document.activeElement as HTMLElement | null)?.blur?.();
+    blurIfInside();
     emit('created');
   } else {
     error.value = result.error || 'Failed to save note';

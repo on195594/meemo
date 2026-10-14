@@ -22,6 +22,7 @@
       <div class="nav-container">
         <button
           v-if="showSidebar"
+          ref="menuBtnRef"
           type="button"
           class="header-icon-btn menu-btn"
           aria-label="Main menu"
@@ -317,8 +318,11 @@ function toggleSidebar() {
   }
 }
 
+const menuBtnRef = ref<HTMLButtonElement | null>(null);
 function closeMobileNav() {
+  if (!mobileNavOpen.value) return;
   mobileNavOpen.value = false;
+  menuBtnRef.value?.focus();
 }
 
 function toggleViewMode() {

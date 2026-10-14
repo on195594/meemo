@@ -269,7 +269,7 @@ export function useNotes() {
     }));
   }
 
-  async function deleteNote(id: string): Promise<{ success: boolean; error?: string; code?: string }> {
+  async function deleteNote(id: string): Promise<{ success: boolean; thing?: Thing; error?: string; code?: string }> {
     const generation = userGeneration;
     return enqueueNoteMutation(id, generation, async () => {
       const existing = things.value.find((t) => t._id === id);
@@ -278,7 +278,8 @@ export function useNotes() {
         await api.things.delete(id, existing.revision);
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
         things.value = things.value.filter((t) => t._id !== id);
-        return { success: true };
+        // Return the exact snapshot that was deleted so Undo can use its revision.
+        return { success: true, thing: existing };
       } catch (err: any) {
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
         const error = err.code === 'revision_conflict'
@@ -293,28 +294,64 @@ export function useNotes() {
     }));
   }
 
-  // Undo support: notes that left the current view are put back before reversing the change.
-  function reinsertNote(thing: Thing) {
+  // Full PUT body rebuilt from a server snapshot, so Undo does not depend on list membership.
+  function snapshotPayload(thing: Thing, overrides: { archived?: boolean; sticky?: boolean }) {
+    return {
+      content: thing.content,
+      attachments: thing.attachments || [],
+      public: !!thing.public,
+      shared: !!thing.shared,
+      archived: !!thing.archived,
+      sticky: !!thing.sticky,
+      expectedRevision: thing.revision,
+      ...overrides,
+    };
+  }
+
+  // Undo support: a note that comes back is shown only if it matches the current view.
+  function placeRestoredNote(thing: Thing) {
+    things.value = things.value.filter((t) => t._id !== thing._id);
     if (thing.archived !== isArchived.value || isDeleted.value) return;
-    if (things.value.some((t) => t._id === thing._id)) return;
+    if (searchQuery.value.trim() && !selectedTag.value) {
+      // Relevance search runs on the server; refetch instead of guessing a match.
+      fetchNotes(true);
+      return;
+    }
+    const tag = selectedTag.value?.toLowerCase();
+    if (tag && !(thing.tags || []).some((t) => t.toLowerCase() === tag)) return;
     things.value = [...things.value, thing].sort((a, b) => {
       if (a.sticky !== b.sticky) return a.sticky ? -1 : 1;
       return (b.modifiedAt || 0) - (a.modifiedAt || 0);
     });
   }
 
-  async function undoDelete(thing: Thing): Promise<NoteMutationResult> {
+  // `deleted` must be the snapshot deleteNote actually deleted (see its result.thing).
+  async function undoDelete(deleted: Thing): Promise<NoteMutationResult> {
     const generation = userGeneration;
-    try {
+    return enqueueNoteMutation(deleted._id, generation, async () => {
       // Soft delete bumps the revision by exactly one (database/things.js del).
-      const res = await api.things.restore(thing._id, thing.revision + 1);
+      const res = await api.things.restore(deleted._id, deleted.revision + 1);
       if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-      reinsertNote(res.thing);
-      if (thing.sticky && !res.thing.sticky) return toggleSticky(res.thing);
+      let restored = res.thing;
+      if (deleted.sticky && !restored.sticky) {
+        const pinned = await api.things.update(restored._id, snapshotPayload(restored, { sticky: true }));
+        if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+        restored = pinned.thing;
+      }
+      placeRestoredNote(restored);
+      return { success: true, thing: restored };
+    }).catch((err: any) => ({ success: false, error: err.message || 'Failed to undo', code: err.code }));
+  }
+
+  // `changed` is the server copy returned by the archive toggle being undone.
+  async function undoArchive(changed: Thing): Promise<NoteMutationResult> {
+    const generation = userGeneration;
+    return enqueueNoteMutation(changed._id, generation, async () => {
+      const res = await api.things.update(changed._id, snapshotPayload(changed, { archived: !changed.archived }));
+      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+      placeRestoredNote(res.thing);
       return { success: true, thing: res.thing };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Failed to undo', code: err.code };
-    }
+    }).catch((err: any) => ({ success: false, error: err.message || 'Failed to undo', code: err.code }));
   }
 
   async function toggleSticky(thing: Thing) {
@@ -372,17 +409,20 @@ export function useNotes() {
     success: boolean;
     deletedCount: number;
     successfulIds: string[];
+    deletedThings: Thing[];
     failedIds: string[];
     errors?: Record<string, string>;
   }> {
     const errors: Record<string, string> = {};
     const successfulIds: string[] = [];
+    const deletedThings: Thing[] = [];
     const failedIds: string[] = [];
     await Promise.all(
       ids.map(async (id) => {
         const res = await deleteNote(id);
         if (res.success) {
           successfulIds.push(id);
+          if (res.thing) deletedThings.push(res.thing);
         } else {
           failedIds.push(id);
           if (res.error) errors[id] = res.error;
@@ -393,6 +433,7 @@ export function useNotes() {
       success: failedIds.length === 0,
       deletedCount: successfulIds.length,
       successfulIds,
+      deletedThings,
       failedIds,
       errors: Object.keys(errors).length > 0 ? errors : undefined,
     };
@@ -430,7 +471,7 @@ export function useNotes() {
     toggleSticky,
     togglePublic,
     toggleArchive,
-    reinsertNote,
+    undoArchive,
     undoDelete,
   };
 }

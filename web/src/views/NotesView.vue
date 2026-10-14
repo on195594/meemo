@@ -45,8 +45,10 @@
       <main ref="streamRef" class="stream-column">
         <h1 class="workspace-title" :class="{ 'is-named-view': viewTitle !== 'Notes' }">{{ viewTitle }}</h1>
         <!-- Note Composer (visible in active notes view) -->
+        <!-- v-show keeps an unsaved draft alive while browsing Archive/Trash -->
         <NoteComposer
-          v-if="!isArchived && !isDeleted"
+          v-show="!isArchived && !isDeleted"
+          :active="!isArchived && !isDeleted"
           :on-save="createNote"
         />
 
@@ -65,7 +67,7 @@
           <!-- Pinned Section -->
           <section v-if="pinnedThings.length > 0" class="notes-section" aria-labelledby="pinned-heading">
             <h2 id="pinned-heading" class="section-label">Pinned</h2>
-            <div class="m3-notes-masonry" :class="{ 'is-list': viewMode === 'list' }">
+            <div class="m3-notes-masonry" :class="{ 'is-list': viewMode === 'list', 'is-compact': isCompact }">
               <div v-for="(column, ci) in distributeColumns(pinnedThings, columnCount)" :key="'pinned-' + ci" class="masonry-column">
               <NoteCard
                 v-for="thing in column"
@@ -94,7 +96,7 @@
           <!-- Others Section -->
           <section v-if="otherThings.length > 0" class="notes-section" :aria-labelledby="pinnedThings.length > 0 ? 'others-heading' : undefined">
             <h2 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">Others</h2>
-            <div class="m3-notes-masonry" :class="{ 'is-list': viewMode === 'list' }">
+            <div class="m3-notes-masonry" :class="{ 'is-list': viewMode === 'list', 'is-compact': isCompact }">
               <div v-for="(column, ci) in distributeColumns(otherThings, columnCount)" :key="'other-' + ci" class="masonry-column">
               <NoteCard
                 v-for="thing in column"
@@ -332,7 +334,7 @@ const {
   toggleSticky,
   togglePublic,
   toggleArchive,
-  reinsertNote,
+  undoArchive,
   undoDelete,
 } = useNotes();
 
@@ -346,7 +348,7 @@ const viewTitle = computed(() => {
 
 const gridWidth = computed(() => {
   if (viewMode.value === 'list') return '600px';
-  if (streamWidth.value < 600) return '100%';
+  if (isCompact.value) return '100%';
   return `${columnCount.value * 240 + (columnCount.value - 1) * 16}px`;
 });
 
@@ -354,10 +356,11 @@ const gridWidth = computed(() => {
 const streamRef = ref<HTMLElement | null>(null);
 const streamWidth = ref(0);
 let resizeObserver: ResizeObserver | null = null;
+// Compact mode follows the stream width (not the viewport) so an expanded sidebar can't overflow fixed columns.
+const isCompact = computed(() => streamWidth.value > 0 && streamWidth.value < 600);
 const columnCount = computed(() => {
   if (viewMode.value === 'list') return 1;
-  const phone = streamWidth.value < 600;
-  return columnCountFor(streamWidth.value, phone ? 160 : 240, phone ? 8 : 16);
+  return columnCountFor(streamWidth.value, isCompact.value ? 160 : 240, isCompact.value ? 8 : 16);
 });
 
 const categorizedThings = computed(() => {
@@ -408,12 +411,6 @@ async function undoMany(notes: Thing[], reverse: (t: Thing) => Promise<{ success
   return failure ? (failure.error || "Couldn't undo. Check Archive or Trash.") : undefined;
 }
 
-function undoArchive(notes: Thing[]) {
-  return undoMany(notes, (t) => {
-    reinsertNote(t);
-    return toggleArchive(t);
-  });
-}
 
 function triggerAuthModal(tab: 'login' | 'register') {
   if (openAuthModal) {
@@ -437,24 +434,26 @@ async function handleToggleArchive(thing: Thing) {
   const result = await toggleArchive(thing);
   if (result.success && result.thing) {
     const changed = result.thing;
-    showToast(thing.archived ? 'Note unarchived' : 'Note archived', () => undoArchive([changed]));
+    showToast(thing.archived ? 'Note unarchived' : 'Note archived', () => undoMany([changed], undoArchive));
   } else if (result.error) {
     showToast(result.error);
   }
 }
 
-async function handleDeleteNote(thing: Thing) {
+async function handleDeleteNote(thing: Thing): Promise<boolean> {
   const result = await deleteNote(thing._id);
   if (result.success) {
-    showToast('Note moved to Trash', () => undoMany([thing], undoDelete));
+    const deleted = result.thing || thing;
+    showToast('Note moved to Trash', () => undoMany([deleted], undoDelete));
   } else if (result.error) {
     showToast(result.error);
   }
+  return result.success;
 }
 
-function handleModalDelete(thing: Thing) {
-  closeNoteModal();
-  handleDeleteNote(thing);
+// Close only after the delete lands, so a failed delete keeps the open draft.
+async function handleModalDelete(thing: Thing) {
+  if (await handleDeleteNote(thing)) closeNoteModal();
 }
 
 async function handleRestoreNote(thing: Thing) {
@@ -697,7 +696,7 @@ async function handleBatchArchive() {
     selectedIds.value = new Set(selectedIds.value);
     const changed = res.updatedThings;
     if (res.success) {
-      showToast(`${shouldArchive ? 'Archived' : 'Unarchived'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`, () => undoArchive(changed));
+      showToast(`${shouldArchive ? 'Archived' : 'Unarchived'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`, () => undoMany(changed, undoArchive));
     } else {
       showToast(`${shouldArchive ? 'Archived' : 'Restored'} ${res.updatedCount} notes. ${res.failedIds.length} failed.`);
     }
@@ -711,13 +710,12 @@ async function handleBatchDelete() {
   isBatchDeleting.value = true;
   try {
     const ids = Array.from(selectedIds.value);
-    const originals = things.value.filter((t) => selectedIds.value.has(t._id));
     const res = await batchDeleteNotes(ids);
     for (const id of res.successfulIds) {
       selectedIds.value.delete(id);
     }
     selectedIds.value = new Set(selectedIds.value);
-    const deleted = originals.filter((t) => res.successfulIds.includes(t._id));
+    const deleted = res.deletedThings;
     if (res.success) {
       showToast(`Moved ${res.deletedCount} note${res.deletedCount > 1 ? 's' : ''} to Trash`, () => undoMany(deleted, undoDelete));
     } else {
@@ -1080,6 +1078,16 @@ onUnmounted(() => {
   min-width: 0;
 }
 
+.m3-notes-masonry.is-compact,
+.m3-notes-masonry.is-compact .masonry-column {
+  gap: 8px;
+}
+
+.m3-notes-masonry.is-compact .masonry-column {
+  flex: 1 1 0;
+  width: auto;
+}
+
 .m3-notes-masonry.is-list .masonry-column {
   width: 100%;
   max-width: 600px;
@@ -1286,16 +1294,6 @@ onUnmounted(() => {
 @media (max-width: 599px) {
   .notes-view {
     padding: 16px 8px 96px;
-  }
-
-  .m3-notes-masonry,
-  .masonry-column {
-    gap: 8px;
-  }
-
-  .masonry-column {
-    flex: 1 1 0;
-    width: auto;
   }
 
   .snackbar {
