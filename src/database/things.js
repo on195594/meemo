@@ -275,8 +275,9 @@ function getAllLean(userId, callback) {
     return nodeify(promise, callback);
 }
 
-function getSummaries(userId, query, skip, limit) {
-    var projection = { _id: 1, revision: 1, modifiedAt: 1, content: { $substrCP: [{ $ifNull: ['$content', ''] }, 0, 300] } };
+function getSummaries(userId, query, skip, limit, includeContent) {
+    var projection = { _id: 1, revision: 1, modifiedAt: 1, summary: { $substrCP: [{ $ifNull: ['$content', ''] }, 0, 300] } };
+    if (includeContent) projection.content = 1;
     if (queryHasText(query)) projection.score = { $meta: 'textScore' };
     return createListCursor(userId, query, skip, limit).project(projection).maxTimeMS(3000).toArray();
 }
@@ -289,6 +290,13 @@ async function getSnapshot(userId, thingId) {
     });
     if (!result) throw new Error('not found');
     return result;
+}
+
+function getSnapshots(userId, thingIds) {
+    assert.strictEqual(typeof userId, 'string');
+    var ids = thingIds.map(function (id) { return new ObjectId(id); });
+    return getUnifiedCollection().find({ _id: { $in: ids }, ownerId: userId, deletedAt: { $exists: false } })
+        .project({ content: 1, revision: 1 }).maxTimeMS(3000).toArray();
 }
 
 function getTagUsage(userId, options, callback) {
@@ -551,6 +559,7 @@ module.exports = {
     getTagUsage: getTagUsage,
     getSummaries: getSummaries,
     getSnapshot: getSnapshot,
+    getSnapshots: getSnapshots,
     get: get,
     getById: getById,
     add: add,

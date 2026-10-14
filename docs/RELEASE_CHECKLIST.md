@@ -8,7 +8,7 @@ Use this checklist for v2.1 release candidates and later releases. Stop on any f
 - Verify fixed HTTPS discovery/resource URLs, exact approved callbacks, Host/Origin handling, proxy query/header redaction, session cookies and consent/revocation UI.
 - Scopes and permissions gate:
   - Enforce independent acceptance requirements for `notes.read` and `notes.write`.
-  - Confirm all six documented tools (`search_notes`, `get_note`, `list_tags`, `create_note`, `update_note`, `delete_note`) are registered. Read-only grants must reject writes with `insufficient_scope`; legacy grants without stored scopes must remain strictly read-only unless new consent is granted.
+  - Confirm all eight documented tools (`search_notes`, `get_note`, `batch_get_notes`, `list_tags`, `create_note`, `update_note`, `delete_note`, `batch_delete_notes`) are registered. Read-only grants must reject writes with `insufficient_scope`; legacy grants without stored scopes must remain strictly read-only unless new consent is granted.
   - Authorization lifetime: access remains valid indefinitely until explicitly revoked by the user, rather than expiring after 24 hours. Revocation at the user level must immediately reject subsequent read and write requests.
 - Editing and concurrency gate:
   - Optimistic concurrency control: updates and deletions must enforce `expectedRevision`. Stale revisions and concurrent write races must fail with `revision_conflict`.
@@ -21,6 +21,7 @@ Use this checklist for v2.1 release candidates and later releases. Stop on any f
   - Deployment authorization must explicitly cover the current write-capable implementation; historical phase-1 read-only authorization is insufficient.
 - Real Gemini client acceptance gate:
   - Test real Meemo Gemini web/mobile clients across both read and write workflows: consent flow (read-only vs read-and-write disclosures), search/read/tags, create/update/trash, optimistic revision conflict handling, partial-field updates, legacy read-only scope enforcement, and user-level revocation.
+  - Verify `search_notes` with `include_content: true` returns full Markdown without follow-up reads, `batch_get_notes` reads up to 20 notes, and `batch_delete_notes` trashes multiple notes with one client confirmation. Check partial-failure summaries and the 128 KiB response limit.
   - Record client/deployment versions and dates without private content. These real-client checks are explicitly **pending** (`NOT_RUN`), and are not implied by travel-cards acceptance, local automated test passes, or historical read-only review conclusions.
 - Recovery gate:
   - Recovery must invalidate restored MCP authorization state before enabling access; disabling is rollback, not permanent grant revocation. The existing synthetic restore fixture does not yet test MCP state.

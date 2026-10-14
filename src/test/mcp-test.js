@@ -70,7 +70,7 @@ describe('MCP read/write tools and OAuth isolation', function () {
 
     before(async function () {
         await config._clearDatabase();
-        dbClient = await MongoClient.connect(config.databaseUrl);
+        dbClient = await MongoClient.connect(config.databaseUrl, { monitorCommands: true });
         db = dbClient.db();
         config.db = db;
         things.resetCache();
@@ -235,8 +235,8 @@ describe('MCP read/write tools and OAuth isolation', function () {
         var listed = await rpc(app, aliceToken, 'tools/list');
         var readTools = listed.body.result.tools.filter(function (t) { return t.annotations.readOnlyHint; }).map(function (t) { return t.name; }).sort();
         var writeTools = listed.body.result.tools.filter(function (t) { return !t.annotations.readOnlyHint; }).map(function (t) { return t.name; }).sort();
-        assert.deepEqual(readTools, ['get_note', 'list_tags', 'search_notes']);
-        assert.deepEqual(writeTools, ['create_note', 'delete_note', 'update_note']);
+        assert.deepEqual(readTools, ['batch_get_notes', 'get_note', 'list_tags', 'search_notes']);
+        assert.deepEqual(writeTools, ['batch_delete_notes', 'create_note', 'delete_note', 'update_note']);
         var search = toolBody(await rpc(app, aliceToken, 'tools/call', { name: 'search_notes', arguments: { query: 'marker' } }));
         assert.deepEqual(search.notes.map(function (note) { return note.id; }), [noteId]);
         assert.equal(search.notes[0].content, undefined);
@@ -254,6 +254,155 @@ describe('MCP read/write tools and OAuth isolation', function () {
         var deleted = await things.insertFull(aliceId, 'deleted secret', ['deleted'], [], [], 4, 4);
         await things.del(aliceId, deleted._id, deleted.revision);
         assert.equal(toolBody(await rpc(app, aliceToken, 'tools/call', { name: 'get_note', arguments: { id: deleted._id } })).code, 'not_found');
+    });
+
+    it('returns complete Markdown with search summaries in one query when requested', async function () {
+        var isolated = createApp({ sessionMemory: true, sessionSecret: 'synthetic-search-content', logger: logger.createLogger({ enabled: false }),
+            mcp: { enabled: true, publicUrl: origin, redirectUris: [callback] } });
+        var content = '# bulkmarkdown\n\n' + '正文😀 **bold**\n'.repeat(50);
+        var first = await things.insertFull(aliceId, content, [], [], [], 10, 10);
+        var second = await things.insertFull(aliceId, content + 'second', [], [], [], 11, 11);
+        var finds = [];
+        function record(event) { if (event.commandName === 'find' && event.command.find === 'things') finds.push(event.command); }
+        dbClient.on('commandStarted', record);
+        try {
+            for (var mode of ['regex', 'text']) {
+                finds.length = 0;
+                var full = toolBody(await rpc(isolated, aliceToken, 'tools/call', {
+                    name: 'search_notes', arguments: { query: 'bulkmarkdown', mode: mode, include_content: true, limit: 1 }
+                }));
+                assert.equal(finds.length, 1, 'Search must not fetch each note separately');
+                assert.equal(finds[0].projection.content, 1);
+                assert([first._id, second._id].includes(full.notes[0].id));
+                assert.equal(full.notes[0].content, full.notes[0].id === first._id ? content : content + 'second');
+                assert.equal(full.notes[0].summary, Array.from(content).slice(0, 300).join(''));
+                assert.equal(full.hasMore, true);
+            }
+            var defaults = toolBody(await rpc(isolated, aliceToken, 'tools/call', { name: 'search_notes', arguments: { query: 'bulkmarkdown' } }));
+            var disabled = toolBody(await rpc(isolated, aliceToken, 'tools/call', { name: 'search_notes', arguments: { query: 'bulkmarkdown', include_content: false } }));
+            assert.deepEqual(defaults, disabled);
+            assert(defaults.notes.every(function (note) { return note.content === undefined; }));
+            var page = toolBody(await rpc(isolated, aliceToken, 'tools/call', { name: 'search_notes', arguments: { query: 'bulkmarkdown', include_content: true, skip: 1, limit: 1 } }));
+            assert.equal(page.notes[0].content, content);
+            assert.equal(page.hasMore, false);
+            var scoped = toolBody(await rpc(isolated, aliceToken, 'tools/call', { name: 'search_notes', arguments: { query: 'marker', include_content: true } }));
+            assert.deepEqual(scoped.notes.map(function (note) { return note.id; }), [noteId]);
+            assert.equal(scoped.notes[0].content, 'private marker #alpha #beta');
+            var oversized = await things.insertFull(aliceId, 'oversizebody '.repeat(12000), [], [], [], 12, 12);
+            for (var name of ['search_notes', 'batch_get_notes']) {
+                var args = name === 'search_notes' ? { query: 'oversizebody', include_content: true } : { ids: [oversized._id] };
+                var response = await rpc(isolated, aliceToken, 'tools/call', { name: name, arguments: args });
+                assert.equal(response.body.result.isError, true);
+                assert.equal(toolBody(response).code, 'result_too_large');
+            }
+            await things.del(aliceId, oversized._id, oversized.revision);
+        } finally {
+            dbClient.removeListener('commandStarted', record);
+            await things.del(aliceId, first._id, first.revision);
+            await things.del(aliceId, second._id, second.revision);
+        }
+    });
+
+    it('batch reads owner-scoped snapshots including archived notes in one IN query', async function () {
+        var isolated = createApp({ sessionMemory: true, sessionSecret: 'synthetic-batch-read', logger: logger.createLogger({ enabled: false }),
+            mcp: { enabled: true, publicUrl: origin, redirectUris: [callback] } });
+        var deleted = await things.insertFull(aliceId, 'batch read deleted', [], [], [], 12, 12);
+        await things.del(aliceId, deleted._id, deleted.revision);
+        var ids = [noteId.toUpperCase(), archivedId, otherId, new ObjectId().toHexString(), deleted._id];
+        var finds = [];
+        function record(event) { if (event.commandName === 'find' && event.command.find === 'things') finds.push(event.command); }
+        dbClient.on('commandStarted', record);
+        try {
+            var result = toolBody(await rpc(isolated, aliceToken, 'tools/call', { name: 'batch_get_notes', arguments: { ids: ids } }));
+            assert.equal(finds.length, 1);
+            assert.equal(finds[0].filter._id.$in.length, ids.length);
+            assert.deepEqual(result.sort(function (a, b) { return a.id.localeCompare(b.id); }), [
+                { id: noteId, content: 'private marker #alpha #beta', revision: 1 },
+                { id: archivedId, content: 'archived marker #gamma', revision: 2 }
+            ].sort(function (a, b) { return a.id.localeCompare(b.id); }));
+        } finally {
+            dbClient.removeListener('commandStarted', record);
+        }
+        assert.deepEqual(toolBody(await rpc(isolated, aliceToken, 'tools/call', { name: 'batch_get_notes', arguments: { ids: [otherId] } })), []);
+        var maximum = toolBody(await rpc(isolated, aliceToken, 'tools/call', { name: 'batch_get_notes', arguments: { ids: Array(20).fill(noteId) } }));
+        assert.equal(maximum.length, 1);
+    });
+
+    it('batch deletes in one tool call and reports per-note failures without rolling back successes', async function () {
+        var isolated = createApp({ sessionMemory: true, sessionSecret: 'synthetic-batch-delete',
+            logger: logger.createLogger({ enabled: true, stream: function (entry) { logs.push(JSON.stringify(entry)); } }),
+            mcp: { enabled: true, publicUrl: origin, redirectUris: [callback] } });
+        var first = await things.insertFull(aliceId, 'batch delete first', [], [], [], 13, 13);
+        var second = await things.insertFull(aliceId, 'batch delete second', [], [], [], 14, 14);
+        var stale = await things.insertFull(aliceId, 'batch delete stale', [], [], [], 15, 15);
+        var publicNote = await things.insertFull(aliceId, 'batch delete public', [], [], [], 16, 16);
+        var sharedNote = await things.insertFull(aliceId, 'batch delete shared', [], [], [], 17, 17);
+        await db.collection('things').updateOne({ _id: new ObjectId(publicNote._id) }, { $set: { public: true } });
+        await db.collection('things').updateOne({ _id: new ObjectId(sharedNote._id) }, { $set: { shared: true } });
+        var missingId = new ObjectId().toHexString();
+        var items = [
+            { id: first._id, expectedRevision: 1 },
+            { id: stale._id, expectedRevision: 999 },
+            { id: otherId, expectedRevision: 1 },
+            { id: publicNote._id, expectedRevision: 1 },
+            { id: sharedNote._id, expectedRevision: 1 },
+            { id: missingId, expectedRevision: 1 },
+            { id: second._id, expectedRevision: 1 },
+            { id: first._id, expectedRevision: 1 }
+        ];
+        var beforeCount = logs.filter(function (line) { return line.includes('"event":"mcp_tool"'); }).length;
+        var result = toolBody(await rpc(isolated, aliceToken, 'tools/call', { name: 'batch_delete_notes', arguments: { items: items } }));
+        assert.deepEqual(result, { deleted: [first._id, second._id], errors: [
+            { id: stale._id, code: 'revision_conflict' }, { id: otherId, code: 'not_found' },
+            { id: publicNote._id, code: 'not_allowed' }, { id: sharedNote._id, code: 'not_allowed' },
+            { id: missingId, code: 'not_found' }, { id: first._id, code: 'not_found' }
+        ] });
+        assert.equal(logs.filter(function (line) { return line.includes('"event":"mcp_tool"'); }).length, beforeCount + 1);
+        var snapshots = await db.collection('things').find({ _id: { $in: [new ObjectId(first._id), new ObjectId(second._id)] } }).toArray();
+        assert.equal(snapshots.length, 2, 'Deletion must retain the notes in trash');
+        assert(snapshots.every(function (note) { return note.deletedAt && note.revision === 2; }));
+        for (var item of [stale, publicNote, sharedNote]) assert.equal((await things.get(aliceId, item._id)).deletedAt, undefined);
+        assert.equal((await things.get(bobId, otherId)).deletedAt, undefined);
+        var success = toolBody(await rpc(isolated, aliceToken, 'tools/call', {
+            name: 'batch_delete_notes', arguments: { items: [{ id: stale._id, expectedRevision: 1 }] }
+        }));
+        assert.deepEqual(success, { deleted: [stale._id], errors: [] });
+    });
+
+    it('validates batch inputs before writes and enforces read-only and revoked grants', async function () {
+        var isolated = createApp({ sessionMemory: true, sessionSecret: 'synthetic-batch-validation', logger: logger.createLogger({ enabled: false }),
+            mcp: { enabled: true, publicUrl: origin, redirectUris: [callback] } });
+        var note = await things.insertFull(aliceId, 'batch validation note', [], [], [], 18, 18);
+        var item = { id: note._id, expectedRevision: 1 };
+        var cases = [
+            ['search_notes', { include_content: 'true' }],
+            ['batch_get_notes', { ids: [] }], ['batch_get_notes', { ids: Array(21).fill(note._id) }],
+            ['batch_get_notes', { ids: ['invalid'] }], ['batch_get_notes', { ids: [note._id], userId: bobId }],
+            ['batch_delete_notes', { items: [] }], ['batch_delete_notes', { items: Array(21).fill(item) }],
+            ['batch_delete_notes', { items: [item, { id: note._id }] }],
+            ['batch_delete_notes', { items: [item, { id: 'invalid', expectedRevision: 1 }] }],
+            ['batch_delete_notes', { items: [item, { id: note._id, expectedRevision: 0 }] }],
+            ['batch_delete_notes', { items: [item, { id: note._id, expectedRevision: 1.5 }] }],
+            ['batch_delete_notes', { items: [Object.assign({}, item, { content: 'extra' })] }]
+        ];
+        for (var test of cases) {
+            var rejected = await rpc(isolated, aliceToken, 'tools/call', { name: test[0], arguments: test[1] });
+            assert(rejected.body.result.isError || rejected.body.error, JSON.stringify(test));
+        }
+        assert.equal((await things.get(aliceId, note._id)).revision, 1);
+        var verifier = crypto.randomBytes(32).toString('base64url');
+        var readConsent = await consent(isolated, alice, client, verifier, true, 'notes.read');
+        var token = (await exchange(isolated, client, verifier, readConsent.redirect.searchParams.get('code'))).body.access_token;
+        var read = toolBody(await rpc(isolated, token, 'tools/call', { name: 'batch_get_notes', arguments: { ids: [note._id] } }));
+        assert.equal(read[0].id, note._id);
+        var denied = toolBody(await rpc(isolated, token, 'tools/call', { name: 'batch_delete_notes', arguments: { items: [item] } }));
+        assert.equal(denied.code, 'insufficient_scope');
+        await protocol(isolated, 'post', '/oauth/revoke').type('form').send({ client_id: client.client_id, token: token }).expect(200);
+        for (var name of ['batch_get_notes', 'batch_delete_notes']) {
+            var args = name === 'batch_get_notes' ? { ids: [note._id] } : { items: [item] };
+            assert.equal((await rpc(isolated, token, 'tools/call', { name: name, arguments: args })).status, 401);
+        }
+        assert.equal((await things.get(aliceId, note._id)).revision, 1);
     });
 
     it('creates, updates with revision check, and deletes notes via MCP tools', async function () {

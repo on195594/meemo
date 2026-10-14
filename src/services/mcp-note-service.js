@@ -5,10 +5,12 @@ var things = require('../database/things.js'),
     search = require('./search-service.js');
 
 async function searchNotes(userId, params) {
-    var rows = await things.getSummaries(userId, search.buildQuery({ filter: params.query, mode: params.mode }), params.skip, params.limit + 1);
+    var rows = await things.getSummaries(userId, search.buildQuery({ filter: params.query, mode: params.mode }), params.skip, params.limit + 1, params.include_content);
     return {
         notes: rows.slice(0, params.limit).map(function (note) {
-            return { id: note._id.toHexString(), revision: note.revision || 1, summary: note.content, modifiedAt: note.modifiedAt };
+            var result = { id: note._id.toHexString(), revision: note.revision || 1, summary: note.summary, modifiedAt: note.modifiedAt };
+            if (params.include_content) result.content = note.content;
+            return result;
         }),
         hasMore: rows.length > params.limit
     };
@@ -17,6 +19,13 @@ async function searchNotes(userId, params) {
 async function getNote(userId, params) {
     var note = await things.getSnapshot(userId, params.id);
     return { id: note._id.toHexString(), content: note.content, revision: note.revision || 1 };
+}
+
+async function batchGetNotes(userId, params) {
+    var rows = await things.getSnapshots(userId, params.ids);
+    return rows.map(function (note) {
+        return { id: note._id.toHexString(), content: note.content, revision: note.revision || 1 };
+    });
 }
 
 async function listTags(userId, params) {
@@ -88,11 +97,26 @@ async function deleteNote(userId, params) {
     return { id: params.id, deleted: true };
 }
 
+async function batchDeleteNotes(userId, params) {
+    var result = { deleted: [], errors: [] };
+    for (var item of params.items) {
+        try {
+            await deleteNote(userId, item);
+            result.deleted.push(item.id);
+        } catch (error) {
+            result.errors.push({ id: item.id, code: error.message === 'not found' ? 'not_found' : (error.code || error.errorCode || 'tool_failed') });
+        }
+    }
+    return result;
+}
+
 module.exports = {
     searchNotes: searchNotes,
     getNote: getNote,
+    batchGetNotes: batchGetNotes,
     listTags: listTags,
     createNote: createNote,
     updateNote: updateNote,
-    deleteNote: deleteNote
+    deleteNote: deleteNote,
+    batchDeleteNotes: batchDeleteNotes
 };
