@@ -22,6 +22,14 @@ const paths = {
   note: 'M5 3h10l4 4v14H5z M15 3v5h4 M9 12h6 M9 16h6',
   lock: 'M5 10h14v11H5z M8 10V7a4 4 0 0 1 8 0v3 M12 14v3',
   close: 'M6 6l12 12 M6 18L18 6',
+  menu: 'M4 6h16 M4 12h16 M4 18h16',
+  grid: 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z',
+  list: 'M4 5h16v6H4z M4 13h16v6H4z',
+  checkbox: 'M4 4h16v16H4z M8 12l3 3 5-6',
+  image: 'M4 4h16v16H4z M4 16l5-5 4 4 2-2 5 5 M15.5 8.5h.01',
+  bulb: 'M9 18h6 M10 21h4 M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3',
+  label: 'M3 12V4h8l10 10-7 7z M7.5 7.5h.01',
+  check: 'M5 12l5 5 9-10',
 };
 defineProps<{ name: keyof typeof paths }>();
 </script>

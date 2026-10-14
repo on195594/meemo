@@ -3,17 +3,36 @@
     class="note-card"
     :class="{
       'is-sticky': thing.sticky,
-      'is-archived': thing.archived,
-      'is-editing': isEditing,
       'is-selected': selected,
-      'is-clickable': !isEditing && hasOpenDetailListener
+      'is-selecting': selectable,
+      'is-tinted': (thing.color || 'default') !== 'default',
+      'is-clickable': hasOpenDetailListener,
+      'has-menu-open': showColorPicker
     }"
     :style="{ backgroundColor: 'var(--note-color-' + (thing.color || 'default') + ')' }"
+    :tabindex="hasOpenDetailListener ? 0 : undefined"
+    :aria-haspopup="hasOpenDetailListener ? 'dialog' : undefined"
     @click="handleCardClick"
+    @keydown="handleCardKeydown"
   >
+    <!-- Keep-style edge-to-edge image attachments -->
+    <div v-if="imageAttachments.length > 0" class="card-images" :class="{ 'is-multi': imageAttachments.length > 1 }">
+      <a
+        v-for="att in imageAttachments"
+        :key="att.identifier"
+        :href="attachmentUrl(att)"
+        target="_blank"
+        rel="noopener"
+        class="attachment-link card-image-link"
+        @click="handleAttachmentClick($event, att)"
+      >
+        <img :src="attachmentUrl(att)" :alt="att.fileName || ''" loading="lazy" />
+      </a>
+    </div>
+
     <!-- Selection Checkbox Button -->
     <button
-      v-if="canEdit && !isEditing"
+      v-if="canEdit"
       type="button"
       class="card-select-btn"
       :class="{ 'is-selected': selected, 'is-visible': selectable || selected }"
@@ -22,99 +41,71 @@
       :aria-pressed="selected"
       @click.stop="$emit('toggleSelect', thing)"
     >
-      <span class="select-check-icon">{{ selected ? '✓' : '' }}</span>
+      <UiIcon name="check" />
     </button>
 
-    <!-- Card Header / Meta & Action Buttons -->
-    <header class="card-header">
-      <div class="header-meta">
-        <time :datetime="isoDate" :title="fullDate" class="note-time">
-          {{ relativeDate }}
-        </time>
-        <span v-if="thing.sticky" class="badge badge-sticky" title="Pinned to top">
-          <UiIcon name="pin" /> Pinned
-        </span>
-        <span v-if="thing.public" class="badge badge-public" title="Visible on public stream">
-          <UiIcon name="globe" /> Public
-        </span>
-        <span v-if="thing.shared" class="badge badge-shared" title="Directly shared">
-          <UiIcon name="attach" /> Shared
-        </span>
-        <span v-if="thing.archived" class="badge badge-archived" title="Archived note">
-          <UiIcon name="archive" /> Archived
-        </span>
-      </div>
-
-      <button
-        v-if="onRestore && !isEditing"
-        type="button"
-        class="action-btn"
-        title="Restore note"
-        aria-label="Restore note"
-        @click.stop="onRestore(thing)"
-      >
-        <UiIcon name="restore" />
-      </button>
-
-      <button
-        v-if="!isEditing && !selectable && hasOpenDetailListener"
-        type="button"
-        class="action-btn open-note-btn"
-        title="Open note"
-        aria-label="Open note"
-        @click.stop="$emit('openDetail', thing, 'view')"
-      >
-        <UiIcon name="expand" />
-      </button>
-    </header>
+    <!-- Pin Toggle (top-right, Keep style) -->
+    <button
+      v-if="canEdit"
+      type="button"
+      class="action-btn card-pin-btn"
+      :class="{ active: thing.sticky }"
+      :title="thing.sticky ? 'Unpin note' : 'Pin note'"
+      :aria-label="thing.sticky ? 'Unpin note' : 'Pin note'"
+      :aria-pressed="!!thing.sticky"
+      @click.stop="$emit('toggleSticky', thing)"
+    >
+      <UiIcon name="pin" />
+    </button>
 
     <div v-if="actionError" class="action-error" role="alert">
       {{ actionError }}
     </div>
 
-    <!-- Normal View: Markdown Content -->
-    <template v-if="!isEditing">
-      <div ref="cardBodyRef" class="card-body markdown-body" v-html="renderedBody" @click="handleBodyClick"></div>
+    <div ref="cardBodyRef" class="card-body markdown-body" v-html="renderedBody" @click="handleBodyClick"></div>
 
-      <!-- Attachments Display -->
-      <div v-if="thing.attachments && thing.attachments.length > 0" class="card-attachments">
-        <div
-          v-for="att in thing.attachments"
-          :key="att.identifier"
-          class="attachment-item"
-        >
-          <a
-            :href="attachmentUrl(att)"
-            target="_blank"
-            rel="noopener"
-            class="attachment-link"
-            @click="handleAttachmentClick($event, att)"
-          >
-            <span class="attachment-icon">{{ isImageAttachment(att) ? '🖼️' : '📎' }}</span>
-            <span class="attachment-name">{{ att.fileName || att.identifier }}</span>
-            <span v-if="att.size" class="attachment-size">({{ formatFileSize(att.size) }})</span>
-          </a>
-        </div>
-      </div>
+    <!-- Non-image attachments -->
+    <div v-if="fileAttachments.length > 0" class="card-attachments">
+      <a
+        v-for="att in fileAttachments"
+        :key="att.identifier"
+        :href="attachmentUrl(att)"
+        target="_blank"
+        rel="noopener"
+        class="attachment-link"
+        @click="handleAttachmentClick($event, att)"
+      >
+        <UiIcon name="attach" />
+        <span class="attachment-name">{{ att.fileName || att.identifier }}</span>
+        <span v-if="att.size" class="attachment-size">{{ formatFileSize(att.size) }}</span>
+      </a>
+    </div>
 
-      <!-- Tags Footer -->
-      <footer v-if="thing.tags && thing.tags.length > 0" class="card-footer">
-        <div class="tags-container">
-          <button
-            v-for="tag in thing.tags"
-            :key="tag"
-            type="button"
-            class="tag-pill"
-            @click="$emit('tagClick', tag)"
-            :title="`Filter by #${tag}`"
-          >
-            #{{ tag }}
-          </button>
-        </div>
-      </footer>
+    <!-- Status chips -->
+    <footer v-if="thing.public || thing.shared || !canEdit" class="card-footer">
+      <span v-if="thing.public" class="status-chip" title="Visible on your public stream">
+        <UiIcon name="globe" /> Public
+      </span>
+      <span v-if="thing.shared" class="status-chip" title="Shared by link">
+        <UiIcon name="attach" /> Shared
+      </span>
+      <time v-if="!canEdit" :datetime="isoDate" :title="fullDate" class="note-time">{{ relativeDate }}</time>
+    </footer>
 
-      <!-- Action Buttons (when editable and not in edit mode) -->
-      <div v-if="canEdit && !isEditing" class="card-actions" role="group" aria-label="Note actions" @click.stop>
+    <!-- Hover toolbar -->
+    <div v-if="canEdit || onRestore" class="card-actions" role="group" aria-label="Note actions" @click.stop>
+      <button
+        v-if="onRestore"
+        type="button"
+        class="action-btn"
+        title="Restore note"
+        aria-label="Restore note"
+        @click="onRestore(thing)"
+      >
+        <UiIcon name="restore" />
+      </button>
+
+      <template v-if="canEdit">
         <!-- Color Picker Popover -->
         <div ref="colorPickerWrapperRef" class="color-picker-wrapper">
           <button
@@ -143,7 +134,7 @@
               :key="c.key"
               type="button"
               class="color-swatch-btn"
-              :class="{ active: (thing.color || 'default') === c.key }"
+              :class="{ active: (thing.color || 'default') === c.key, 'is-default': c.key === 'default' }"
               :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
               :title="c.name"
               :aria-label="c.name"
@@ -156,20 +147,16 @@
           </div>
         </div>
 
-        <!-- Sticky Toggle -->
         <button
           type="button"
           class="action-btn"
-          :class="{ active: thing.sticky }"
-          :title="thing.sticky ? 'Remove pin' : 'Pin to top'"
-          :aria-label="thing.sticky ? 'Remove pin' : 'Pin to top'"
-          :aria-pressed="!!thing.sticky"
-          @click="$emit('toggleSticky', thing)"
+          :title="thing.archived ? 'Unarchive' : 'Archive'"
+          :aria-label="thing.archived ? 'Unarchive note' : 'Archive note'"
+          @click="$emit('toggleArchive', thing)"
         >
-          <UiIcon name="pin" />
+          <UiIcon :name="thing.archived ? 'restore' : 'archive'" />
         </button>
 
-        <!-- Public Toggle -->
         <button
           type="button"
           class="action-btn"
@@ -182,120 +169,16 @@
           <UiIcon name="globe" />
         </button>
 
-        <!-- Archive / Restore Toggle -->
         <button
-          type="button"
-          class="action-btn"
-          :class="{ active: thing.archived }"
-          :title="thing.archived ? 'Restore note' : 'Archive note'"
-          :aria-label="thing.archived ? 'Restore note' : 'Archive note'"
-          @click="$emit('toggleArchive', thing)"
-        >
-          <UiIcon :name="thing.archived ? 'restore' : 'archive'" />
-        </button>
-
-        <!-- Edit Button -->
-        <button
-          type="button"
-          class="action-btn"
-          title="Edit note"
-          aria-label="Edit note"
-          @click="startEdit"
-        >
-          <UiIcon name="edit" />
-        </button>
-
-        <!-- Delete Button -->
-        <button
-          ref="deleteTriggerRef"
           type="button"
           class="action-btn delete-btn"
           title="Delete note"
           aria-label="Delete note"
-          @click="openDeleteConfirm"
+          @click="$emit('delete', thing)"
         >
           <UiIcon name="trash" />
         </button>
-      </div>
-    </template>
-
-    <!-- Inline Edit Form -->
-    <template v-else>
-      <div class="inline-edit-form">
-        <textarea
-          ref="editTextareaRef"
-          v-model="editContent"
-          class="edit-textarea"
-          aria-label="Edit note content"
-          rows="5"
-          @keydown="handleEditKeyDown"
-          @input="editGeneration++"
-        ></textarea>
-
-        <div v-if="editError" class="edit-error" role="alert">
-          {{ editError }}
-        </div>
-
-        <div class="edit-actions">
-          <div class="edit-hint">
-            <kbd>Ctrl+S</kbd> or <kbd>Ctrl+Enter</kbd> to save, <kbd>Esc</kbd> to cancel
-          </div>
-          <div class="edit-btn-group">
-            <button
-              type="button"
-              class="btn-edit secondary"
-              :disabled="isSaving"
-              @click="cancelEdit"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="btn-edit primary"
-              :disabled="isSaving || !editContent.trim()"
-              @click="saveEdit"
-            >
-              <span v-if="isSaving">Saving...</span>
-              <span v-else>Save</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </template>
-
-    <!-- Delete Confirmation Modal -->
-    <div
-      v-if="showDeleteConfirm"
-      class="delete-modal-overlay"
-      @click.self="closeDeleteConfirm(true)"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="delete-confirm-title"
-    >
-      <div ref="deleteModalCardRef" class="delete-modal-card">
-        <h3 id="delete-confirm-title">Move note to trash?</h3>
-        <p>This note can be restored from Trash.</p>
-        <div class="delete-modal-actions">
-          <button
-            ref="cancelDeleteBtnRef"
-            type="button"
-            class="btn-modal cancel"
-            :disabled="isDeleting"
-            @click="closeDeleteConfirm(true)"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="btn-modal confirm-delete"
-            :disabled="isDeleting"
-            @click="confirmDelete"
-          >
-            <span v-if="isDeleting">Deleting...</span>
-            <span v-else>Move to Trash</span>
-          </button>
-        </div>
-      </div>
+      </template>
     </div>
   </article>
 </template>
@@ -398,7 +281,6 @@ async function selectColor(color: NoteColor, closeAfterSave = true) {
 
 onUnmounted(() => {
   document.removeEventListener('pointerdown', handleOutsideColorPicker);
-  document.removeEventListener('keydown', handleDeleteModalKeydown);
 });
 
 const props = withDefaults(
@@ -409,7 +291,6 @@ const props = withDefaults(
     selected?: boolean;
     highlightQuery?: string;
     onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; error?: string }>;
-    onDeleteConfirm?: (id: string) => Promise<{ success: boolean; error?: string }>;
     onRestore?: (thing: Thing) => void | Promise<void>;
   }>(),
   {
@@ -429,64 +310,9 @@ const emit = defineEmits<{
   (e: 'toggleSelect', thing: Thing): void;
   (e: 'imageClick', images: LightboxImage[], initialIndex: number): void;
   (e: 'update', id: string, updates: Partial<Thing>): void;
-  (e: 'delete', id: string): void;
-  (e: 'openDetail', thing: Thing, mode: 'view' | 'edit'): void;
+  (e: 'delete', thing: Thing): void;
+  (e: 'openDetail', thing: Thing): void;
 }>();
-
-const isEditing = ref(false);
-const editContent = ref('');
-const isSaving = ref(false);
-const editError = ref<string | null>(null);
-let editGeneration = 0;
-const editTextareaRef = ref<HTMLTextAreaElement | null>(null);
-
-const showDeleteConfirm = ref(false);
-const isDeleting = ref(false);
-const deleteTriggerRef = ref<HTMLButtonElement | null>(null);
-const deleteModalCardRef = ref<HTMLDivElement | null>(null);
-const cancelDeleteBtnRef = ref<HTMLButtonElement | null>(null);
-
-function openDeleteConfirm() {
-  showDeleteConfirm.value = true;
-  document.addEventListener('keydown', handleDeleteModalKeydown);
-  nextTick(() => {
-    cancelDeleteBtnRef.value?.focus();
-  });
-}
-
-function closeDeleteConfirm(returnFocus = true) {
-  showDeleteConfirm.value = false;
-  document.removeEventListener('keydown', handleDeleteModalKeydown);
-  if (returnFocus) {
-    nextTick(() => {
-      deleteTriggerRef.value?.focus();
-    });
-  }
-}
-
-function handleDeleteModalKeydown(event: KeyboardEvent) {
-  if (!showDeleteConfirm.value) return;
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    closeDeleteConfirm(true);
-    return;
-  }
-  if (event.key === 'Tab' && deleteModalCardRef.value) {
-    const focusable = deleteModalCardRef.value.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), [tabindex]:not([tabindex="-1"])'
-    );
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-}
 
 const dateValue = computed(() => {
   return props.thing.modifiedAt || props.thing.createdAt || Date.now();
@@ -534,6 +360,9 @@ function attachmentUrl(att: AttachmentDescriptor): string {
   return `/api/files/${props.thing.ownerId || 'me'}/${props.thing._id}/${att.identifier}`;
 }
 
+const imageAttachments = computed(() => (props.thing.attachments || []).filter(isImageAttachment));
+const fileAttachments = computed(() => (props.thing.attachments || []).filter((att) => !isImageAttachment(att)));
+
 function formatFileSize(bytes?: number): string {
   if (!bytes || bytes <= 0) return '';
   if (bytes < 1024) return `${bytes} B`;
@@ -544,27 +373,8 @@ function formatFileSize(bytes?: number): string {
 const instance = getCurrentInstance();
 const hasOpenDetailListener = computed(() => Boolean(instance?.vnode.props?.onOpenDetail));
 
-function startEdit() {
-  if (hasOpenDetailListener.value) {
-    emit('openDetail', props.thing, 'edit');
-    return;
-  }
-  editContent.value = props.thing.content || '';
-  editGeneration = 0;
-  editError.value = null;
-  isEditing.value = true;
-  nextTick(() => {
-    editTextareaRef.value?.focus();
-  });
-}
-
-function cancelEdit() {
-  isEditing.value = false;
-  editError.value = null;
-}
-
 function handleCardClick(event: MouseEvent) {
-  if (isEditing.value || !hasOpenDetailListener.value) return;
+  if (!hasOpenDetailListener.value) return;
   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
 
   const target = event.target as HTMLElement | null;
@@ -572,13 +382,11 @@ function handleCardClick(event: MouseEvent) {
 
   if (
     target.closest('.card-select-btn') ||
+    target.closest('.card-pin-btn') ||
     target.closest('.card-actions') ||
     target.closest('.task-list-item-checkbox') ||
     target.closest('.attachment-link') ||
-    target.closest('.tag-pill') ||
-    target.closest('a') ||
-    target.closest('.delete-modal-overlay') ||
-    target.closest('.inline-edit-form')
+    target.closest('a')
   ) {
     return;
   }
@@ -587,7 +395,15 @@ function handleCardClick(event: MouseEvent) {
     return;
   }
 
-  emit('openDetail', props.thing, 'view');
+  emit('openDetail', props.thing);
+}
+
+function handleCardKeydown(event: KeyboardEvent) {
+  if (event.target !== event.currentTarget || !hasOpenDetailListener.value) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    emit('openDetail', props.thing);
+  }
 }
 
 const cardBodyRef = ref<HTMLElement | null>(null);
@@ -722,203 +538,196 @@ async function handleBodyClick(event: MouseEvent) {
   }
 }
 
-function handleEditKeyDown(e: KeyboardEvent) {
-  if (((e.ctrlKey || e.metaKey) && e.key === 'Enter') || ((e.ctrlKey || e.metaKey) && e.key === 's')) {
-    e.preventDefault();
-    saveEdit();
-  } else if (e.key === 'Escape') {
-    e.preventDefault();
-    cancelEdit();
-  }
-}
-
-async function saveEdit() {
-  const trimmed = editContent.value.trim();
-  if (!trimmed || isSaving.value) return;
-
-  isSaving.value = true;
-  editError.value = null;
-  const saveGeneration = editGeneration;
-
-  if (props.onSaveEdit) {
-    const result = await props.onSaveEdit(props.thing._id, { content: trimmed });
-    if (result.success) {
-      if (saveGeneration === editGeneration) isEditing.value = false;
-    } else {
-      editError.value = result.error || 'Failed to save note';
-    }
-  } else {
-    emit('update', props.thing._id, { content: trimmed });
-    isEditing.value = false;
-  }
-  isSaving.value = false;
-}
-
-async function confirmDelete() {
-  if (isDeleting.value) return;
-  isDeleting.value = true;
-
-  if (props.onDeleteConfirm) {
-    const result = await props.onDeleteConfirm(props.thing._id);
-    if (result.success) {
-      closeDeleteConfirm(false);
-    }
-  } else {
-    emit('delete', props.thing._id);
-    closeDeleteConfirm(false);
-  }
-  isDeleting.value = false;
-}
 </script>
 
 <style scoped>
 .note-card {
-  background-color: var(--note-color-default);
-  color: var(--md-sys-color-on-surface);
-  border: 1px solid var(--note-border-color);
-  border-radius: var(--md-sys-shape-corner-lg);
-  padding: 1rem;
-  box-shadow: var(--md-sys-elevation-1);
-  transition: box-shadow var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
-              border-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
-              background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
   position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--note-border-color);
+  border-radius: var(--keep-card-radius);
+  color: var(--md-sys-color-on-surface);
+  transition: box-shadow var(--md-sys-motion-duration-short) ease,
+              border-color var(--md-sys-motion-duration-short) ease;
 }
 
-.note-card:hover {
-  box-shadow: var(--md-sys-elevation-2);
-  border-color: var(--note-border-hover);
+/* Keep drops the outline on colored notes; the fill is the edge. */
+.note-card.is-tinted {
+  border-color: transparent;
+}
+
+.note-card:hover,
+.note-card:focus-within,
+.note-card.has-menu-open {
+  box-shadow: var(--keep-shadow-hover);
 }
 
 .note-card.is-clickable {
-  cursor: pointer;
+  cursor: default;
 }
 
-.note-card.is-sticky {
-  box-shadow: var(--md-sys-elevation-2);
-  border-color: color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
+.note-card.is-clickable .card-body {
+  max-height: 400px;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 340px, transparent 400px);
 }
 
-.note-card.is-sticky:hover {
-  box-shadow: var(--md-sys-elevation-3);
+.note-card.has-menu-open {
+  z-index: 10;
 }
 
-.note-card.is-archived {
-  opacity: 0.85;
+.note-card:focus-visible {
+  outline: 2px solid var(--md-sys-color-on-surface);
+  outline-offset: 0;
 }
 
-.note-card.is-editing {
-  border-color: var(--md-sys-color-primary);
-  box-shadow: 0 0 0 2px var(--md-sys-color-primary-container);
+.note-card.is-selected {
+  border-color: var(--md-sys-color-on-surface);
+  box-shadow: inset 0 0 0 1px var(--md-sys-color-on-surface);
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 0.75rem;
-  gap: 0.5rem;
+.card-images {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: calc(var(--keep-card-radius) - 1px) calc(var(--keep-card-radius) - 1px) 0 0;
 }
 
-.header-meta {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+.card-images.is-multi {
+  grid-template-columns: 1fr 1fr;
 }
 
-.note-time {
-  font-size: var(--md-sys-typescale-body-small);
-  color: var(--md-sys-color-on-surface-variant);
+.card-image-link,
+.card-image-link img {
+  display: block;
+  width: 100%;
 }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: var(--md-sys-typescale-label-small);
-  font-weight: 500;
-  padding: 0.12rem 0.5rem;
-  border-radius: var(--md-sys-shape-corner-sm);
-  line-height: 1.3;
+.card-image-link img {
+  max-height: 320px;
+  object-fit: cover;
+  cursor: zoom-in;
 }
 
-.badge-sticky {
-  background-color: var(--md-sys-color-tertiary-container);
-  color: var(--md-sys-color-on-tertiary-container);
+.card-body {
+  padding: 12px 16px 0;
+  min-height: 46px;
 }
 
-.badge-public {
-  background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container);
-}
-
-.badge-shared {
-  background-color: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
-}
-
-.badge-archived {
-  background-color: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-.badge .ui-icon {
-  width: 0.75rem;
-  height: 0.75rem;
-}
-
-.card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  margin: 0.75rem -0.5rem -0.5rem;
+.card-body:has(> h1:first-child) {
+  padding-right: 40px;
 }
 
 .action-btn {
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  color: var(--md-sys-color-on-surface-variant);
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--md-sys-shape-corner-full);
-  font-size: 0.95rem;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  position: relative;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
   transition: background-color var(--md-sys-motion-duration-short) ease,
               color var(--md-sys-motion-duration-short) ease;
 }
 
-.action-btn:focus-visible {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: 2px;
-}
-
 .action-btn:hover {
-  background-color: var(--md-sys-state-hover);
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent);
   color: var(--md-sys-color-on-surface);
 }
 
-.action-btn:active {
-  background-color: var(--md-sys-state-pressed);
-}
-
 .action-btn.active {
-  background-color: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
+  color: var(--md-sys-color-on-surface);
 }
 
-.action-btn.delete-btn:hover {
-  background-color: var(--md-sys-color-error-container);
-  color: var(--md-sys-color-on-error-container);
+.action-btn:disabled {
+  cursor: wait;
+}
+
+/* Hover-revealed controls (Keep): pin, select check, toolbar. */
+.card-pin-btn,
+.card-select-btn,
+.card-actions {
+  opacity: 0;
+  transition: opacity var(--md-sys-motion-duration-short) ease;
+}
+
+.note-card:hover :is(.card-pin-btn, .card-select-btn, .card-actions),
+.note-card:focus-within :is(.card-pin-btn, .card-select-btn, .card-actions),
+.note-card.has-menu-open .card-actions,
+.card-select-btn.is-visible,
+.note-card.is-selecting .card-select-btn {
+  opacity: 1;
+}
+
+.card-pin-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+}
+
+.card-pin-btn.active :deep(path) {
+  fill: currentColor;
+}
+
+.card-select-btn {
+  position: absolute;
+  top: -11px;
+  left: -11px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-on-surface);
+  color: var(--md-sys-color-surface);
+  cursor: pointer;
+  box-shadow: var(--keep-shadow-hover);
+}
+
+.card-select-btn .ui-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.5;
+}
+
+.card-select-btn:not(.is-selected) {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 60%, transparent);
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  margin: 4px 0;
+  padding: 0 8px;
+}
+
+.action-btn.delete-btn {
+  margin-left: auto;
+}
+
+.color-btn,
+.action-btn .ui-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.color-btn {
+  width: 34px;
+  height: 34px;
 }
 
 .color-picker-wrapper {
@@ -928,13 +737,13 @@ async function confirmDelete() {
 
 .color-palette-popover {
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   left: 0;
-  margin-bottom: 8px;
+  margin-top: 4px;
   background: var(--md-sys-color-surface-container);
   border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-lg);
-  box-shadow: var(--md-sys-elevation-2);
+  border-radius: var(--keep-card-radius);
+  box-shadow: var(--keep-shadow-raised);
   padding: 8px;
   display: grid;
   grid-template-columns: repeat(4, 40px);
@@ -965,6 +774,10 @@ async function confirmDelete() {
   outline-offset: -4px;
 }
 
+.color-swatch-btn.is-default {
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-outline-variant);
+}
+
 .color-swatch-btn:focus-visible {
   outline: 2px solid var(--md-sys-color-on-surface);
   outline-offset: -2px;
@@ -975,17 +788,18 @@ async function confirmDelete() {
 }
 
 .action-error {
+  margin: 12px 16px 0;
   background-color: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
-  border-radius: var(--md-sys-shape-corner-sm);
+  border-radius: var(--md-sys-shape-corner-xs);
   padding: 0.5rem 0.75rem;
-  margin-bottom: 0.75rem;
-  font-size: var(--md-sys-typescale-body-medium);
+  font-size: var(--md-sys-typescale-body-small);
 }
 
 .card-body {
-  font-size: var(--md-sys-typescale-body-large);
-  line-height: 1.6;
+  font-size: var(--md-sys-typescale-body-medium);
+  line-height: 1.43;
+  letter-spacing: 0.0142em;
   color: var(--md-sys-color-on-surface);
   word-break: break-word;
   overflow-wrap: break-word;
@@ -997,13 +811,17 @@ async function confirmDelete() {
 .card-body :deep(h4),
 .card-body :deep(h5),
 .card-body :deep(h6) {
-  font-size: 1.125rem;
+  font-size: 0.9375rem;
   line-height: 1.4;
-  font-weight: 600;
+  font-weight: 500;
 }
 
+/* Leading H1 is the Keep-style note title */
 .card-body :deep(h1) {
-  font-size: 1.25rem;
+  font-size: var(--md-sys-typescale-title-medium);
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.00625em;
 }
 
 .card-body :deep(h3),
@@ -1014,7 +832,7 @@ async function confirmDelete() {
 }
 
 .card-body :deep(> * + *) {
-  margin-top: 0.625rem;
+  margin-top: 0.5rem;
 }
 
 .card-body :deep(ul),
@@ -1073,12 +891,11 @@ async function confirmDelete() {
 .card-body :deep(pre) {
   max-width: 100%;
   overflow-x: auto;
-  background-color: var(--md-sys-color-surface-container-high);
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 6%, transparent);
   color: var(--md-sys-color-on-surface);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-md);
-  padding: 0.75rem 1rem;
-  margin: 0.75rem 0;
+  border-radius: var(--md-sys-shape-corner-xs);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
 }
 
 .card-body :deep(table) {
@@ -1088,306 +905,102 @@ async function confirmDelete() {
 }
 
 .card-attachments {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--md-sys-color-outline-variant);
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 4px;
+  padding: 8px 16px 0;
 }
 
 .attachment-link {
-  min-width: 0;
-  overflow-wrap: anywhere;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: var(--md-sys-typescale-body-medium);
-  color: var(--md-sys-color-primary);
+  gap: 6px;
+  min-width: 0;
+  color: var(--md-sys-color-on-surface);
+  font-size: var(--md-sys-typescale-body-small);
   text-decoration: none;
 }
 
-.attachment-link:hover {
+.attachment-link:not(.card-image-link):hover .attachment-name {
   text-decoration: underline;
 }
 
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .attachment-size {
+  flex-shrink: 0;
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 0.75rem;
 }
 
 .card-footer {
-  margin-top: 0.75rem;
-  padding-top: 0.5rem;
-}
-
-.tags-container {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 0;
 }
 
-.tag-pill {
-  min-height: 32px;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  background-color: var(--md-sys-color-surface-container-high);
-  border: 1px solid transparent;
-  color: var(--md-sys-color-on-surface-variant);
+.card-footer:last-child {
+  padding-bottom: 12px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
   font-size: var(--md-sys-typescale-label-medium);
-  font-weight: 500;
-  padding: 0.15rem 0.625rem;
-  border-radius: var(--md-sys-shape-corner-sm);
-  cursor: pointer;
-  transition: background-color var(--md-sys-motion-duration-short) ease,
-              color var(--md-sys-motion-duration-short) ease;
-}
-
-.tag-pill:hover {
-  background-color: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
-}
-
-/* Inline Edit Styles */
-.inline-edit-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.edit-textarea {
-  width: 100%;
-  padding: 0.625rem 0.75rem;
-  border: 1px solid var(--md-sys-color-outline);
-  border-radius: var(--md-sys-shape-corner-sm);
-  font-family: inherit;
-  font-size: var(--md-sys-typescale-body-large);
-  line-height: 1.5;
   color: var(--md-sys-color-on-surface);
-  background: transparent;
-  resize: vertical;
-  outline: none;
 }
 
-.edit-textarea:focus {
-  border-color: var(--md-sys-color-primary);
-  box-shadow: inset 0 0 0 1px var(--md-sys-color-primary);
+.status-chip .ui-icon {
+  width: 14px;
+  height: 14px;
 }
 
-.edit-error {
-  background-color: var(--md-sys-color-error-container);
-  color: var(--md-sys-color-on-error-container);
-  border-radius: var(--md-sys-shape-corner-sm);
-  padding: 0.5rem 0.75rem;
-  font-size: var(--md-sys-typescale-body-medium);
-}
-
-.edit-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-}
-
-.edit-hint {
-  font-size: var(--md-sys-typescale-body-small);
+.note-time {
+  font-size: var(--md-sys-typescale-label-medium);
   color: var(--md-sys-color-on-surface-variant);
 }
 
-.edit-hint kbd {
-  background: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-xs);
-  padding: 0.1rem 0.3rem;
-  font-size: var(--md-sys-typescale-label-small);
-  font-family: var(--md-sys-typescale-font-mono);
+.card-body:last-child {
+  padding-bottom: 12px;
 }
 
-.edit-btn-group {
-  display: flex;
-  gap: 0.5rem;
+/* Links read as text; #tags read as Keep label chips. */
+.card-body :deep(a) {
+  color: inherit;
+  text-underline-offset: 2px;
 }
 
-.btn-edit {
-  min-height: 36px;
-  padding: 0.35rem 1rem;
+.card-body :deep(a[href^="#search?#"]) {
+  display: inline-block;
+  padding: 0 6px;
   border-radius: var(--md-sys-shape-corner-full);
-  font-size: var(--md-sys-typescale-label-large);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color var(--md-sys-motion-duration-short) ease,
-              box-shadow var(--md-sys-motion-duration-short) ease;
-}
-
-.btn-edit.primary {
-  background-color: var(--md-sys-color-primary);
-  color: var(--md-sys-color-on-primary);
-  border: 1px solid transparent;
-}
-
-.btn-edit.primary:hover:not(:disabled) {
-  box-shadow: var(--md-sys-elevation-1);
-}
-
-.btn-edit.secondary {
-  background-color: transparent;
-  color: var(--md-sys-color-primary);
-  border: 1px solid var(--md-sys-color-outline);
-}
-
-.btn-edit.secondary:hover:not(:disabled) {
-  background-color: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
-}
-
-/* Delete Modal */
-.delete-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background-color: var(--md-sys-color-scrim);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  padding: 1rem;
-}
-
-.delete-modal-card {
-  background: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-on-surface);
-  border-radius: var(--md-sys-shape-corner-2xl);
-  padding: 1.75rem;
-  max-width: 420px;
-  width: 90%;
-  box-shadow: var(--md-sys-elevation-3);
-  border: 1px solid var(--md-sys-color-outline-variant);
-}
-
-.delete-modal-card h3 {
-  font-size: var(--md-sys-typescale-headline-small);
-  font-weight: 400;
-  color: var(--md-sys-color-on-surface);
-  margin-bottom: 0.75rem;
-}
-
-.delete-modal-card p {
-  font-size: var(--md-sys-typescale-body-medium);
-  color: var(--md-sys-color-on-surface-variant);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  font-size: var(--md-sys-typescale-label-medium);
   line-height: 1.5;
-  margin-bottom: 1.5rem;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
-.delete-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-}
-
-.btn-modal {
-  min-height: 40px;
-  padding: 0.5rem 1.25rem;
-  border-radius: var(--md-sys-shape-corner-full);
-  font-size: var(--md-sys-typescale-label-large);
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-  transition: background-color var(--md-sys-motion-duration-short) ease,
-              box-shadow var(--md-sys-motion-duration-short) ease;
-}
-
-.btn-modal:focus-visible {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: 2px;
-}
-
-.btn-modal.cancel {
-  background-color: transparent;
-  color: var(--md-sys-color-primary);
-}
-
-.btn-modal.cancel:hover:not(:disabled) {
-  background-color: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
-}
-
-.btn-modal.confirm-delete {
-  background-color: var(--md-sys-color-error);
-  color: var(--md-sys-color-on-error);
-}
-
-.btn-modal.confirm-delete:hover:not(:disabled) {
-  box-shadow: var(--md-sys-elevation-1);
-}
-
-/* Card Selection Checkbox */
-.card-select-btn {
-  position: absolute;
-  top: -6px;
-  left: -6px;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--md-sys-shape-corner-full);
-  border: 2px solid var(--md-sys-color-outline);
-  background-color: var(--md-sys-color-surface-container);
-  color: var(--md-sys-color-on-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  opacity: 0;
-  transform: scale(0.85);
-  transition: opacity var(--md-sys-motion-duration-short) ease,
-              transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing),
-              background-color var(--md-sys-motion-duration-short) ease,
-              border-color var(--md-sys-motion-duration-short) ease;
-  z-index: 5;
-  box-shadow: var(--md-sys-elevation-1);
-  padding: 0;
-}
-
-/* Expand touch target to min 44x44px without visual crowding */
-.card-select-btn::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 44px;
-  min-height: 44px;
-  width: 100%;
-  height: 100%;
-}
-
-.note-card:hover .card-select-btn,
-.card-select-btn.is-visible,
-.card-select-btn:focus-visible {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.card-select-btn.is-selected {
-  opacity: 1;
-  transform: scale(1);
-  background-color: var(--md-sys-color-primary);
-  border-color: var(--md-sys-color-primary);
-}
-
-.note-card.is-selected {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: 1px;
-}
-
-.select-check-icon {
-  font-size: 13px;
-  font-weight: bold;
-  line-height: 1;
+.card-body :deep(a[href^="#search?#"]):hover {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 14%, transparent);
 }
 
 /* Task List Interactive Checkbox Styles */
+.card-body :deep(ul.task-list),
 :deep(.task-list) {
   list-style: none;
-  padding-left: 0.25rem;
-  margin: 0.5rem 0;
+  padding-left: 0;
+  margin: 0.25rem 0;
 }
 
 :deep(.task-list-item) {
@@ -1409,7 +1022,7 @@ async function confirmDelete() {
   margin-right: 0.55rem;
   margin-top: 0.2rem;
   cursor: pointer;
-  accent-color: var(--md-sys-color-primary);
+  accent-color: var(--md-sys-color-on-surface-variant);
   flex-shrink: 0;
 }
 
@@ -1426,9 +1039,9 @@ async function confirmDelete() {
 }
 
 @media (hover: none) {
-  .card-select-btn {
-    opacity: 0.85;
-    transform: scale(1);
+  .card-actions,
+  .card-pin-btn {
+    opacity: 1;
   }
 }
 </style>

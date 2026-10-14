@@ -144,8 +144,7 @@ describe('App authenticated note flows', () => {
     expect(localStorage.getItem('meemo_has_session')).toBe('1');
 
     state.rejectNextThings = true;
-    await wrapper.get('.user-profile-btn').trigger('click');
-    const archiveBtn = wrapper.findAll('.dropdown-item').find((w) => w.text().includes('Archived'))!;
+    const archiveBtn = wrapper.findAll('.sidebar-item').find((w) => w.text().includes('Archive'))!;
     await archiveBtn.trigger('click');
     await settle();
 
@@ -178,7 +177,7 @@ describe('App authenticated note flows', () => {
     await settle();
 
     expect(useAuth().user.value?.id).toBe('user-b');
-    expect(wrapper.get('.user-profile-btn').text()).toContain('Bob');
+    expect(wrapper.get('.user-profile-btn').attributes('aria-label')).toContain('Bob');
     expect(wrapper.text()).toContain('B private note');
     expect(wrapper.text()).not.toContain('A private note');
   });
@@ -189,24 +188,24 @@ describe('App authenticated note flows', () => {
     wrapper = rendered.wrapper;
 
     const themeBtn = wrapper.get('.theme-toggle-btn');
-    expect(themeBtn.text()).toContain('Auto');
+    expect(themeBtn.attributes('aria-label')).toContain('Auto');
     expect(document.documentElement.getAttribute('data-theme')).toBeNull();
 
     await themeBtn.trigger('click');
     await settle();
-    expect(themeBtn.text()).toContain('Dark');
+    expect(themeBtn.attributes('aria-label')).toContain('Dark');
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     expect(localStorage.getItem('meemo_theme')).toBe('dark');
 
     await themeBtn.trigger('click');
     await settle();
-    expect(themeBtn.text()).toContain('Light');
+    expect(themeBtn.attributes('aria-label')).toContain('Light');
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
     expect(localStorage.getItem('meemo_theme')).toBe('light');
 
     await themeBtn.trigger('click');
     await settle();
-    expect(themeBtn.text()).toContain('Auto');
+    expect(themeBtn.attributes('aria-label')).toContain('Auto');
     expect(document.documentElement.getAttribute('data-theme')).toBeNull();
     expect(localStorage.getItem('meemo_theme')).toBe('auto');
   });
@@ -226,12 +225,12 @@ describe('App authenticated note flows', () => {
 
     expect(localStorage.getItem('meemo_theme')).toBe('dark');
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-    expect(wrapper.get('.theme-toggle-btn').text()).toContain('Dark');
+    expect(wrapper.get('.theme-toggle-btn').attributes('aria-label')).toContain('Dark');
   });
 
   it.each([
-    { query: { archived: 'true' }, title: 'Archive', empty: 'No archived notes' },
-    { query: { deleted: 'true' }, title: 'Trash', empty: 'Trash is empty' },
+    { query: { archived: 'true' }, title: 'Archive', empty: 'Your archived notes appear here' },
+    { query: { deleted: 'true' }, title: 'Trash', empty: 'No notes in Trash' },
   ])('labels the empty $title view without calling it a failed search', async ({ query, title, empty }) => {
     const { state, fetchMock } = backend();
     state.emptyThings = true;
@@ -242,13 +241,12 @@ describe('App authenticated note flows', () => {
     await settle();
     expect(wrapper.get('.workspace-title').text()).toBe(title);
     expect(wrapper.get('.empty-state h2').text()).toBe(empty);
-    expect(wrapper.get('.clear-filters-btn').text()).toBe('Back to notes');
+    expect(wrapper.get('.sidebar-item.active').text()).toBe(title);
 
     await rendered.router.replace({ query: { ...query, q: 'needle' } });
     await settle();
-    expect(wrapper.get('.empty-state h2').text()).toBe('No matching notes');
-    expect(wrapper.get('[aria-label="Remove search filter"]').element.tagName).toBe('BUTTON');
-    expect(wrapper.get('.clear-filters-btn').text()).toBe('Clear filters');
+    expect(wrapper.get('.empty-state h2').text()).toBe('No matching results');
+    expect(wrapper.get('.clear-all-link').text()).toBe('Clear search');
   });
 
   it('renders notes inside a masonry layout', async () => {

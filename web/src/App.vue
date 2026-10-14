@@ -19,7 +19,18 @@
 
     <!-- Main Navigation Header -->
     <header class="app-nav">
-      <div class="nav-container" :class="{ 'is-wide': settings.wideNavbar }">
+      <div class="nav-container">
+        <button
+          v-if="showSidebar"
+          type="button"
+          class="header-icon-btn menu-btn"
+          aria-label="Main menu"
+          title="Main menu"
+          :aria-expanded="isMobileNav ? mobileNavOpen : sidebarExpanded"
+          @click="toggleSidebar"
+        >
+          <UiIcon name="menu" />
+        </button>
         <router-link to="/" class="brand-logo" title="Meemo Home">
           <img src="/favicon.png" alt="Meemo" class="logo-img" width="28" height="28" />
           <span class="logo-text">{{ settings.title || 'Meemo' }}</span>
@@ -59,19 +70,25 @@
         </div>
 
         <div class="nav-right">
-          <!-- Theme Mode Toggle -->
-          <div class="header-theme-toggle">
-            <button
-              type="button"
-              class="header-toggle-btn theme-toggle-btn"
-              @click="cycleTheme"
-              :title="themeTitle"
-              :aria-label="themeTitle"
-            >
-              <UiIcon :name="themeIcon" />
-              <span class="btn-label">{{ themeLabel }}</span>
-            </button>
-          </div>
+          <button
+            v-if="showSidebar"
+            type="button"
+            class="header-icon-btn view-toggle-btn"
+            :title="viewMode === 'grid' ? 'List view' : 'Grid view'"
+            :aria-label="viewMode === 'grid' ? 'List view' : 'Grid view'"
+            @click="toggleViewMode"
+          >
+            <UiIcon :name="viewMode === 'grid' ? 'list' : 'grid'" />
+          </button>
+          <button
+            type="button"
+            class="header-icon-btn theme-toggle-btn"
+            @click="cycleTheme"
+            :title="themeTitle"
+            :aria-label="themeTitle"
+          >
+            <UiIcon :name="themeIcon" />
+          </button>
 
           <div class="nav-auth">
             <!-- Authenticated User Profile Dropdown -->
@@ -86,8 +103,6 @@
               :aria-expanded="showUserMenu"
             >
               <span class="user-avatar">{{ userAvatarInitial }}</span>
-              <span class="user-name">{{ user.displayName || user.username }}</span>
-              <span class="caret-icon">▼</span>
             </button>
 
             <nav v-if="showUserMenu" id="account-options" class="user-dropdown-menu" aria-label="Account options" @keydown.esc.stop.prevent="closeUserMenu(true)">
@@ -102,20 +117,6 @@
                 @click="openSettings"
               >
                 Settings
-              </button>
-              <button
-                type="button"
-                class="dropdown-item"
-                @click="handleToggleArchiveFromMenu"
-              >
-                {{ isArchived ? 'Active Notes' : 'Archived Notes' }}
-              </button>
-              <button
-                type="button"
-                class="dropdown-item"
-                @click="handleToggleDeletedFromMenu"
-              >
-                {{ isDeleted ? 'Active Notes' : 'Trash' }}
               </button>
               <button
                 type="button"
@@ -191,9 +192,16 @@
     </div>
   </header>
 
-    <!-- Main View Content -->
-    <div id="main-content" tabindex="-1">
-      <router-view />
+    <div class="app-body">
+      <AppSidebar
+        v-if="showSidebar"
+        :expanded="sidebarExpanded"
+        :mobile-open="mobileNavOpen"
+        @close="closeMobileNav"
+      />
+      <div id="main-content" tabindex="-1">
+        <router-view />
+      </div>
     </div>
 
     <!-- Modals -->
@@ -228,12 +236,11 @@ import { useAuth } from './composables/useAuth';
 import { useSettings, type ThemeMode, getStoredTheme, setStoredTheme } from './composables/useSettings';
 import LoginModal from './components/LoginModal.vue';
 import UiIcon from './components/UiIcon.vue';
+import AppSidebar from './components/AppSidebar.vue';
 
 const router = useRouter();
 const route = useRoute();
 
-const isArchived = computed(() => route.query.archived === '1' || route.query.archived === 'true');
-const isDeleted = computed(() => route.query.deleted === '1' || route.query.deleted === 'true');
 
 const headerSearchQuery = ref('');
 const isSearchFocused = ref(false);
@@ -278,25 +285,52 @@ function handleHeaderSearchClear() {
   headerSearchInputRef.value?.focus();
 }
 
-function handleToggleArchiveView() {
-  const query = { ...route.query, archived: isArchived.value ? undefined : 'true', deleted: undefined };
-  if (route.path !== '/') router.push({ path: '/', query });
-  else router.replace({ query });
+function readPref(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
 }
 
-function handleToggleArchiveFromMenu() {
-  handleToggleArchiveView();
-  closeUserMenu();
+function writePref(key: string, value: string) {
+  try { localStorage.setItem(key, value); } catch { /* storage unavailable: keep in-memory only */ }
 }
 
-function handleToggleDeletedFromMenu() {
-  const query = { ...route.query, deleted: isDeleted.value ? undefined : 'true', archived: undefined };
-  if (route.path !== '/') router.push({ path: '/', query });
-  else router.replace({ query });
-  closeUserMenu();
+// shortcut: layout prefs live in this browser only; move into settings if cross-device sync is wanted.
+const sidebarExpanded = ref(readPref('meemo_sidebar_expanded') !== '0');
+const mobileNavOpen = ref(false);
+const viewMode = ref<'grid' | 'list'>(readPref('meemo_view_mode') === 'list' ? 'list' : 'grid');
+provide('viewMode', viewMode);
+
+const mobileQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(max-width: 767px)') : null;
+const isMobileNav = ref(!!mobileQuery?.matches);
+function syncMobileNav() {
+  isMobileNav.value = !!mobileQuery?.matches;
+  if (!isMobileNav.value) mobileNavOpen.value = false;
+}
+
+const showSidebar = computed(() => isAuthenticated.value && route.path === '/');
+
+function toggleSidebar() {
+  if (isMobileNav.value) {
+    mobileNavOpen.value = !mobileNavOpen.value;
+  } else {
+    sidebarExpanded.value = !sidebarExpanded.value;
+    writePref('meemo_sidebar_expanded', sidebarExpanded.value ? '1' : '0');
+  }
+}
+
+function closeMobileNav() {
+  mobileNavOpen.value = false;
+}
+
+function toggleViewMode() {
+  viewMode.value = viewMode.value === 'grid' ? 'list' : 'grid';
+  writePref('meemo_view_mode', viewMode.value);
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && mobileNavOpen.value) {
+    closeMobileNav();
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     headerSearchInputRef.value?.focus();
@@ -334,12 +368,6 @@ watch(() => settings.value.theme, (newTheme) => {
 });
 
 const themeIcon = computed(() => currentTheme.value === 'dark' ? 'moon' : currentTheme.value === 'light' ? 'sun' : 'system');
-
-const themeLabel = computed(() => {
-  if (currentTheme.value === 'dark') return 'Dark';
-  if (currentTheme.value === 'light') return 'Light';
-  return 'Auto';
-});
 
 const themeTitle = computed(() => {
   if (currentTheme.value === 'dark') return 'Theme: Dark (click to switch to Light)';
@@ -449,12 +477,14 @@ onMounted(() => {
   }
   document.addEventListener('click', handleGlobalClick);
   window.addEventListener('keydown', handleGlobalKeydown);
+  mobileQuery?.addEventListener('change', syncMobileNav);
 
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', handleGlobalClick);
   window.removeEventListener('keydown', handleGlobalKeydown);
+  mobileQuery?.removeEventListener('change', syncMobileNav);
   if (headerSearchTimer) clearTimeout(headerSearchTimer);
 });
 </script>
@@ -571,45 +601,66 @@ video {
 }
 
 :root[data-theme="dark"] #meemo-app.has-custom-bg .app-nav {
-  background-color: rgba(18, 19, 22, 0.94);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background-color: rgba(32, 33, 36, 0.94);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) #meemo-app.has-custom-bg .app-nav {
-    background-color: rgba(18, 19, 22, 0.94);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background-color: rgba(32, 33, 36, 0.94);
   }
 }
 
 .nav-container {
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 0.875rem 1.5rem;
+  height: 64px;
+  padding: 8px 16px 8px 12px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 1.25rem;
+  gap: 4px;
 }
 
-.nav-container.is-wide {
-  max-width: 96%;
+.header-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  transition: background-color var(--md-sys-motion-duration-short) ease;
+}
+
+.header-icon-btn .ui-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.header-icon-btn:hover {
+  background-color: var(--md-sys-state-hover);
+  color: var(--md-sys-color-on-surface);
+}
+
+.header-icon-btn:active {
+  background-color: var(--md-sys-state-pressed);
 }
 
 .brand-logo {
-  max-width: 35%;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  text-decoration: none;
-  color: var(--md-sys-color-on-surface);
+  gap: 4px;
+  padding-left: 4px;
+  padding-right: 32px;
   min-width: 0;
   flex-shrink: 0;
+  max-width: 260px;
+  text-decoration: none;
+  color: var(--md-sys-color-on-surface-variant);
   font-size: var(--md-sys-typescale-title-large);
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 .logo-text {
@@ -620,6 +671,9 @@ video {
 
 .logo-img {
   flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  padding: 4px;
 }
 
 .nav-auth {
@@ -628,88 +682,58 @@ video {
 }
 
 .btn-auth {
-  min-height: 44px;
-  padding: 0.5rem 1.25rem;
-  border-radius: var(--md-sys-shape-corner-full);
+  min-height: 40px;
+  padding: 0.5rem 1.5rem;
+  border-radius: var(--md-sys-shape-corner-sm);
   background: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
   font-size: var(--md-sys-typescale-label-large);
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   border: none;
-  transition: box-shadow var(--md-sys-motion-duration-short) ease,
-              transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
+  transition: box-shadow var(--md-sys-motion-duration-short) ease;
 }
 
 .btn-auth:hover {
-  box-shadow: var(--md-sys-elevation-1);
-}
-
-.btn-auth:active {
-  transform: scale(0.97);
-  box-shadow: none;
+  box-shadow: var(--keep-shadow-hover);
 }
 
 .user-menu-wrapper {
   position: relative;
+  margin-left: 8px;
 }
 
 .user-profile-btn {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
   background: none;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  min-height: 44px;
-  max-width: 220px;
-  padding: 0.25rem 0.75rem 0.25rem 0.25rem;
+  border: none;
   border-radius: var(--md-sys-shape-corner-full);
   cursor: pointer;
-  transition: background-color var(--md-sys-motion-duration-short) ease,
-              border-color var(--md-sys-motion-duration-short) ease;
+  transition: background-color var(--md-sys-motion-duration-short) ease;
 }
 
-.user-profile-btn:hover {
-  background-color: var(--md-sys-color-surface-container-high);
-  border-color: var(--md-sys-color-outline);
-}
-
+.user-profile-btn:hover,
 .user-profile-btn[aria-expanded="true"] {
-  background-color: var(--md-sys-color-secondary-container);
-  border-color: transparent;
+  background-color: var(--md-sys-state-hover);
 }
 
 .user-avatar {
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
   background-color: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
   border-radius: var(--md-sys-shape-corner-full);
   font-size: var(--md-sys-typescale-title-small);
-  font-weight: 600;
-}
-
-.user-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--md-sys-typescale-label-large);
   font-weight: 500;
-  color: var(--md-sys-color-on-surface);
-}
-
-.caret-icon {
-  font-size: 0.6rem;
-  color: var(--md-sys-color-on-surface-variant);
-  transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
-}
-
-.user-profile-btn[aria-expanded="true"] .caret-icon {
-  transform: rotate(180deg);
 }
 
 .user-dropdown-menu {
@@ -797,63 +821,72 @@ video {
 .nav-right {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 4px;
   flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 16px;
 }
 
 .header-search-wrapper {
   flex: 1;
   min-width: 0;
-  max-width: 480px;
+  max-width: 720px;
 }
 
 .header-search-box {
   position: relative;
   display: flex;
   align-items: center;
+  height: 48px;
   background-color: var(--md-sys-color-surface-container-high);
-  border: 1px solid transparent;
-  border-radius: var(--md-sys-shape-corner-xl);
-  min-height: 48px;
-  padding: 0.25rem 0.5rem 0.25rem 1rem;
-  transition: background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
-              border-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
-              box-shadow var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
+  border-radius: var(--md-sys-shape-corner-sm);
+  padding: 0 4px 0 4px;
+  transition: background-color var(--md-sys-motion-duration-short) ease,
+              box-shadow var(--md-sys-motion-duration-short) ease;
 }
 
-.header-search-box:hover {
-  box-shadow: var(--md-sys-elevation-1);
-}
-
-/* Focus ring: 1px border + 3px soft primary halo, no layout shift */
 .header-search-box.focused {
   background-color: var(--md-sys-color-surface-container);
-  border-color: var(--md-sys-color-primary);
-  box-shadow: var(--md-sys-elevation-2),
-              0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 22%, transparent);
+  box-shadow: var(--keep-shadow-hover);
+}
+
+:root[data-theme="dark"] .header-search-box.focused {
+  background-color: #f1f3f4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .header-search-box.focused {
+    background-color: #f1f3f4;
+  }
 }
 
 .header-search-icon {
-  font-size: 1rem;
-  margin-right: 0.625rem;
+  width: 48px;
+  height: 24px;
+  padding: 0 12px;
   color: var(--md-sys-color-on-surface-variant);
   flex-shrink: 0;
-  line-height: 1;
-  transition: color var(--md-sys-motion-duration-short) ease;
-}
-
-.header-search-box.focused .header-search-icon {
-  color: var(--md-sys-color-primary);
 }
 
 .header-search-input {
   width: 100%;
   min-width: 0;
+  height: 100%;
   border: none;
   background: transparent;
   font-size: var(--md-sys-typescale-body-large);
   color: var(--md-sys-color-on-surface);
-  padding: 0.2rem 0;
+}
+
+/* Dark mode: the focused box turns light, so its text must turn dark */
+:root[data-theme="dark"] .header-search-box.focused :is(.header-search-input, .header-search-icon, .header-search-clear) {
+  color: #202124;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .header-search-box.focused :is(.header-search-input, .header-search-icon, .header-search-clear) {
+    color: #202124;
+  }
 }
 
 .header-search-input::-webkit-search-cancel-button {
@@ -875,34 +908,31 @@ video {
   width: 40px;
   height: 40px;
   flex-shrink: 0;
-  font-size: 1.25rem;
+  font-size: 1.5rem;
+  line-height: 1;
   cursor: pointer;
   border-radius: var(--md-sys-shape-corner-full);
   transition: background-color var(--md-sys-motion-duration-short) ease;
 }
 
 .header-search-clear:hover {
-  color: var(--md-sys-color-on-surface);
   background: var(--md-sys-state-hover);
 }
 
 .header-search-shortcut {
   flex-shrink: 0;
-  margin: 0 0.5rem;
+  margin: 0 0.75rem;
   pointer-events: none;
   display: inline-flex;
 }
 
-/* Keycap: raised bottom edge reads as a physical key */
 .header-search-shortcut kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 1.5rem;
   height: 1.5rem;
-  background: var(--md-sys-color-surface-container);
   border: 1px solid var(--md-sys-color-outline-variant);
-  border-bottom-width: 2px;
   color: var(--md-sys-color-on-surface-variant);
   font-family: var(--md-sys-typescale-font-mono);
   font-size: var(--md-sys-typescale-label-medium);
@@ -911,100 +941,55 @@ video {
   border-radius: var(--md-sys-shape-corner-xs);
 }
 
-.header-theme-toggle {
+.app-body {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
 }
 
-.header-toggle-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background-color: transparent;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-full);
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0.5rem 0.875rem;
-  font-size: var(--md-sys-typescale-label-large);
-  font-weight: 500;
-  color: var(--md-sys-color-on-surface-variant);
-  cursor: pointer;
-  transition: background-color var(--md-sys-motion-duration-short) ease,
-              border-color var(--md-sys-motion-duration-short) ease,
-              color var(--md-sys-motion-duration-short) ease;
-  white-space: nowrap;
+#main-content {
+  flex: 1;
+  min-width: 0;
 }
 
-.header-toggle-btn:hover {
-  background-color: var(--md-sys-color-surface-container-high);
-  border-color: var(--md-sys-color-outline);
-  color: var(--md-sys-color-on-surface);
+#main-content:focus {
+  outline: none;
 }
 
-.header-toggle-btn:active {
-  background-color: var(--md-sys-color-secondary-container);
-}
-
-.header-toggle-btn .ui-icon {
-  transition: transform var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
-}
-
-.header-toggle-btn:hover .ui-icon {
-  transform: rotate(-15deg);
-}
-
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .nav-container {
-    padding: 0.75rem 1rem;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .nav-container.is-wide {
-    max-width: 100%;
+    padding: 8px;
+    gap: 0;
   }
 
   .brand-logo {
-    max-width: calc(100% - 112px);
+    padding-right: 8px;
   }
 
-  .logo-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .logo-text,
+  .header-search-shortcut,
+  .view-toggle-btn {
+    display: none;
   }
 
   .nav-right {
-    margin-left: auto;
-    gap: 0.5rem;
+    padding-left: 4px;
+    gap: 0;
+  }
+
+  .brand-logo:has(+ .header-search-wrapper) {
+    display: none;
   }
 
   .header-search-wrapper {
-    order: 3;
-    flex-basis: 100%;
-    max-width: none;
+    margin-left: 4px;
   }
 
   .header-search-input {
     font-size: 1rem;
   }
 
-  .header-search-shortcut,
-  .header-toggle-btn .btn-label,
-  .user-name,
-  .caret-icon {
-    display: none;
-  }
-
-  .header-toggle-btn {
-    padding: 0.5rem;
-  }
-
-  .user-profile-btn {
-    width: 44px;
-    padding: 0;
-    justify-content: center;
+  .user-menu-wrapper {
+    margin-left: 0;
   }
 }
 </style>

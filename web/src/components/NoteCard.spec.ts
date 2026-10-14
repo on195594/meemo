@@ -1,5 +1,4 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { nextTick } from 'vue';
 import { describe, expect, it, vi } from 'vitest';
 import type { Thing } from '../api/client';
 import NoteCard from './NoteCard.vue';
@@ -25,19 +24,20 @@ function note(overrides: Partial<Thing> = {}): Thing {
 }
 
 describe('NoteCard behavior', () => {
-  it('provides a native open button without crowding the metadata header', async () => {
+  it('opens the detail dialog from a card click or Enter, but not from toolbar buttons', async () => {
     const thing = note();
     const onOpenDetail = vi.fn();
     const wrapper = mount(NoteCard, { props: { thing, onOpenDetail } });
 
-    expect(wrapper.find('header .card-actions').exists()).toBe(false);
-    expect(wrapper.get('.card-actions').attributes('aria-label')).toBe('Note actions');
-    await wrapper.get('button[aria-label="Open note"]').trigger('click');
-    expect(onOpenDetail).toHaveBeenCalledTimes(1);
-    expect(onOpenDetail).toHaveBeenCalledWith(thing, 'view');
+    expect(wrapper.attributes('tabindex')).toBe('0');
+    await wrapper.get('.card-body').trigger('click');
+    await wrapper.trigger('keydown', { key: 'Enter' });
+    expect(onOpenDetail).toHaveBeenCalledTimes(2);
+    expect(onOpenDetail).toHaveBeenCalledWith(thing);
 
-    await wrapper.setProps({ selectable: true });
-    expect(wrapper.find('button[aria-label="Open note"]').exists()).toBe(false);
+    await wrapper.get('button[aria-label="Archive note"]').trigger('click');
+    await wrapper.get('.card-pin-btn').trigger('click');
+    expect(onOpenDetail).toHaveBeenCalledTimes(2);
   });
 
   it('updates highlighting without reparsing unchanged large notes', async () => {
@@ -73,11 +73,11 @@ describe('NoteCard behavior', () => {
     });
 
     expect(wrapper.classes()).toContain('is-sticky');
-    expect(wrapper.classes()).toContain('is-archived');
+    expect(wrapper.get('.card-pin-btn').attributes('aria-pressed')).toBe('true');
     expect(wrapper.find('.markdown-body strong').text()).toBe('world');
-    expect(wrapper.findAll('.badge')).toHaveLength(4);
+    expect(wrapper.findAll('.status-chip').map((chip) => chip.text())).toEqual(['Public', 'Shared']);
     expect(wrapper.find('.attachment-link').attributes('href')).toBe('/api/files/user-1/note-1/file-1');
-    expect(wrapper.find('.attachment-size').text()).toBe('(2.0 KB)');
+    expect(wrapper.find('.attachment-size').text()).toBe('2.0 KB');
   });
 
   it('uses the note color token for the card background', () => {
@@ -168,10 +168,12 @@ describe('NoteCard behavior', () => {
     wrapper.unmount();
   });
 
-  it('emits the selected tag', async () => {
-    const wrapper = mount(NoteCard, { props: { thing: note() } });
+  it('emits the selected tag from its inline label chip', async () => {
+    const wrapper = mount(NoteCard, {
+      props: { thing: note({ content: 'Hello #work', richContent: 'Hello [#work](#search?#work)' }) },
+    });
 
-    await wrapper.get('.tag-pill').trigger('click');
+    await wrapper.get('a[href="#search?#work"]').trigger('click');
 
     expect(wrapper.emitted('tagClick')).toEqual([['work']]);
   });
@@ -211,9 +213,9 @@ describe('NoteCard behavior', () => {
   });
 
   it.each([
-    ['Pin to top', 'toggleSticky'],
+    ['Pin note', 'toggleSticky'],
     ['Make public', 'togglePublic'],
-    ['Archive note', 'toggleArchive'],
+    ['Archive', 'toggleArchive'],
   ] as const)('emits %s action with the note', async (title, event) => {
     const thing = note();
     const wrapper = mount(NoteCard, { props: { thing } });
@@ -223,62 +225,14 @@ describe('NoteCard behavior', () => {
     expect(wrapper.emitted(event)).toEqual([[thing]]);
   });
 
-  it('saves trimmed edits and closes the editor', async () => {
-    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
-    const wrapper = mount(NoteCard, { props: { thing: note(), onSaveEdit } });
-    await wrapper.get('[title="Edit note"]').trigger('click');
-
-    await wrapper.get('.edit-textarea').setValue('  Updated note  ');
-    await wrapper.get('.btn-edit.primary').trigger('click');
-    await flushPromises();
-
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Updated note' });
-    expect(wrapper.find('.inline-edit-form').exists()).toBe(false);
-  });
-
-  it('keeps a failed edit open and shows the error', async () => {
-    const onSaveEdit = vi.fn().mockResolvedValue({ success: false, error: 'Save failed' });
-    const wrapper = mount(NoteCard, { props: { thing: note(), onSaveEdit } });
-    await wrapper.get('[title="Edit note"]').trigger('click');
-
-    await wrapper.get('.edit-textarea').setValue('Updated note');
-    await wrapper.get('.btn-edit.primary').trigger('click');
-    await flushPromises();
-
-    expect(wrapper.get('[role="alert"]').text()).toBe('Save failed');
-    expect(wrapper.find('.inline-edit-form').exists()).toBe(true);
-  });
-
-  it('confirms deletion through the provided callback', async () => {
-    const onDeleteConfirm = vi.fn().mockResolvedValue({ success: true });
-    const wrapper = mount(NoteCard, { props: { thing: note(), onDeleteConfirm } });
+  it('emits delete immediately so the stream can offer Undo', async () => {
+    const thing = note();
+    const wrapper = mount(NoteCard, { props: { thing } });
 
     await wrapper.get('[title="Delete note"]').trigger('click');
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
-    await wrapper.get('.confirm-delete').trigger('click');
-    await flushPromises();
 
-    expect(onDeleteConfirm).toHaveBeenCalledWith('note-1');
+    expect(wrapper.emitted('delete')).toEqual([[thing]]);
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
-  });
-
-  it('closes delete confirmation on Escape and traps keyboard navigation', async () => {
-    const wrapper = mount(NoteCard, { attachTo: document.body, props: { thing: note() } });
-    const deleteBtn = wrapper.get('button[aria-label="Delete note"]');
-    await deleteBtn.trigger('click');
-
-    const dialog = wrapper.get('.delete-modal-overlay');
-    expect(dialog.attributes('role')).toBe('dialog');
-    expect(dialog.attributes('aria-labelledby')).toBe('delete-confirm-title');
-
-    const cancelBtn = wrapper.get('.delete-modal-actions .cancel');
-    expect(document.activeElement).toBe(cancelBtn.element);
-
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    await nextTick();
-    expect(wrapper.find('.delete-modal-overlay').exists()).toBe(false);
-    expect(document.activeElement).toBe(deleteBtn.element);
-    wrapper.unmount();
   });
 
   it('hides mutating actions when editing is disabled', () => {
@@ -287,7 +241,7 @@ describe('NoteCard behavior', () => {
     expect(wrapper.find('.card-actions').exists()).toBe(false);
   });
 
-  it('toggles interactive checklist checkbox on click without entering edit mode', async () => {
+  it('toggles interactive checklist checkbox on click without opening the note', async () => {
     const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
     const wrapper = mount(NoteCard, {
       props: {
@@ -305,7 +259,7 @@ describe('NoteCard behavior', () => {
     expect(onSaveEdit).toHaveBeenCalledWith('note-1', {
       content: '- [x] Buy groceries\n- [x] Read book',
     });
-    expect(wrapper.find('.inline-edit-form').exists()).toBe(false);
+    expect(wrapper.emitted('openDetail')).toBeUndefined();
   });
 
   it('emits imageClick when clicking an image in markdown or image attachment if listener provided', async () => {

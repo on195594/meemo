@@ -43,7 +43,7 @@ describe('Read-only note routes', () => {
     expect(wrapper.find('[aria-label="Note actions"]').exists()).toBe(false);
     expect(wrapper.find('textarea').exists()).toBe(false);
     if (name === 'public-stream') {
-      await card.find('.open-note-btn').trigger('click');
+      await card.trigger('click');
       await flushPromises();
       const detail = wrapper.findComponent(Detail);
       expect(detail.props('open')).toBe(true);

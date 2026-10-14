@@ -45,77 +45,64 @@ describe('NoteDetailModal', () => {
     wrapper.unmount();
   });
 
-  it('renders note details, markdown, attachments, tags, and badges in view mode', () => {
+  it('opens straight into Keep-style editing with attachments and status', () => {
     const wrapper = mount(NoteDetailModal, {
       props: {
         open: true,
         thing: note({ sticky: true, public: true }),
-        initialMode: 'view',
       },
     });
 
     const overlay = document.querySelector('.note-modal-overlay');
-    expect(overlay).not.toBeNull();
-    expect(overlay?.getAttribute('aria-label')).toBe('Note details');
-
-    // Badges & color
-    expect(document.querySelector('.badge-sticky')?.textContent).toContain('Pinned');
-    expect(document.querySelector('.badge-public')?.textContent).toContain('Public');
+    expect(overlay?.getAttribute('aria-label')).toBe('Edit note');
     const card = document.querySelector('.note-modal-card') as HTMLElement;
     expect(card.style.backgroundColor).toContain('var(--note-color-mint)');
 
-    // Markdown rendered body
-    const strong = document.querySelector('.markdown-body strong');
-    expect(strong?.textContent).toBe('world');
+    expect((document.querySelector('.modal-title-input') as HTMLInputElement).value).toBe('');
+    expect((document.querySelector('.modal-textarea') as HTMLTextAreaElement).value).toContain('Hello **world**');
+    expect(document.querySelector('.mode-toggle-group')).toBeNull();
+    expect(document.querySelector('.pin-btn')?.getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelector('.status-chip')?.textContent).toContain('Public');
 
-    // Tags
-    const tags = document.querySelectorAll('.tag-pill');
-    expect(tags).toHaveLength(2);
-    expect(tags[0].textContent).toContain('#work');
-
-    // Attachments
-    const attachments = document.querySelectorAll('.attachment-card');
-    expect(attachments).toHaveLength(2);
+    expect(document.querySelectorAll('.modal-images img')).toHaveLength(1);
+    expect(document.querySelectorAll('.attachment-anchor')).toHaveLength(1);
     expect(document.querySelector('.att-name')?.textContent).toBe('report.pdf');
 
-    // Body scroll locked
     expect(document.body.style.overflow).toBe('hidden');
-
     wrapper.unmount();
     expect(document.body.style.overflow).toBe('');
   });
 
-  it('switches between view mode and edit mode', async () => {
+  it('edits the leading heading as a separate title and saves it back as markdown', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
     const wrapper = mount(NoteDetailModal, {
-      props: {
-        open: true,
-        thing: note(),
-        initialMode: 'view',
-      },
+      props: { open: true, thing: note({ content: '# Trip\n\nDay 1' }), onSaveEdit },
     });
 
-    expect(document.querySelector('.modal-textarea')).toBeNull();
+    const title = document.querySelector('.modal-title-input') as HTMLInputElement;
+    expect(title.value).toBe('Trip');
+    expect((document.querySelector('.modal-textarea') as HTMLTextAreaElement).value).toBe('Day 1');
 
-    // Click edit mode button
-    const editBtn = document.querySelector('[title="Edit markdown"]') as HTMLButtonElement;
-    expect(editBtn).not.toBeNull();
-    editBtn.click();
+    title.value = 'Trip 2';
+    title.dispatchEvent(new Event('input'));
+    (document.querySelector('.done-btn') as HTMLButtonElement).click();
     await flushPromises();
 
-    // Now textarea should appear
-    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
-    expect(textarea).not.toBeNull();
-    expect(textarea.value).toContain('Hello **world**');
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: '# Trip 2\n\nDay 1' });
+    wrapper.unmount();
+  });
 
-    // Click preview mode button to switch back
-    const previewBtn = document.querySelector('[title="View formatted markdown"]') as HTMLButtonElement;
-    expect(previewBtn).not.toBeNull();
-    previewBtn.click();
+  it('does not rewrite a note whose title spacing merely differs from the canonical form', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteDetailModal, {
+      props: { open: true, thing: note({ content: '# Trip\nDay 1' }), onSaveEdit },
+    });
+
+    (document.querySelector('.done-btn') as HTMLButtonElement).click();
     await flushPromises();
 
-    expect(document.querySelector('.modal-textarea')).toBeNull();
-    expect(document.querySelector('.modal-markdown-body')).not.toBeNull();
-
+    expect(onSaveEdit).not.toHaveBeenCalled();
+    expect(wrapper.emitted('close')).toHaveLength(1);
     wrapper.unmount();
   });
 
@@ -125,7 +112,6 @@ describe('NoteDetailModal', () => {
       props: {
         open: true,
         thing: note(),
-        initialMode: 'edit',
         onSaveEdit,
       },
     });
@@ -155,7 +141,6 @@ describe('NoteDetailModal', () => {
       props: {
         open: true,
         thing: note(),
-        initialMode: 'edit',
         onSaveEdit,
       },
     });
@@ -182,7 +167,6 @@ describe('NoteDetailModal', () => {
       props: {
         open: true,
         thing: note(),
-        initialMode: 'view',
         onSaveEdit,
       },
     });
@@ -204,7 +188,6 @@ describe('NoteDetailModal', () => {
       props: {
         open: true,
         thing: note(),
-        initialMode: 'edit',
         onSaveEdit,
       },
     });
@@ -230,7 +213,6 @@ describe('NoteDetailModal', () => {
       props: {
         open: true,
         thing: note(),
-        initialMode: 'edit',
         onSaveEdit,
       },
     });
@@ -255,7 +237,6 @@ describe('NoteDetailModal', () => {
       props: {
         open: true,
         thing: note(),
-        initialMode: 'edit',
         onSaveEdit,
       },
     });
@@ -280,7 +261,6 @@ describe('NoteDetailModal', () => {
       props: {
         open: true,
         thing: note(),
-        initialMode: 'edit',
         onSaveEdit,
       },
     });
@@ -324,13 +304,13 @@ describe('NoteDetailModal', () => {
     expect(onToggleSticky).toHaveBeenCalledWith(current);
 
     // Public toggle in footer
-    const publicBtn = document.querySelector('[title="Make note public"]') as HTMLButtonElement;
+    const publicBtn = document.querySelector('[aria-label="Make note public"]') as HTMLButtonElement;
     expect(publicBtn).not.toBeNull();
     publicBtn.click();
     expect(onTogglePublic).toHaveBeenCalledWith(current);
 
     // Archive toggle in footer
-    const archiveBtn = document.querySelector('[title="Archive note"]') as HTMLButtonElement;
+    const archiveBtn = document.querySelector('[aria-label="Archive note"]') as HTMLButtonElement;
     expect(archiveBtn).not.toBeNull();
     archiveBtn.click();
     expect(onToggleArchive).toHaveBeenCalledWith(current);
@@ -411,34 +391,20 @@ describe('NoteDetailModal', () => {
     wrapper.unmount();
   });
 
-  it('handles delete flow with confirmation modal', async () => {
-    const onDelete = vi.fn().mockResolvedValue(true);
+  it('emits delete without a confirmation dialog', async () => {
+    const current = note();
     const wrapper = mount(NoteDetailModal, {
       props: {
         open: true,
-        thing: note(),
-        onDelete,
+        thing: current,
       },
     });
 
-    // Click trash button
-    const deleteBtn = document.querySelector('.delete-btn') as HTMLButtonElement;
-    expect(deleteBtn).not.toBeNull();
-    deleteBtn.click();
+    (document.querySelector('.delete-btn') as HTMLButtonElement).click();
     await flushPromises();
 
-    // Confirm dialog overlay should appear
-    const confirmOverlay = document.querySelector('.delete-confirm-overlay');
-    expect(confirmOverlay).not.toBeNull();
-
-    // Click confirm
-    const confirmBtn = document.querySelector('.btn-delete') as HTMLButtonElement;
-    expect(confirmBtn).not.toBeNull();
-    confirmBtn.click();
-    await flushPromises();
-
-    expect(onDelete).toHaveBeenCalledWith('note-1');
-    expect(wrapper.emitted('close')).toHaveLength(1);
+    expect(document.querySelector('.delete-confirm-overlay')).toBeNull();
+    expect(wrapper.emitted('delete')).toEqual([[current]]);
 
     wrapper.unmount();
   });
@@ -452,8 +418,9 @@ describe('NoteDetailModal', () => {
       },
     });
 
-    // No edit toggle button
-    expect(document.querySelector('.mode-toggle-group')).toBeNull();
+    // Rendered markdown instead of an editor
+    expect(document.querySelector('.modal-textarea')).toBeNull();
+    expect(document.querySelector('.markdown-body strong')?.textContent).toBe('world');
     // No pin, color, public, archive, delete buttons
     expect(document.querySelector('.pin-btn')).toBeNull();
     expect(document.querySelector('.color-btn')).toBeNull();

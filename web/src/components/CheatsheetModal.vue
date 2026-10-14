@@ -22,15 +22,15 @@
             <tbody>
               <tr>
                 <td><kbd>Ctrl</kbd> + <kbd>Enter</kbd> / <kbd>Cmd</kbd> + <kbd>Enter</kbd></td>
-                <td>Save note in composer or during inline editing</td>
+                <td>Save the new note, or save the open note without closing it</td>
               </tr>
               <tr>
                 <td><kbd>Ctrl</kbd> + <kbd>S</kbd> / <kbd>Cmd</kbd> + <kbd>S</kbd></td>
-                <td>Save changes during inline note edit</td>
+                <td>Save the open note without closing it</td>
               </tr>
               <tr>
                 <td><kbd>Esc</kbd></td>
-                <td>Cancel editing or dismiss active modal</td>
+                <td>Save and close the composer or note (empty drafts are discarded)</td>
               </tr>
             </tbody>
           </table>

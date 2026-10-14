@@ -293,6 +293,30 @@ export function useNotes() {
     }));
   }
 
+  // Undo support: notes that left the current view are put back before reversing the change.
+  function reinsertNote(thing: Thing) {
+    if (thing.archived !== isArchived.value || isDeleted.value) return;
+    if (things.value.some((t) => t._id === thing._id)) return;
+    things.value = [...things.value, thing].sort((a, b) => {
+      if (a.sticky !== b.sticky) return a.sticky ? -1 : 1;
+      return (b.modifiedAt || 0) - (a.modifiedAt || 0);
+    });
+  }
+
+  async function undoDelete(thing: Thing): Promise<NoteMutationResult> {
+    const generation = userGeneration;
+    try {
+      // Soft delete bumps the revision by exactly one (database/things.js del).
+      const res = await api.things.restore(thing._id, thing.revision + 1);
+      if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+      reinsertNote(res.thing);
+      if (thing.sticky && !res.thing.sticky) return toggleSticky(res.thing);
+      return { success: true, thing: res.thing };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to undo', code: err.code };
+    }
+  }
+
   async function toggleSticky(thing: Thing) {
     return updateNote(thing._id, { sticky: !thing.sticky });
   }
@@ -312,17 +336,20 @@ export function useNotes() {
     success: boolean;
     updatedCount: number;
     successfulIds: string[];
+    updatedThings: Thing[];
     failedIds: string[];
     errors?: Record<string, string>;
   }> {
     const errors: Record<string, string> = {};
     const successfulIds: string[] = [];
+    const updatedThings: Thing[] = [];
     const failedIds: string[] = [];
     await Promise.all(
       ids.map(async (id) => {
         const res = await updateNote(id, updates);
         if (res.success) {
           successfulIds.push(id);
+          if (res.thing) updatedThings.push(res.thing);
         } else {
           failedIds.push(id);
           if (res.error) errors[id] = res.error;
@@ -333,6 +360,7 @@ export function useNotes() {
       success: failedIds.length === 0,
       updatedCount: successfulIds.length,
       successfulIds,
+      updatedThings,
       failedIds,
       errors: Object.keys(errors).length > 0 ? errors : undefined,
     };
@@ -402,5 +430,7 @@ export function useNotes() {
     toggleSticky,
     togglePublic,
     toggleArchive,
+    reinsertNote,
+    undoDelete,
   };
 }

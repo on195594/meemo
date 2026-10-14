@@ -30,33 +30,10 @@
 
     <!-- Authenticated Notes Workspace -->
     <template v-else>
-      <!-- Active Filters Summary Banner -->
-      <div v-if="hasActiveFilter" class="active-filter-bar">
-        <span class="filter-label">Filter:</span>
-        <span v-if="selectedTag" class="filter-chip">
-          Tag: #{{ selectedTag }}
-          <button type="button" class="chip-remove" aria-label="Remove tag filter" @click="clearTagFilter">&times;</button>
-        </span>
-        <span v-if="searchQuery" class="filter-chip">
-          Query: "{{ searchQuery }}"
-          <button type="button" class="chip-remove" aria-label="Remove search filter" @click="handleQueryRemove">&times;</button>
-        </span>
-        <span v-if="isArchived" class="filter-chip archive-chip">
-          Archived View
-          <button type="button" class="chip-remove" aria-label="Leave archived notes" @click="handleViewSwitch(false)">&times;</button>
-        </span>
-        <span v-if="isDeleted" class="filter-chip archive-chip">
-          Trash
-          <button type="button" class="chip-remove" aria-label="Leave trash" @click="handleDeletedView(false)">&times;</button>
-        </span>
-        <button type="button" class="clear-all-link" @click="clearRouteFilters">
-          Reset all filters
-        </button>
-      </div>
-
-      <!-- Notification Toast -->
-      <div v-if="toastMessage" class="toast-banner" :class="toastType" role="status">
-        {{ toastMessage }}
+      <!-- Search Results Banner -->
+      <div v-if="searchQuery" class="active-filter-bar">
+        <span class="filter-label">Results for “{{ searchQuery }}”</span>
+        <button type="button" class="clear-all-link" @click="handleQueryRemove">Clear search</button>
       </div>
 
       <!-- Error Notice -->
@@ -65,13 +42,12 @@
       </div>
 
       <!-- Main Cards Stream -->
-      <main class="stream-column">
-        <h1 class="workspace-title">{{ isDeleted ? 'Trash' : (isArchived ? 'Archive' : 'Notes') }}</h1>
+      <main ref="streamRef" class="stream-column">
+        <h1 class="workspace-title" :class="{ 'is-named-view': viewTitle !== 'Notes' }">{{ viewTitle }}</h1>
         <!-- Note Composer (visible in active notes view) -->
         <NoteComposer
           v-if="!isArchived && !isDeleted"
           :on-save="createNote"
-          @created="onNoteCreated"
         />
 
         <!-- Top Search/Filter Loading Bar when updating existing notes -->
@@ -85,13 +61,14 @@
         </div>
 
         <!-- Notes Card List -->
-        <div v-else-if="things.length > 0" class="notes-card-list" :class="{ 'is-refreshing': isLoading }">
+        <div v-else-if="things.length > 0" class="notes-card-list" :class="{ 'is-refreshing': isLoading }" :style="{ '--grid-width': gridWidth }">
           <!-- Pinned Section -->
           <section v-if="pinnedThings.length > 0" class="notes-section" aria-labelledby="pinned-heading">
             <h2 id="pinned-heading" class="section-label">Pinned</h2>
-            <div class="m3-notes-masonry">
+            <div class="m3-notes-masonry" :class="{ 'is-list': viewMode === 'list' }">
+              <div v-for="(column, ci) in distributeColumns(pinnedThings, columnCount)" :key="'pinned-' + ci" class="masonry-column">
               <NoteCard
-                v-for="thing in pinnedThings"
+                v-for="thing in column"
                 :key="thing._id"
                 :thing="thing"
                 :can-edit="!isDeleted"
@@ -99,9 +76,9 @@
                 :selected="selectedIds.has(thing._id)"
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
-                :on-delete-confirm="handleDeleteNote"
                 :on-restore="isDeleted ? handleRestoreNote : undefined"
                 @open-detail="openNoteModal"
+                @delete="handleDeleteNote"
                 @toggle-sticky="handleToggleSticky"
                 @toggle-public="handleTogglePublic"
                 @toggle-archive="handleToggleArchive"
@@ -110,15 +87,17 @@
                 @tag-click="handleTagClick"
                 @wikilink-click="handleWikilinkClick"
               />
+              </div>
             </div>
           </section>
 
           <!-- Others Section -->
           <section v-if="otherThings.length > 0" class="notes-section" :aria-labelledby="pinnedThings.length > 0 ? 'others-heading' : undefined">
-            <h2 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">Other notes</h2>
-            <div class="m3-notes-masonry">
+            <h2 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">Others</h2>
+            <div class="m3-notes-masonry" :class="{ 'is-list': viewMode === 'list' }">
+              <div v-for="(column, ci) in distributeColumns(otherThings, columnCount)" :key="'other-' + ci" class="masonry-column">
               <NoteCard
-                v-for="thing in otherThings"
+                v-for="thing in column"
                 :key="thing._id"
                 :thing="thing"
                 :can-edit="!isDeleted"
@@ -126,9 +105,9 @@
                 :selected="selectedIds.has(thing._id)"
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
-                :on-delete-confirm="handleDeleteNote"
                 :on-restore="isDeleted ? handleRestoreNote : undefined"
                 @open-detail="openNoteModal"
+                @delete="handleDeleteNote"
                 @toggle-sticky="handleToggleSticky"
                 @toggle-public="handleTogglePublic"
                 @toggle-archive="handleToggleArchive"
@@ -137,6 +116,7 @@
                 @tag-click="handleTagClick"
                 @wikilink-click="handleWikilinkClick"
               />
+              </div>
             </div>
           </section>
 
@@ -152,31 +132,17 @@
               <span v-if="isLoadingMore">Loading more notes...</span>
               <span v-else>Load more notes</span>
             </button>
-            <p v-else class="end-marker">
-              You're all caught up
-            </p>
           </div>
         </div>
 
         <!-- Empty Results State -->
         <div v-else class="empty-state">
-          <div class="empty-icon"><UiIcon :name="isDeleted ? 'trash' : (isArchived ? 'archive' : 'note')" /></div>
-          <h2 v-if="activeFilter">No matching notes</h2>
-          <h2 v-else-if="isDeleted">Trash is empty</h2>
-          <h2 v-else-if="isArchived">No archived notes</h2>
-          <h2 v-else>Your next idea starts here</h2>
-          <p v-if="activeFilter">Try a different search or clear your filters.</p>
-          <p v-else-if="isDeleted">Deleted notes can be restored from here.</p>
-          <p v-else-if="isArchived">Notes you archive will appear here.</p>
-          <p v-else>Write your first note in the box above. Markdown and #tags are welcome.</p>
-          <button
-            v-if="hasActiveFilter"
-            type="button"
-            class="clear-filters-btn"
-            @click="clearRouteFilters"
-          >
-            {{ activeFilter ? 'Clear filters' : 'Back to notes' }}
-          </button>
+          <div class="empty-icon"><UiIcon :name="isDeleted ? 'trash' : (isArchived ? 'archive' : (selectedTag ? 'label' : (activeFilter ? 'search' : 'bulb')))" /></div>
+          <h2 v-if="activeFilter && !selectedTag">No matching results</h2>
+          <h2 v-else-if="isDeleted">No notes in Trash</h2>
+          <h2 v-else-if="isArchived">Your archived notes appear here</h2>
+          <h2 v-else-if="selectedTag">No notes with this label yet</h2>
+          <h2 v-else>Notes you add appear here</h2>
         </div>
       </main>
 
@@ -271,54 +237,18 @@
 
             <!-- Delete Button -->
             <button
-              ref="batchDeleteTriggerRef"
               type="button"
               class="batch-btn batch-delete-btn"
               title="Delete selected notes"
               aria-label="Delete selected notes"
               :disabled="isBatchMutating"
-              @click="openBatchDeleteConfirm"
+              @click="handleBatchDelete"
             >
               <UiIcon name="trash" />
             </button>
           </div>
         </aside>
       </Transition>
-
-      <!-- Batch Delete Confirmation Modal -->
-      <div
-        v-if="showBatchDeleteConfirm"
-        class="batch-delete-modal-overlay"
-        @click.self="closeBatchDeleteConfirm(true)"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="batch-delete-title"
-      >
-        <div ref="batchDeleteModalCardRef" class="batch-delete-card">
-          <h3 id="batch-delete-title">Delete {{ selectedIds.size }} Notes?</h3>
-          <p>These notes can be restored from Trash.</p>
-          <div class="batch-delete-actions">
-            <button
-              ref="cancelBatchDeleteBtnRef"
-              type="button"
-              class="btn-modal cancel"
-              :disabled="isBatchDeleting"
-              @click="closeBatchDeleteConfirm(true)"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="btn-modal confirm-delete"
-              :disabled="isBatchDeleting"
-              @click="handleBatchDelete"
-            >
-              <span v-if="isBatchDeleting">Deleting...</span>
-              <span v-else>Move All to Trash</span>
-            </button>
-          </div>
-        </div>
-      </div>
 
       <!-- Fullscreen Image Lightbox -->
       <ImageLightbox
@@ -333,11 +263,9 @@
         :open="isNoteModalOpen"
         :thing="activeModalNote"
         :can-edit="!isDeleted"
-        :initial-mode="modalInitialMode"
-        :highlight-query="activeFilter || ''"
         :on-save-edit="updateNote"
-        :on-delete-confirm="handleDeleteNote"
         @close="closeNoteModal"
+        @delete="handleModalDelete"
         @toggle-sticky="handleToggleSticky"
         @toggle-public="handleTogglePublic"
         @toggle-archive="handleToggleArchive"
@@ -345,12 +273,23 @@
         @tag-click="handleTagClick"
         @wikilink-click="handleWikilinkClick"
       />
+
+      <!-- Keep-style snackbar with optional Undo -->
+      <Transition name="snackbar">
+        <div v-if="snackbar" class="snackbar" role="status" aria-live="polite">
+          <span class="snackbar-text">{{ snackbar.message }}</span>
+          <button v-if="snackbar.undo" type="button" class="snackbar-action" @click="runUndo">Undo</button>
+          <button type="button" class="snackbar-close" aria-label="Dismiss" @click="dismissSnackbar">
+            <UiIcon name="close" />
+          </button>
+        </div>
+      </Transition>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, inject, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, inject, nextTick, type Ref } from 'vue';
 import UiIcon from '../components/UiIcon.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
@@ -362,6 +301,7 @@ import NoteComposer from '../components/NoteComposer.vue';
 import NoteCard from '../components/NoteCard.vue';
 import NoteDetailModal from '../components/NoteDetailModal.vue';
 import ImageLightbox, { type LightboxImage } from '../components/ImageLightbox.vue';
+import { distributeColumns, columnCountFor } from '../utils/masonry';
 
 const { isAuthenticated, isLoading: authLoading, isFirstUser, user } = useAuth();
 const { settings } = useSettings();
@@ -380,7 +320,6 @@ const {
   activeFilter,
   isArchived,
   isDeleted,
-  hasActiveFilter,
   fetchNotes,
   fetchMore,
   setFilters,
@@ -393,7 +332,33 @@ const {
   toggleSticky,
   togglePublic,
   toggleArchive,
+  reinsertNote,
+  undoDelete,
 } = useNotes();
+
+const viewMode = inject<Ref<'grid' | 'list'>>('viewMode', ref('grid'));
+const viewTitle = computed(() => {
+  if (isDeleted.value) return 'Trash';
+  if (isArchived.value) return 'Archive';
+  if (selectedTag.value) return selectedTag.value;
+  return 'Notes';
+});
+
+const gridWidth = computed(() => {
+  if (viewMode.value === 'list') return '600px';
+  if (streamWidth.value < 600) return '100%';
+  return `${columnCount.value * 240 + (columnCount.value - 1) * 16}px`;
+});
+
+// Column count follows the stream width; Keep uses 240px cards (160px on phones).
+const streamRef = ref<HTMLElement | null>(null);
+const streamWidth = ref(0);
+let resizeObserver: ResizeObserver | null = null;
+const columnCount = computed(() => {
+  if (viewMode.value === 'list') return 1;
+  const phone = streamWidth.value < 600;
+  return columnCountFor(streamWidth.value, phone ? 160 : 240, phone ? 8 : 16);
+});
 
 const categorizedThings = computed(() => {
   const pinned: Thing[] = [];
@@ -412,17 +377,42 @@ const otherThings = computed(() => categorizedThings.value.other);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
 
-const toastMessage = ref<string | null>(null);
-const toastType = ref<'success' | 'info'>('info');
-let toastTimer: number | null = null;
+type Snackbar = { message: string; undo?: () => Promise<unknown> };
+const snackbar = ref<Snackbar | null>(null);
+let snackbarTimer: number | null = null;
 
-function showToast(msg: string, type: 'success' | 'info' = 'info') {
-  toastMessage.value = msg;
-  toastType.value = type;
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => {
-    toastMessage.value = null;
-  }, 2500);
+function showToast(message: string, undo?: () => Promise<unknown>) {
+  snackbar.value = { message, undo };
+  if (snackbarTimer) clearTimeout(snackbarTimer);
+  snackbarTimer = window.setTimeout(dismissSnackbar, undo ? 6000 : 3000);
+}
+
+function dismissSnackbar() {
+  if (snackbarTimer) clearTimeout(snackbarTimer);
+  snackbarTimer = null;
+  snackbar.value = null;
+}
+
+async function runUndo() {
+  const undo = snackbar.value?.undo;
+  dismissSnackbar();
+  if (!undo) return;
+  const failed = await undo();
+  if (failed) showToast(String(failed));
+}
+
+// Each undo returns an error message, or nothing on success.
+async function undoMany(notes: Thing[], reverse: (t: Thing) => Promise<{ success: boolean; error?: string }>) {
+  const results = await Promise.all(notes.map(reverse));
+  const failure = results.find((r) => !r.success);
+  return failure ? (failure.error || "Couldn't undo. Check Archive or Trash.") : undefined;
+}
+
+function undoArchive(notes: Thing[]) {
+  return undoMany(notes, (t) => {
+    reinsertNote(t);
+    return toggleArchive(t);
+  });
 }
 
 function triggerAuthModal(tab: 'login' | 'register') {
@@ -431,15 +421,9 @@ function triggerAuthModal(tab: 'login' | 'register') {
   }
 }
 
-function onNoteCreated() {
-  showToast('Note created successfully', 'success');
-}
-
 async function handleToggleSticky(thing: Thing) {
   const result = await toggleSticky(thing);
-  if (result.success) {
-    showToast(thing.sticky ? 'Note unpinned' : 'Note pinned to top');
-  }
+  if (!result.success && result.error) showToast(result.error);
 }
 
 async function handleTogglePublic(thing: Thing) {
@@ -451,17 +435,26 @@ async function handleTogglePublic(thing: Thing) {
 
 async function handleToggleArchive(thing: Thing) {
   const result = await toggleArchive(thing);
-  if (result.success) {
-    showToast(thing.archived ? 'Note restored to active' : 'Note archived');
+  if (result.success && result.thing) {
+    const changed = result.thing;
+    showToast(thing.archived ? 'Note unarchived' : 'Note archived', () => undoArchive([changed]));
+  } else if (result.error) {
+    showToast(result.error);
   }
 }
 
-async function handleDeleteNote(id: string) {
-  const result = await deleteNote(id);
+async function handleDeleteNote(thing: Thing) {
+  const result = await deleteNote(thing._id);
   if (result.success) {
-    showToast('Note moved to trash');
+    showToast('Note moved to Trash', () => undoMany([thing], undoDelete));
+  } else if (result.error) {
+    showToast(result.error);
   }
-  return result;
+}
+
+function handleModalDelete(thing: Thing) {
+  closeNoteModal();
+  handleDeleteNote(thing);
 }
 
 async function handleRestoreNote(thing: Thing) {
@@ -473,21 +466,19 @@ async function handleRestoreNote(thing: Thing) {
 const isNoteModalOpen = ref(false);
 const activeModalNoteId = ref<string | null>(null);
 const fallbackModalNote = ref<Thing | null>(null);
-const modalInitialMode = ref<'view' | 'edit'>('view');
 
 const activeModalNote = computed<Thing | null>(() => {
   if (!activeModalNoteId.value) return null;
   return things.value.find((t) => t._id === activeModalNoteId.value) || fallbackModalNote.value;
 });
 
-function openNoteModal(thing: Thing, mode: 'view' | 'edit' = 'view') {
+function openNoteModal(thing: Thing) {
   if (isSelectionMode.value) {
     handleToggleSelect(thing);
     return;
   }
   activeModalNoteId.value = thing._id;
   fallbackModalNote.value = thing;
-  modalInitialMode.value = mode;
   isNoteModalOpen.value = true;
 }
 
@@ -503,30 +494,12 @@ function handleQueryRemove() {
   router.replace({ query });
 }
 
-function handleViewSwitch(archived: boolean) {
-  router.replace({ query: { ...route.query, archived: archived ? 'true' : undefined, deleted: undefined } });
-}
-
-function handleDeletedView(deleted: boolean) {
-  router.replace({ query: { ...route.query, deleted: deleted ? 'true' : undefined, archived: undefined } });
-}
-
 function handleTagClick(tag: string) {
   router.replace({ query: { ...route.query, q: undefined, tag } });
 }
 
 function handleWikilinkClick(target: string) {
   router.push({ query: { ...route.query, tag: undefined, q: target } });
-}
-
-function clearTagFilter() {
-  const query = { ...route.query };
-  delete query.tag;
-  router.replace({ query });
-}
-
-function clearRouteFilters() {
-  router.replace({ query: {} });
 }
 
 let lastSyncedFilterKey = '';
@@ -576,53 +549,7 @@ function handleImageClick(images: LightboxImage[], index: number) {
 // Batch Selection & Operations
 const selectedIds = ref<Set<string>>(new Set());
 const isSelectionMode = computed(() => selectedIds.value.size > 0);
-const showBatchDeleteConfirm = ref(false);
 const isBatchDeleting = ref(false);
-const batchDeleteTriggerRef = ref<HTMLButtonElement | null>(null);
-const batchDeleteModalCardRef = ref<HTMLDivElement | null>(null);
-const cancelBatchDeleteBtnRef = ref<HTMLButtonElement | null>(null);
-
-function openBatchDeleteConfirm() {
-  showBatchDeleteConfirm.value = true;
-  document.addEventListener('keydown', handleBatchDeleteModalKeydown);
-  nextTick(() => {
-    cancelBatchDeleteBtnRef.value?.focus();
-  });
-}
-
-function closeBatchDeleteConfirm(returnFocus = true) {
-  showBatchDeleteConfirm.value = false;
-  document.removeEventListener('keydown', handleBatchDeleteModalKeydown);
-  if (returnFocus) {
-    nextTick(() => {
-      batchDeleteTriggerRef.value?.focus();
-    });
-  }
-}
-
-function handleBatchDeleteModalKeydown(event: KeyboardEvent) {
-  if (!showBatchDeleteConfirm.value) return;
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    closeBatchDeleteConfirm(true);
-    return;
-  }
-  if (event.key === 'Tab' && batchDeleteModalCardRef.value) {
-    const focusable = batchDeleteModalCardRef.value.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), [tabindex]:not([tabindex="-1"])'
-    );
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-}
 
 const isBatchColorSaving = ref(false);
 const isBatchUpdating = ref(false);
@@ -712,7 +639,6 @@ function handleClearSelection() {
   if (isBatchMutating.value) return;
   selectedIds.value = new Set();
   closeBatchColorPicker(false);
-  closeBatchDeleteConfirm(false);
 }
 
 async function handleBatchColor(color: NoteColor) {
@@ -729,7 +655,7 @@ async function handleBatchColor(color: NoteColor) {
     if (res.success) {
       showToast(`Updated color for ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
     } else {
-      showToast(`Updated ${res.updatedCount} notes. ${res.failedIds.length} failed.`, 'info');
+      showToast(`Updated ${res.updatedCount} notes. ${res.failedIds.length} failed.`);
     }
   } finally {
     isBatchColorSaving.value = false;
@@ -751,7 +677,7 @@ async function handleBatchPin() {
     if (res.success) {
       showToast(`${shouldPin ? 'Pinned' : 'Unpinned'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
     } else {
-      showToast(`${shouldPin ? 'Pinned' : 'Unpinned'} ${res.updatedCount} notes. ${res.failedIds.length} failed.`, 'info');
+      showToast(`${shouldPin ? 'Pinned' : 'Unpinned'} ${res.updatedCount} notes. ${res.failedIds.length} failed.`);
     }
   } finally {
     isBatchUpdating.value = false;
@@ -769,10 +695,11 @@ async function handleBatchArchive() {
       selectedIds.value.delete(id);
     }
     selectedIds.value = new Set(selectedIds.value);
+    const changed = res.updatedThings;
     if (res.success) {
-      showToast(`${shouldArchive ? 'Archived' : 'Restored'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`);
+      showToast(`${shouldArchive ? 'Archived' : 'Unarchived'} ${res.updatedCount} note${res.updatedCount > 1 ? 's' : ''}`, () => undoArchive(changed));
     } else {
-      showToast(`${shouldArchive ? 'Archived' : 'Restored'} ${res.updatedCount} notes. ${res.failedIds.length} failed.`, 'info');
+      showToast(`${shouldArchive ? 'Archived' : 'Restored'} ${res.updatedCount} notes. ${res.failedIds.length} failed.`);
     }
   } finally {
     isBatchUpdating.value = false;
@@ -784,16 +711,17 @@ async function handleBatchDelete() {
   isBatchDeleting.value = true;
   try {
     const ids = Array.from(selectedIds.value);
+    const originals = things.value.filter((t) => selectedIds.value.has(t._id));
     const res = await batchDeleteNotes(ids);
-    closeBatchDeleteConfirm(false);
     for (const id of res.successfulIds) {
       selectedIds.value.delete(id);
     }
     selectedIds.value = new Set(selectedIds.value);
+    const deleted = originals.filter((t) => res.successfulIds.includes(t._id));
     if (res.success) {
-      showToast(`Moved ${res.deletedCount} note${res.deletedCount > 1 ? 's' : ''} to Trash`);
+      showToast(`Moved ${res.deletedCount} note${res.deletedCount > 1 ? 's' : ''} to Trash`, () => undoMany(deleted, undoDelete));
     } else {
-      showToast(`Moved ${res.deletedCount} notes to Trash. ${res.failedIds.length} failed.`, 'info');
+      showToast(`Moved ${res.deletedCount} notes to Trash. ${res.failedIds.length} failed.`);
     }
   } finally {
     isBatchDeleting.value = false;
@@ -811,9 +739,7 @@ watch(things, (current) => {
 
 function handleGlobalKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    if (showBatchDeleteConfirm.value) {
-      closeBatchDeleteConfirm(true);
-    } else if (showBatchColorPicker.value) {
+    if (showBatchColorPicker.value) {
       closeBatchColorPicker(true);
     } else if (isSelectionMode.value && !isLightboxOpen.value) {
       handleClearSelection();
@@ -845,8 +771,17 @@ watch(hasMore, () => {
 
 function handleImportEvent() {
   fetchNotes(true);
-  showToast('Notes refreshed after import', 'info');
+  showToast('Notes refreshed after import');
 }
+
+watch(streamRef, (el) => {
+  resizeObserver?.disconnect();
+  if (!el || typeof ResizeObserver === 'undefined') return;
+  resizeObserver = new ResizeObserver(([entry]) => {
+    streamWidth.value = entry.contentRect.width;
+  });
+  resizeObserver.observe(el);
+});
 
 onMounted(() => {
   setupIntersectionObserver();
@@ -858,37 +793,31 @@ onUnmounted(() => {
   if (observer) {
     observer.disconnect();
   }
-  if (toastTimer) {
-    clearTimeout(toastTimer);
-  }
+  if (snackbarTimer) clearTimeout(snackbarTimer);
+  resizeObserver?.disconnect();
   window.removeEventListener('meemo:imported', handleImportEvent);
   window.removeEventListener('keydown', handleGlobalKeydown);
-  document.removeEventListener('keydown', handleBatchDeleteModalKeydown);
   document.removeEventListener('pointerdown', handleOutsideBatchColorPicker);
 });
 </script>
 
 <style scoped>
 .notes-view {
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 1.5rem;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-}
-
-.workspace-title {
-  margin-bottom: 1rem;
-  font-size: 1.5rem;
-  font-weight: 600;
-  line-height: 1.4;
+  padding: 32px 16px 96px;
 }
 
 .notes-view.is-selecting {
   padding-bottom: 12rem;
 }
 
-.notes-view.is-wide {
-  max-width: 96%;
+/* Visually hidden by default; mobile shows it for Archive/Trash/label views. */
+.workspace-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .search-progress-bar {
@@ -1010,113 +939,123 @@ onUnmounted(() => {
 }
 
 
-/* Active filter banner */
+/* Search results banner */
 .active-filter-bar {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  background-color: var(--md-sys-color-surface-container-low);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  padding: 0.5rem 0.85rem;
-  border-radius: 10px;
-  margin-bottom: 1.25rem;
-  flex-wrap: wrap;
-  font-size: 0.85rem;
-  box-shadow: var(--md-sys-elevation-1);
+  justify-content: center;
+  gap: 1rem;
+  max-width: 600px;
+  margin: 0 auto 1.5rem;
+  font-size: var(--md-sys-typescale-body-medium);
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .filter-label {
-  font-weight: 600;
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-.filter-chip {
-  max-width: 100%;
   overflow-wrap: anywhere;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 14px;
-  padding: 0.18rem 0.6rem;
-  font-size: 0.8rem;
-  color: var(--md-sys-color-on-surface);
-  font-weight: 500;
-}
-
-.filter-chip.archive-chip {
-  background-color: var(--md-sys-color-secondary-container);
-  border-color: var(--md-sys-color-outline-variant);
-  color: var(--md-sys-color-on-secondary-container);
-}
-
-.chip-remove {
-  min-width: 32px;
-  min-height: 32px;
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: var(--md-sys-color-on-surface-variant);
-  cursor: pointer;
-  font-size: 0.95rem;
-  line-height: 1;
-  padding: 0 0.15rem;
-  border-radius: 50%;
-  transition: color 0.15s;
-}
-
-.chip-remove:hover {
-  color: var(--md-sys-color-error);
 }
 
 .clear-all-link {
-  background: none;
+  min-height: 36px;
+  padding: 0 0.75rem;
   border: none;
-  color: var(--md-sys-color-primary);
-  cursor: pointer;
-  font-size: 0.8rem;
-  text-decoration: underline;
-  margin-left: auto;
+  border-radius: var(--md-sys-shape-corner-xs);
+  background: none;
+  color: var(--md-sys-color-on-surface);
+  font-size: var(--md-sys-typescale-label-large);
   font-weight: 500;
-  transition: color 0.15s;
+  cursor: pointer;
 }
 
 .clear-all-link:hover {
-  opacity: 0.8;
-}
-
-.toast-banner {
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  margin-bottom: 1rem;
-  font-size: 0.9rem;
-  animation: fadeIn 0.2s ease-in-out;
-}
-
-.toast-banner.success {
-  background-color: var(--md-sys-color-secondary-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  color: var(--md-sys-color-on-secondary-container);
-}
-
-.toast-banner.info {
-  background-color: var(--md-sys-color-primary-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  color: var(--md-sys-color-on-primary-container);
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  background: var(--md-sys-state-hover);
 }
 
 .error-banner {
+  max-width: 600px;
+  margin: 0 auto 1rem;
   background: var(--md-sys-color-error-container);
-  color: var(--md-sys-color-error);
-  padding: 0.75rem;
+  color: var(--md-sys-color-on-error-container);
+  padding: 0.75rem 1rem;
+  border-radius: var(--keep-card-radius);
+}
+
+/* Keep-style snackbar */
+.snackbar {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 288px;
+  max-width: min(568px, calc(100vw - 48px));
+  min-height: 48px;
+  padding: 6px 8px 6px 24px;
   border-radius: 4px;
-  margin-bottom: 1rem;
+  background: var(--keep-snackbar);
+  color: var(--keep-on-snackbar);
+  font-size: var(--md-sys-typescale-body-medium);
+  box-shadow: 0 3px 5px -1px rgba(0, 0, 0, 0.2), 0 6px 10px 0 rgba(0, 0, 0, 0.14), 0 1px 18px 0 rgba(0, 0, 0, 0.12);
+}
+
+.snackbar-text {
+  flex: 1;
+  padding: 8px 0;
+}
+
+.snackbar-action {
+  min-height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--keep-accent);
+  font-size: var(--md-sys-typescale-label-large);
+  font-weight: 500;
+  letter-spacing: 0.0178em;
+  cursor: pointer;
+}
+
+:root[data-theme="dark"] .snackbar-action {
+  color: #8a5a00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .snackbar-action {
+    color: #8a5a00;
+  }
+}
+
+.snackbar-action:hover,
+.snackbar-close:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.snackbar-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.snackbar-enter-active,
+.snackbar-leave-active {
+  transition: transform var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
+              opacity var(--md-sys-motion-duration-medium) ease;
+}
+
+.snackbar-enter-from,
+.snackbar-leave-to {
+  transform: translateY(16px);
+  opacity: 0;
 }
 
 /* Layout */
@@ -1125,31 +1064,41 @@ onUnmounted(() => {
   width: 100%;
 }
 
+/* Row-order masonry: fixed 240px Keep columns, centered. */
 .m3-notes-masonry {
-  column-width: 280px;
-  column-gap: 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 16px;
 }
 
-.m3-notes-masonry > * {
-  break-inside: avoid;
-  page-break-inside: avoid;
-  margin-bottom: 1rem;
-  display: inline-block;
+.masonry-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 240px;
+  min-width: 0;
+}
+
+.m3-notes-masonry.is-list .masonry-column {
   width: 100%;
+  max-width: 600px;
 }
 
-.notes-section {
-  margin-bottom: 1.5rem;
+.notes-section + .notes-section {
+  margin-top: 32px;
 }
 
 .section-label {
+  max-width: var(--grid-width, 100%);
+  margin: 0 auto 8px;
+  padding-left: 12px;
+  font-size: var(--md-sys-typescale-label-small);
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  line-height: 1rem;
   text-transform: uppercase;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
   color: var(--md-sys-color-on-surface-variant);
-  text-transform: uppercase;
-  margin: 1.5rem 0 0.75rem 0.25rem;
 }
 
 .load-more-section {
@@ -1179,51 +1128,28 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-.end-marker {
-  font-size: 0.85rem;
-  color: var(--md-sys-color-on-surface-variant);
-}
-
 .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18vh 1.5rem 3rem;
   text-align: center;
-  background: var(--md-sys-color-surface-container);
-  border: 1px dashed var(--md-sys-color-outline-variant);
-  border-radius: 12px;
-  padding: 3.5rem 1.5rem;
   color: var(--md-sys-color-on-surface-variant);
 }
 
 .empty-icon .ui-icon {
-  width: 2.75rem;
-  height: 2.75rem;
-  margin-bottom: 0.75rem;
-  opacity: 0.85;
+  width: 120px;
+  height: 120px;
+  stroke-width: 1;
+  margin-bottom: 1.25rem;
+  opacity: 0.25;
+  color: var(--md-sys-color-on-surface);
 }
 
 .empty-state h2 {
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: var(--md-sys-color-on-surface);
-  margin-bottom: 0.5rem;
-}
-
-.clear-filters-btn {
-  min-height: 44px;
-  margin-top: 1.25rem;
-  background-color: var(--md-sys-color-primary);
-  color: var(--md-sys-color-on-primary);
-  border: none;
-  border-radius: 8px;
-  padding: 0.5rem 1.25rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.clear-filters-btn:hover {
-  box-shadow: var(--md-sys-elevation-1);
-  opacity: 0.9;
+  font-size: var(--md-sys-typescale-title-large);
+  font-weight: 400;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 /* Floating Batch Action Bar */
@@ -1357,52 +1283,45 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* Batch Delete Confirmation Modal */
-.batch-delete-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background-color: rgba(0, 0, 0, 0.45);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  padding: 1rem;
+@media (max-width: 599px) {
+  .notes-view {
+    padding: 16px 8px 96px;
+  }
+
+  .m3-notes-masonry,
+  .masonry-column {
+    gap: 8px;
+  }
+
+  .masonry-column {
+    flex: 1 1 0;
+    width: auto;
+  }
+
+  .snackbar {
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    min-width: 0;
+    max-width: none;
+  }
 }
 
-.batch-delete-card {
-  background: var(--md-sys-color-surface-container);
-  color: var(--md-sys-color-on-surface);
-  border-radius: var(--md-sys-shape-corner-2xl);
-  padding: 1.75rem;
-  max-width: 420px;
-  width: 90%;
-  box-shadow: var(--md-sys-elevation-3);
-  border: 1px solid var(--md-sys-color-outline-variant);
-}
-
-.batch-delete-card h3 {
-  font-size: 1.25rem;
-  color: var(--md-sys-color-error);
-  margin-bottom: 0.75rem;
-}
-
-.batch-delete-card p {
-  font-size: 0.95rem;
-  color: var(--md-sys-color-on-surface-variant);
-  line-height: 1.5;
-  margin-bottom: 1.5rem;
-}
-
-.batch-delete-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
+@media (max-width: 767px) {
+  .workspace-title.is-named-view {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    margin: 0 8px 16px;
+    font-size: var(--md-sys-typescale-title-large);
+    font-weight: 400;
+    color: var(--md-sys-color-on-surface-variant);
+  }
 }
 
 @media (max-width: 640px) {
-  .notes-view {
-    padding-inline: 1rem;
-  }
 
   .batch-action-bar {
     bottom: max(1rem, env(safe-area-inset-bottom));

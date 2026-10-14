@@ -278,4 +278,34 @@ describe('useNotes behavior', () => {
     expect(apiMock.delete).toHaveBeenCalledTimes(2);
     expect(store.things.value.map((t) => t._id)).toEqual(['n3']);
   });
+
+  it('undoes a delete by restoring the bumped revision and reinserting the pin', async () => {
+    apiMock.list.mockResolvedValue({ things: [note('a', { sticky: true, revision: 3 })] });
+    apiMock.delete.mockResolvedValue({});
+    apiMock.restore.mockResolvedValue({ thing: note('a', { revision: 5 }) });
+    apiMock.update.mockResolvedValue({ thing: note('a', { revision: 6, sticky: true }) });
+    const store = useNotes();
+    await store.setFilters({ search: '', tag: null, archived: false });
+    const original = store.things.value[0];
+
+    await store.deleteNote('a');
+    expect(store.things.value).toHaveLength(0);
+
+    const result = await store.undoDelete(original);
+    expect(result.success).toBe(true);
+    expect(apiMock.restore).toHaveBeenCalledWith('a', 4);
+    expect(apiMock.update).toHaveBeenCalledWith('a', expect.objectContaining({ sticky: true, expectedRevision: 5 }));
+    expect(store.things.value.map((t) => [t._id, t.sticky])).toEqual([['a', true]]);
+  });
+
+  it('reinserts only notes that belong to the current view', async () => {
+    apiMock.list.mockResolvedValue({ things: [] });
+    const store = useNotes();
+    await store.setFilters({ search: '', tag: null, archived: false });
+
+    store.reinsertNote(note('archived', { archived: true }));
+    store.reinsertNote(note('active'));
+    store.reinsertNote(note('active'));
+    expect(store.things.value.map((t) => t._id)).toEqual(['active']);
+  });
 });

@@ -7,179 +7,114 @@
         class="note-modal-overlay"
         role="dialog"
         aria-modal="true"
-        aria-label="Note details"
+        aria-label="Edit note"
         tabindex="-1"
         @click="handleBackdropClick"
         @keydown="handleWindowKeydown"
       >
         <div
           class="note-modal-card"
-          :class="{
-            'is-sticky': currentNote.sticky,
-            'is-archived': currentNote.archived
-          }"
+          :class="{ 'is-tinted': (currentNote.color || 'default') !== 'default' }"
           :style="{ backgroundColor: 'var(--note-color-' + (currentNote.color || 'default') + ')' }"
           @click.stop
         >
-          <!-- Modal Top Header -->
-          <header class="modal-header">
-            <div class="header-meta">
-              <time :datetime="isoDate" :title="fullDate" class="note-time">
-                {{ relativeDate }}
-              </time>
-              <span v-if="currentNote.sticky" class="badge badge-sticky" title="Pinned to top">
-                📌 Pinned
-              </span>
-              <span v-if="currentNote.public" class="badge badge-public" title="Visible on public stream">
-                🌐 Public
-              </span>
-              <span v-if="currentNote.shared" class="badge badge-shared" title="Directly shared">
-                🔗 Shared
-              </span>
-              <span v-if="currentNote.archived" class="badge badge-archived" title="Archived note">
-                📦 Archived
-              </span>
+          <div class="modal-scroll">
+            <!-- Edge-to-edge image attachments -->
+            <div v-if="imageAttachments.length > 0" class="modal-images">
+              <a
+                v-for="att in imageAttachments"
+                :key="att.identifier"
+                :href="attachmentUrl(att)"
+                target="_blank"
+                rel="noopener"
+                class="modal-image-link"
+                @click="handleAttachmentClick($event, att)"
+              >
+                <img :src="attachmentUrl(att)" :alt="att.fileName || ''" />
+              </a>
             </div>
 
-            <div class="header-actions">
-              <!-- View / Edit Segmented Mode Toggle (when editable) -->
-              <div v-if="canEdit" class="mode-toggle-group" role="tablist" aria-label="Note view or edit mode">
-                <button
-                  type="button"
-                  class="mode-btn"
-                  :class="{ active: currentMode === 'view' }"
-                  role="tab"
-                  :aria-selected="currentMode === 'view'"
-                  title="View formatted markdown"
-                  @click="switchToView"
-                >
-                  <span class="mode-icon">👁️</span>
-                  <span class="mode-text">Preview</span>
-                </button>
-                <button
-                  type="button"
-                  class="mode-btn"
-                  :class="{ active: currentMode === 'edit' }"
-                  role="tab"
-                  :aria-selected="currentMode === 'edit'"
-                  title="Edit markdown"
-                  @click="switchToEdit"
-                >
-                  <span class="mode-icon">✏️</span>
-                  <span class="mode-text">Edit</span>
-                </button>
-              </div>
+            <header class="modal-header">
+              <input
+                v-if="canEdit"
+                v-model="titleDraft"
+                class="modal-title-input"
+                type="text"
+                placeholder="Title"
+                aria-label="Title"
+                @keydown="handleTextareaKeydown"
+                @input="handleTextareaInput"
+              />
+              <h2 v-else-if="titleDraft" class="modal-title-input">{{ titleDraft }}</h2>
+              <span v-else class="modal-title-spacer"></span>
 
-              <!-- Pin toggle button -->
               <button
                 v-if="canEdit"
                 type="button"
-                class="icon-btn pin-btn"
+                class="action-btn pin-btn"
                 :class="{ active: currentNote.sticky }"
-                :title="currentNote.sticky ? 'Unpin note' : 'Pin note to top'"
+                :title="currentNote.sticky ? 'Unpin note' : 'Pin note'"
                 :aria-label="currentNote.sticky ? 'Unpin note' : 'Pin note to top'"
                 :aria-pressed="Boolean(currentNote.sticky)"
                 @click="togglePin"
               >
-                📌
+                <UiIcon name="pin" />
               </button>
+            </header>
 
-              <!-- Close button (top right) -->
-              <button
-                type="button"
-                class="icon-btn close-btn"
-                title="Close (Esc)"
-                aria-label="Close note modal"
-                @click="closeWithSave"
-              >
-                ✕
-              </button>
+            <!-- Error Alert Banner -->
+            <div v-if="actionError" class="modal-error-banner" role="alert">
+              {{ actionError }}
             </div>
-          </header>
 
-          <!-- Error Alert Banner -->
-          <div v-if="actionError" class="modal-error-banner" role="alert">
-            {{ actionError }}
-          </div>
-
-          <!-- Modal Scrollable Content Body -->
-          <main class="modal-body">
-            <!-- View / Rendered Mode -->
-            <div
-              v-if="currentMode === 'view'"
-              ref="renderedBodyRef"
-              class="modal-markdown-body markdown-body"
-              :class="{ 'can-click-to-edit': canEdit }"
-              :title="canEdit ? 'Double-click or click to edit note' : undefined"
-              v-html="renderedHtml"
-              @click="handleBodyClick"
-            ></div>
-
-            <!-- Edit Mode -->
-            <div v-else class="modal-editor-container">
+            <main class="modal-body">
               <textarea
+                v-if="canEdit"
                 ref="textareaRef"
-                v-model="editDraft"
+                v-model="bodyDraft"
                 class="modal-textarea"
-                placeholder="Note content (Markdown supported)..."
-                rows="12"
+                placeholder="Note"
+                aria-label="Note"
+                rows="1"
                 @keydown="handleTextareaKeydown"
                 @input="handleTextareaInput"
               ></textarea>
-              <div class="editor-hint">
-                <kbd>Ctrl+S</kbd> or <kbd>Ctrl+Enter</kbd> to save, <kbd>Esc</kbd> to close & auto-save
-              </div>
-            </div>
+              <div
+                v-else
+                ref="renderedBodyRef"
+                class="modal-markdown-body markdown-body"
+                v-html="renderedHtml"
+                @click="handleBodyClick"
+              ></div>
 
-            <!-- Attachments Display -->
-            <div v-if="currentNote.attachments && currentNote.attachments.length > 0" class="modal-attachments">
-              <h4 class="section-title">Attachments ({{ currentNote.attachments.length }})</h4>
-              <div class="attachment-grid">
-                <div
-                  v-for="att in currentNote.attachments"
+              <div v-if="fileAttachments.length > 0" class="modal-attachments">
+                <a
+                  v-for="att in fileAttachments"
                   :key="att.identifier"
-                  class="attachment-card"
+                  :href="attachmentUrl(att)"
+                  target="_blank"
+                  rel="noopener"
+                  class="attachment-anchor"
+                  :title="att.fileName || att.identifier"
                 >
-                  <a
-                    :href="attachmentUrl(att)"
-                    target="_blank"
-                    rel="noopener"
-                    class="attachment-anchor"
-                    @click="handleAttachmentClick($event, att)"
-                  >
-                    <span class="att-icon">{{ isImageAttachment(att) ? '🖼️' : '📎' }}</span>
-                    <div class="att-info">
-                      <span class="att-name" :title="att.fileName || att.identifier">
-                        {{ att.fileName || att.identifier }}
-                      </span>
-                      <span v-if="att.size" class="att-size">{{ formatFileSize(att.size) }}</span>
-                    </div>
-                  </a>
-                </div>
+                  <UiIcon name="attach" />
+                  <span class="att-name">{{ att.fileName || att.identifier }}</span>
+                  <span v-if="att.size" class="att-size">{{ formatFileSize(att.size) }}</span>
+                </a>
               </div>
-            </div>
 
-            <!-- Tags Display -->
-            <div v-if="currentNote.tags && currentNote.tags.length > 0" class="modal-tags">
-              <div class="tags-container">
-                <button
-                  v-for="tag in currentNote.tags"
-                  :key="tag"
-                  type="button"
-                  class="tag-pill"
-                  :title="`Filter by #${tag}`"
-                  @click="handleTagClick(tag)"
-                >
-                  #{{ tag }}
-                </button>
+              <div v-if="currentNote.public || currentNote.shared" class="modal-status">
+                <span v-if="currentNote.public" class="status-chip"><UiIcon name="globe" /> Public</span>
+                <span v-if="currentNote.shared" class="status-chip"><UiIcon name="attach" /> Shared</span>
               </div>
-            </div>
-          </main>
 
-          <!-- Modal Footer (Action Bar - Google Keep Style) -->
+              <time class="edited-at" :datetime="isoDate" :title="fullDate">{{ editedLabel }}</time>
+            </main>
+          </div>
+
+          <!-- Keep-style bottom toolbar -->
           <footer class="modal-footer">
             <div v-if="canEdit" class="footer-actions">
-              <!-- Color Picker Popover -->
               <div ref="colorWrapperRef" class="color-picker-wrapper">
                 <button
                   ref="colorTriggerRef"
@@ -193,7 +128,7 @@
                   :disabled="isColorSaving"
                   @click="toggleColorPicker"
                 >
-                  🎨
+                  <UiIcon name="palette" />
                 </button>
                 <div
                   v-if="showColorPicker"
@@ -207,7 +142,7 @@
                     :key="c.key"
                     type="button"
                     class="color-swatch-btn"
-                    :class="{ active: (currentNote.color || 'default') === c.key }"
+                    :class="{ active: (currentNote.color || 'default') === c.key, 'is-default': c.key === 'default' }"
                     :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
                     :title="c.name"
                     :aria-label="c.name"
@@ -220,48 +155,43 @@
                 </div>
               </div>
 
-              <!-- Public Toggle -->
-              <button
-                type="button"
-                class="action-btn"
-                :class="{ active: currentNote.public }"
-                :title="currentNote.public ? 'Make note private' : 'Make note public'"
-                :aria-label="currentNote.public ? 'Make note private' : 'Make note public'"
-                @click="togglePublic"
-              >
-                🌐
-              </button>
-
-              <!-- Archive Toggle -->
               <button
                 type="button"
                 class="action-btn"
                 :class="{ active: currentNote.archived }"
-                :title="currentNote.archived ? 'Restore note from archive' : 'Archive note'"
+                :title="currentNote.archived ? 'Unarchive' : 'Archive'"
                 :aria-label="currentNote.archived ? 'Restore note from archive' : 'Archive note'"
                 @click="toggleArchive"
               >
-                {{ currentNote.archived ? '↩️' : '📦' }}
+                <UiIcon :name="currentNote.archived ? 'restore' : 'archive'" />
               </button>
 
-              <!-- Delete Button -->
+              <button
+                type="button"
+                class="action-btn"
+                :class="{ active: currentNote.public }"
+                :title="currentNote.public ? 'Make private' : 'Make public'"
+                :aria-label="currentNote.public ? 'Make note private' : 'Make note public'"
+                :aria-pressed="Boolean(currentNote.public)"
+                @click="togglePublic"
+              >
+                <UiIcon name="globe" />
+              </button>
+
               <button
                 type="button"
                 class="action-btn delete-btn"
-                title="Move note to trash"
+                title="Delete note"
                 aria-label="Move note to trash"
-                @click="showDeleteConfirm = true"
+                @click="requestDelete"
               >
-                🗑️
+                <UiIcon name="trash" />
               </button>
             </div>
             <div v-else class="footer-placeholder"></div>
 
-            <!-- Right side: Status and Close/Done Button -->
             <div class="footer-right">
-              <span v-if="isSaving" class="save-status saving">Saving...</span>
-              <span v-else-if="hasUnsavedChanges" class="save-status unsaved">Unsaved changes</span>
-
+              <span v-if="isSaving" class="save-status" role="status">Saving…</span>
               <button
                 type="button"
                 class="done-btn"
@@ -272,39 +202,6 @@
               </button>
             </div>
           </footer>
-
-          <!-- Delete Confirmation Dialog -->
-          <div
-            v-if="showDeleteConfirm"
-            class="delete-confirm-overlay"
-            role="dialog"
-            aria-modal="true"
-            @click.self="showDeleteConfirm = false"
-          >
-            <div class="delete-confirm-card">
-              <h3>Move note to trash?</h3>
-              <p>This note can be restored from Trash.</p>
-              <div class="delete-confirm-actions">
-                <button
-                  type="button"
-                  class="btn-cancel"
-                  :disabled="isDeleting"
-                  @click="showDeleteConfirm = false"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  class="btn-delete"
-                  :disabled="isDeleting"
-                  @click="confirmDelete"
-                >
-                  <span v-if="isDeleting">Deleting...</span>
-                  <span v-else>Move to Trash</span>
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </Transition>
@@ -317,20 +214,19 @@ import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import { renderMarkdown, highlightKeyword, toggleTaskItem } from '../utils/markdown';
 import type { LightboxImage } from './ImageLightbox.vue';
+import UiIcon from './UiIcon.vue';
+import { splitTitle, joinTitle } from '../utils/noteTitle';
 
 const props = withDefaults(
   defineProps<{
     open: boolean;
     thing: Thing | null;
     canEdit?: boolean;
-    initialMode?: 'view' | 'edit';
     highlightQuery?: string;
     onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; thing?: Thing; error?: string }>;
-    onDeleteConfirm?: (id: string) => Promise<{ success: boolean; error?: string }>;
   }>(),
   {
     canEdit: true,
-    initialMode: 'view',
     highlightQuery: '',
   }
 );
@@ -341,7 +237,7 @@ const emit = defineEmits<{
   (e: 'toggleSticky', thing: Thing): void;
   (e: 'togglePublic', thing: Thing): void;
   (e: 'toggleArchive', thing: Thing): void;
-  (e: 'delete', id: string): void;
+  (e: 'delete', thing: Thing): void;
   (e: 'tagClick', tag: string): void;
   (e: 'wikilinkClick', target: string): void;
   (e: 'imageClick', images: LightboxImage[], index: number): void;
@@ -364,10 +260,17 @@ const currentNote = ref<Thing>({
   color: 'default',
 });
 
-const currentMode = ref<'view' | 'edit'>('view');
-const editDraft = ref('');
+// Keep-style editing: the leading `# ` line is edited as a separate title field.
+const titleDraft = ref('');
+const bodyDraft = ref('');
+const editDraft = computed(() => joinTitle(titleDraft.value, bodyDraft.value));
+function setDraft(content: string) {
+  const parts = splitTitle(content);
+  titleDraft.value = parts.title;
+  bodyDraft.value = parts.body;
+  nextTick(autosize);
+}
 const isSaving = ref(false);
-const isDeleting = ref(false);
 const isColorSaving = ref(false);
 const isTaskSaving = ref(false);
 const actionError = ref<string | null>(null);
@@ -375,10 +278,16 @@ let draftGeneration = 0;
 
 const showColorPicker = ref(false);
 const focusedColorIndex = ref(0);
-const showDeleteConfirm = ref(false);
 
 const overlayRef = ref<HTMLElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
+
+function autosize() {
+  const el = textareaRef.value;
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+}
 const renderedBodyRef = ref<HTMLElement | null>(null);
 const colorWrapperRef = ref<HTMLElement | null>(null);
 const colorTriggerRef = ref<HTMLButtonElement | null>(null);
@@ -386,7 +295,9 @@ const colorPaletteRef = ref<HTMLElement | null>(null);
 
 const hasUnsavedChanges = computed(() => {
   if (!props.canEdit || !currentNote.value) return false;
-  return editDraft.value !== (currentNote.value.content || '');
+  // Compare normalized forms so merely opening a note never rewrites it.
+  const original = splitTitle(currentNote.value.content || '');
+  return editDraft.value !== joinTitle(original.title, original.body);
 });
 
 const dateValue = computed(() => {
@@ -401,28 +312,17 @@ const fullDate = computed(() => {
   return new Date(dateValue.value).toLocaleString();
 });
 
-const relativeDate = computed(() => {
+const editedLabel = computed(() => {
   const d = new Date(dateValue.value);
-  const now = Date.now();
-  const diffMs = now - d.getTime();
-  if (diffMs < 0 || isNaN(diffMs)) return d.toLocaleDateString();
-
-  const diffSec = Math.floor(diffMs / 1000);
-  if (diffSec < 60) return 'just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  if (isNaN(d.getTime())) return '';
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return 'Edited ' + (sameDay
+    ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }));
 });
 
 const renderedHtml = computed(() => {
-  const raw = currentMode.value === 'view'
-    ? (currentNote.value.richContent || currentNote.value.content || '')
-    : editDraft.value;
-  const html = renderMarkdown(raw);
+  const html = renderMarkdown(currentNote.value.richContent || currentNote.value.content || '');
   return props.highlightQuery ? highlightKeyword(html, props.highlightQuery) : html;
 });
 
@@ -436,6 +336,9 @@ function isImageAttachment(att: AttachmentDescriptor): boolean {
 function attachmentUrl(att: AttachmentDescriptor): string {
   return `/api/files/${currentNote.value.ownerId || 'me'}/${currentNote.value._id}/${att.identifier}`;
 }
+
+const imageAttachments = computed(() => (currentNote.value.attachments || []).filter(isImageAttachment));
+const fileAttachments = computed(() => (currentNote.value.attachments || []).filter((att) => !isImageAttachment(att)));
 
 function formatFileSize(bytes?: number): string {
   if (!bytes || bytes <= 0) return '';
@@ -524,7 +427,7 @@ async function handleBodyClick(event: MouseEvent) {
         if (result.success) {
           if (result.thing) currentNote.value = { ...result.thing };
           else currentNote.value.content = updatedContent;
-          editDraft.value = currentNote.value.content || '';
+          setDraft(currentNote.value.content || '');
         } else {
           checkbox.checked = wasChecked;
           actionError.value = result.error || 'Failed to update task';
@@ -532,7 +435,7 @@ async function handleBodyClick(event: MouseEvent) {
       } else {
         emit('update', currentNote.value._id, { content: updatedContent });
         currentNote.value.content = updatedContent;
-        editDraft.value = updatedContent;
+        setDraft(updatedContent);
       }
     } catch (err: any) {
       checkbox.checked = wasChecked;
@@ -583,33 +486,12 @@ async function handleBodyClick(event: MouseEvent) {
     }
     return;
   }
-
-  // 4. Clicking the content area in view mode enters edit mode (Google Keep style)
-  if (props.canEdit && currentMode.value === 'view') {
-    switchToEdit();
-  }
-}
-
-function handleTagClick(tag: string) {
-  closeWithSave();
-  emit('tagClick', tag);
-}
-
-function switchToView() {
-  currentMode.value = 'view';
-}
-
-function switchToEdit() {
-  if (!props.canEdit) return;
-  currentMode.value = 'edit';
-  nextTick(() => {
-    textareaRef.value?.focus();
-  });
 }
 
 function handleTextareaInput() {
   draftGeneration++;
   actionError.value = null;
+  autosize();
 }
 
 function handleTextareaKeydown(e: KeyboardEvent) {
@@ -645,7 +527,7 @@ async function saveContent(): Promise<boolean> {
         if (result.thing) currentNote.value = { ...result.thing };
         else currentNote.value.content = trimmed;
         if (saveGeneration === draftGeneration) {
-          editDraft.value = currentNote.value.content || '';
+          setDraft(currentNote.value.content || '');
         }
         return true;
       } else {
@@ -692,10 +574,6 @@ function handleWindowKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     if (showColorPicker.value) {
       closeColorPicker(true);
-      return;
-    }
-    if (showDeleteConfirm.value) {
-      showDeleteConfirm.value = false;
       return;
     }
     event.preventDefault();
@@ -854,29 +732,9 @@ async function toggleArchive() {
   }
 }
 
-async function confirmDelete() {
+function requestDelete() {
   if (!currentNote.value) return;
-  isDeleting.value = true;
-  actionError.value = null;
-  try {
-    if (props.onDeleteConfirm) {
-      const res = await props.onDeleteConfirm(currentNote.value._id);
-      if (res.success) {
-        showDeleteConfirm.value = false;
-        emit('close');
-      } else {
-        actionError.value = res.error || 'Failed to delete note';
-      }
-    } else {
-      emit('delete', currentNote.value._id);
-      showDeleteConfirm.value = false;
-      emit('close');
-    }
-  } catch (err: any) {
-    actionError.value = err.message || 'Failed to delete note';
-  } finally {
-    isDeleting.value = false;
-  }
+  emit('delete', props.thing || currentNote.value);
 }
 
 // Lifecycle and Sync
@@ -888,20 +746,14 @@ watch(
       window.addEventListener('keydown', handleWindowKeydown);
       if (props.thing) {
         currentNote.value = { ...props.thing };
-        editDraft.value = props.thing.content || '';
+        setDraft(props.thing.content || '');
         draftGeneration = 0;
-        currentMode.value = props.initialMode || 'view';
-        if (currentMode.value === 'edit') {
-          nextTick(() => textareaRef.value?.focus());
-        } else {
-          nextTick(() => overlayRef.value?.focus());
-        }
+        nextTick(() => overlayRef.value?.focus());
       }
     } else {
       document.body.style.overflow = '';
       window.removeEventListener('keydown', handleWindowKeydown);
       closeColorPicker();
-      showDeleteConfirm.value = false;
       actionError.value = null;
       isClosing.value = false;
       isSaving.value = false;
@@ -917,7 +769,7 @@ watch(
       currentNote.value = { ...newThing };
       // Only overwrite edit draft if user has not typed unsaved changes
       if (!hasUnsavedChanges.value) {
-        editDraft.value = newThing.content || '';
+        setDraft(newThing.content || '');
       }
     }
   },
@@ -932,14 +784,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* Backdrop Overlay */
 .note-modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background-color: var(--md-sys-color-scrim);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background-color: rgba(32, 33, 36, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -947,366 +796,266 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* Modal Card */
+:root[data-theme="dark"] .note-modal-overlay {
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+.note-modal-overlay:focus {
+  outline: none;
+}
+
 .note-modal-card {
-  width: min(720px, 94vw);
-  max-height: 88vh;
+  width: min(600px, 100%);
+  max-height: calc(100vh - 2rem);
   display: flex;
   flex-direction: column;
-  background-color: var(--note-color-default);
   color: var(--md-sys-color-on-surface);
   border: 1px solid var(--note-border-color);
-  border-radius: var(--md-sys-shape-corner-2xl);
-  box-shadow: var(--md-sys-elevation-3);
+  border-radius: var(--keep-card-radius);
+  box-shadow: var(--keep-shadow-dialog);
   position: relative;
   overflow: hidden;
-  transition: background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
-              border-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
+  transition: background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
-.note-modal-card.is-sticky {
-  border-color: color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
+.note-modal-card.is-tinted {
+  border-color: transparent;
 }
 
-.note-modal-card.is-archived {
-  opacity: 0.92;
+.modal-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
-/* Header */
+.modal-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 2px;
+}
+
+.modal-image-link img {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
 .modal-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 1.25rem 0.75rem 1.5rem;
-  border-bottom: 1px solid var(--note-border-color);
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 8px 0 16px;
 }
 
-.header-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.note-time {
-  font-size: var(--md-sys-typescale-body-medium);
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-.badge {
-  font-size: var(--md-sys-typescale-label-medium);
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--md-sys-shape-corner-sm);
-  font-weight: 500;
-  background-color: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-.badge-sticky {
-  background-color: var(--md-sys-color-tertiary-container);
-  color: var(--md-sys-color-on-tertiary-container);
-}
-
-.badge-public {
-  background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container);
-}
-
-.badge-shared {
-  background-color: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
-}
-
-.badge-archived {
-  background-color: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-/* Mode Toggle Group (M3 segmented button) */
-.mode-toggle-group {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-full);
-  padding: 2px;
-  gap: 2px;
-  margin-right: 0.25rem;
-}
-
-.mode-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-height: 32px;
-  padding: 0.25rem 0.875rem;
+.modal-title-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 0;
   border: none;
   background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--md-sys-typescale-label-large);
-  font-weight: 500;
-  border-radius: var(--md-sys-shape-corner-full);
-  cursor: pointer;
-  transition: background-color var(--md-sys-motion-duration-short) ease,
-              color var(--md-sys-motion-duration-short) ease;
-}
-
-.mode-btn:hover {
-  background: var(--md-sys-state-hover);
   color: var(--md-sys-color-on-surface);
+  font-size: var(--md-sys-typescale-title-large);
+  font-weight: 400;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
-.mode-btn.active {
-  background: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
+.modal-title-spacer {
+  flex: 1;
 }
 
-.icon-btn,
+.modal-title-input:focus-visible,
+.modal-textarea:focus-visible {
+  outline: none;
+}
+
+.modal-title-input::placeholder,
+.modal-textarea::placeholder {
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.85;
+}
+
 .action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--md-sys-shape-corner-full);
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0;
   border: none;
+  border-radius: var(--md-sys-shape-corner-full);
   background: transparent;
-  cursor: pointer;
-  font-size: 1rem;
   color: var(--md-sys-color-on-surface-variant);
-  transition: background-color var(--md-sys-motion-duration-short) ease,
-              color var(--md-sys-motion-duration-short) ease;
+  cursor: pointer;
+  transition: background-color var(--md-sys-motion-duration-short) ease;
 }
 
-.icon-btn:hover,
 .action-btn:hover {
-  background-color: var(--md-sys-state-hover);
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent);
   color: var(--md-sys-color-on-surface);
 }
 
-.icon-btn:active,
-.action-btn:active {
-  background-color: var(--md-sys-state-pressed);
-}
-
-.icon-btn.pin-btn.active,
 .action-btn.active {
-  background-color: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
+  color: var(--md-sys-color-on-surface);
 }
 
 .action-btn:disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
+  cursor: wait;
 }
 
-.close-btn {
-  font-size: 1.1rem;
+.pin-btn {
+  width: 40px;
+  height: 40px;
 }
 
-/* Error Banner */
+.pin-btn.active :deep(path) {
+  fill: currentColor;
+}
+
+.pin-btn .ui-icon {
+  width: 22px;
+  height: 22px;
+}
+
 .modal-error-banner {
+  margin: 8px 16px 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--md-sys-shape-corner-xs);
   background-color: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
-  padding: 0.6rem 1.5rem;
   font-size: var(--md-sys-typescale-body-medium);
-  font-weight: 500;
 }
 
-/* Modal Body */
 .modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1.25rem 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-}
-
-.modal-markdown-body {
-  font-size: var(--md-sys-typescale-body-large);
-  line-height: 1.65;
-  word-break: break-word;
-  min-height: 120px;
-}
-
-.modal-markdown-body.can-click-to-edit {
-  cursor: text;
-}
-
-/* Editor Container */
-.modal-editor-container {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  flex: 1;
+  padding: 4px 16px 0;
 }
 
 .modal-textarea {
+  display: block;
   width: 100%;
-  min-height: 280px;
-  padding: 0.5rem 0;
+  min-height: 46px;
+  padding: 8px 0 12px;
   border: none;
-  outline: none;
+  resize: none;
+  overflow: hidden;
   background: transparent;
-  color: inherit;
-  font-family: inherit;
+  color: var(--md-sys-color-on-surface);
   font-size: var(--md-sys-typescale-body-large);
-  line-height: 1.65;
-  resize: vertical;
+  line-height: 1.5;
+  letter-spacing: 0.00625em;
 }
 
-.modal-textarea::placeholder {
-  color: var(--md-sys-color-on-surface-variant);
+.modal-markdown-body {
+  padding: 8px 0 12px;
+  font-size: var(--md-sys-typescale-body-large);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
-.modal-textarea:disabled {
-  opacity: 0.6;
+.modal-markdown-body :deep(h1:first-child) {
+  display: none;
 }
 
-.editor-hint {
-  font-size: var(--md-sys-typescale-body-small);
-  color: var(--md-sys-color-on-surface-variant);
+.modal-markdown-body :deep(> * + *) {
+  margin-top: 0.5rem;
+}
+
+.modal-markdown-body :deep(.task-list) {
+  list-style: none;
+  padding-left: 0;
+}
+
+.modal-markdown-body :deep(.task-list-item) {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 0.5rem;
 }
 
-.editor-hint kbd {
-  background: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  color: var(--md-sys-color-on-surface-variant);
-  border-radius: var(--md-sys-shape-corner-xs);
-  padding: 0.1rem 0.4rem;
-  font-family: var(--md-sys-typescale-font-mono);
-  font-size: var(--md-sys-typescale-label-small);
+.modal-markdown-body :deep(.task-list-item.is-completed) {
+  text-decoration: line-through;
+  opacity: 0.65;
 }
 
-/* Attachments */
 .modal-attachments {
-  border-top: 1px solid var(--note-border-color);
-  padding-top: 1rem;
-}
-
-.section-title {
-  font-size: var(--md-sys-typescale-label-medium);
-  font-weight: 600;
-  margin: 0 0 0.75rem 0;
-  color: var(--md-sys-color-on-surface-variant);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.attachment-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 0.75rem;
-}
-
-.attachment-card {
-  border: 1px solid var(--note-border-color);
-  border-radius: var(--md-sys-shape-corner-md);
-  background: color-mix(in srgb, var(--md-sys-color-surface-container) 55%, transparent);
-  transition: background-color var(--md-sys-motion-duration-short) ease,
-              border-color var(--md-sys-motion-duration-short) ease;
-}
-
-.attachment-card:hover {
-  background: var(--md-sys-color-surface-container);
-  border-color: var(--note-border-hover);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
 }
 
 .attachment-anchor {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.6rem 0.8rem;
+  gap: 6px;
+  min-width: 0;
+  color: var(--md-sys-color-on-surface);
+  font-size: var(--md-sys-typescale-body-medium);
   text-decoration: none;
-  color: inherit;
-  border-radius: inherit;
 }
 
-.att-icon {
-  font-size: 1.25rem;
-  flex-shrink: 0;
-}
-
-.att-info {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+.attachment-anchor:hover .att-name {
+  text-decoration: underline;
 }
 
 .att-name {
-  font-size: var(--md-sys-typescale-body-medium);
-  font-weight: 500;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .att-size {
+  flex-shrink: 0;
+  color: var(--md-sys-color-on-surface-variant);
   font-size: var(--md-sys-typescale-body-small);
+}
+
+.modal-status {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  font-size: var(--md-sys-typescale-label-medium);
+}
+
+.status-chip .ui-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.edited-at {
+  align-self: flex-end;
+  padding: 4px 0 8px;
+  font-size: var(--md-sys-typescale-label-medium);
   color: var(--md-sys-color-on-surface-variant);
 }
 
-/* Tags */
-.modal-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.tags-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.tag-pill {
-  border: none;
-  background-color: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-on-surface-variant);
-  padding: 0.25rem 0.75rem;
-  border-radius: var(--md-sys-shape-corner-sm);
-  font-size: var(--md-sys-typescale-label-large);
-  cursor: pointer;
-  transition: background-color var(--md-sys-motion-duration-short) ease,
-              color var(--md-sys-motion-duration-short) ease;
-}
-
-.tag-pill:hover {
-  background-color: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
-}
-
-/* Footer (Google Keep Style) */
 .modal-footer {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0.625rem 1rem 0.625rem 1.25rem;
-  border-top: 1px solid var(--note-border-color);
-  gap: 1rem;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 46px;
+  padding: 4px 15px 4px 8px;
 }
 
 .footer-actions {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-}
-
-.action-btn.delete-btn:hover {
-  background-color: var(--md-sys-color-error-container);
-  color: var(--md-sys-color-on-error-container);
+  gap: 4px;
 }
 
 .color-picker-wrapper {
@@ -1348,119 +1097,42 @@ onUnmounted(() => {
   box-shadow: 0 0 0 2px var(--md-sys-color-surface-container), 0 0 0 4px var(--md-sys-color-primary);
 }
 
+.color-swatch-btn.is-default {
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-outline-variant);
+}
+
 .footer-right {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 8px;
 }
 
 .save-status {
-  font-size: var(--md-sys-typescale-body-small);
+  font-size: var(--md-sys-typescale-label-medium);
   color: var(--md-sys-color-on-surface-variant);
-}
-
-.save-status.unsaved {
-  color: var(--md-sys-color-error);
-}
-
-.save-status.saving {
-  color: var(--md-sys-color-primary);
 }
 
 .done-btn {
-  min-height: 40px;
-  padding: 0.5rem 1.5rem;
+  min-height: 36px;
+  padding: 0 24px;
   border: none;
-  border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
+  border-radius: var(--md-sys-shape-corner-xs);
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
   font-size: var(--md-sys-typescale-label-large);
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: 0.0178em;
   cursor: pointer;
-  transition: box-shadow var(--md-sys-motion-duration-short) ease,
-              filter var(--md-sys-motion-duration-short) ease;
+  transition: background-color var(--md-sys-motion-duration-short) ease;
 }
 
 .done-btn:hover {
-  box-shadow: var(--md-sys-elevation-1);
-  filter: brightness(0.97);
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 }
 
 .done-btn:disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-/* Delete Confirm Overlay */
-.delete-confirm-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 1020;
-  background: var(--md-sys-color-scrim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-}
-
-.delete-confirm-card {
-  background: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-on-surface);
-  padding: 1.5rem;
-  border-radius: var(--md-sys-shape-corner-2xl);
-  max-width: 400px;
-  box-shadow: var(--md-sys-elevation-3);
-}
-
-.delete-confirm-card h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: var(--md-sys-typescale-headline-small);
-  font-weight: 400;
-}
-
-.delete-confirm-card p {
-  margin: 0 0 1.5rem 0;
-  font-size: var(--md-sys-typescale-body-medium);
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-.delete-confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-.btn-cancel,
-.btn-delete {
-  min-height: 40px;
-  padding: 0.5rem 1.25rem;
-  border-radius: var(--md-sys-shape-corner-full);
-  font-size: var(--md-sys-typescale-label-large);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color var(--md-sys-motion-duration-short) ease,
-              box-shadow var(--md-sys-motion-duration-short) ease;
-}
-
-.btn-cancel {
-  border: none;
-  background: transparent;
-  color: var(--md-sys-color-primary);
-}
-
-.btn-cancel:hover {
-  background: var(--md-sys-state-hover);
-}
-
-.btn-delete {
-  border: none;
-  background: var(--md-sys-color-error);
-  color: var(--md-sys-color-on-error);
-}
-
-.btn-delete:hover {
-  box-shadow: var(--md-sys-elevation-1);
+  opacity: 0.6;
+  cursor: wait;
 }
 
 /* Transitions */
@@ -1481,24 +1153,20 @@ onUnmounted(() => {
 
 .note-modal-fade-enter-from .note-modal-card,
 .note-modal-fade-leave-to .note-modal-card {
-  transform: scale(0.96) translateY(8px);
+  transform: scale(0.97) translateY(6px);
 }
 
-/* Responsive */
 @media (max-width: 600px) {
+  .note-modal-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+
   .note-modal-card {
-    width: 98vw;
-    max-height: 94vh;
-    border-radius: var(--md-sys-shape-corner-xl);
-  }
-
-  .modal-header,
-  .modal-footer {
-    padding: 0.75rem 1rem;
-  }
-
-  .modal-body {
-    padding: 1rem;
+    width: 100%;
+    max-height: none;
+    border-radius: 0;
+    border: none;
   }
 }
 </style>
