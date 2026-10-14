@@ -107,6 +107,39 @@ describe('Keep-style notes workspace', () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([true, false])('copies a dialog draft once, retains the original and recovers from failure (success=%s)', async (success) => {
+    const { state, fetchMock } = backend();
+    const base = fetchMock.getMockImplementation()!;
+    let finish!: (response: Response) => void;
+    const posts: Record<string, unknown>[] = [];
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === '/api/things' && init?.method === 'POST') {
+        posts.push(JSON.parse(String(init.body)));
+        return new Promise<Response>(resolve => { finish = resolve; });
+      }
+      return base(input, init);
+    });
+    wrapper = (await renderApp(fetchMock)).wrapper;
+    await wrapper.get('.note-card').trigger('click'); await settle();
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.value = 'Copy this unsaved draft #work'; body.dispatchEvent(new Event('input'));
+    (document.querySelector('.note-modal-card [aria-label="More note actions"]') as HTMLButtonElement).click(); await settle();
+    const copyButton = document.querySelector('[role="menuitem"][aria-label="Make a copy"]') as HTMLButtonElement;
+    copyButton.click(); await settle();
+    expect(posts).toHaveLength(1); expect(posts[0]).toEqual({ content: 'Copy this unsaved draft #work', attachments: [] });
+    expect(body.disabled).toBe(true);
+    expect(document.querySelector('.save-status')?.textContent).toBe('Creating copy…');
+    copyButton.click(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); await settle();
+    expect(posts).toHaveLength(1); expect(document.querySelector('.note-modal-card')).not.toBeNull();
+    finish(success ? json({ thing: { ...NOTE, _id: 'note-copy', content: posts[0].content } }) : json({ message: 'Copy failed' }, 500));
+    await settle();
+    expect(state.content).toBe(NOTE.content); expect(state.revision).toBe(1);
+    expect(body.value).toBe('Copy this unsaved draft #work'); expect(body.disabled).toBe(false);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0);
+    expect(wrapper.findAll('.note-card')).toHaveLength(success ? 2 : 1);
+    if (!success) expect(document.querySelector('.modal-error-banner')?.textContent).toContain('Copy failed');
+  });
+
   it('lists labels alphabetically in the sidebar and filters by them', async () => {
     const { fetchMock } = backend();
     const rendered = await renderApp(fetchMock);

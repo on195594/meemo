@@ -159,8 +159,11 @@
           <UiIcon :name="thing.archived ? 'restore' : 'archive'" />
         </button>
 
-        <ActionMenu v-model:open="showMoreMenu" label="More note actions" :disabled="isColorSaving" @update:open="onMoreMenuChange">
+        <ActionMenu v-model:open="showMoreMenu" label="More note actions" :disabled="isColorSaving || duplicating" @update:open="onMoreMenuChange">
           <template #trigger><UiIcon name="more" /></template>
+          <button v-if="onDuplicate" type="button" role="menuitem" tabindex="-1" aria-label="Make a copy" @click="makeCopy">
+            <UiIcon name="copy" /> Make a copy
+          </button>
           <button type="button" role="menuitem" tabindex="-1" :aria-label="thing.public ? 'Make private' : 'Make public'" @click="$emit('togglePublic', thing)">
             <UiIcon name="globe" /> {{ thing.public ? 'Make private' : 'Make public' }}
           </button>
@@ -187,6 +190,21 @@ const showColorPicker = ref(false);
 const showMoreMenu = ref(false);
 const isColorSaving = ref(false);
 const actionError = ref<string | null>(null);
+async function makeCopy() {
+  if (!props.canEdit || !props.onDuplicate || props.duplicating) return;
+  actionError.value = null;
+  try {
+    const result = await props.onDuplicate(props.thing);
+    if (!result.success) actionError.value = result.error || 'Could not create copy. Try again.';
+  } catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Could not create copy. Try again.';
+  }
+  await nextTick();
+  if (document.activeElement === document.body && !document.querySelector('.note-modal-overlay')) {
+    const card = document.querySelector(`[data-note-id="${props.thing._id}"]`);
+    card?.querySelector<HTMLButtonElement>('[aria-label="More note actions"]')?.focus();
+  }
+}
 const focusedColorIndex = ref(0);
 const colorPickerWrapperRef = ref<HTMLElement | null>(null);
 const colorTriggerRef = ref<HTMLButtonElement | null>(null);
@@ -297,6 +315,8 @@ const props = withDefaults(
     selectable?: boolean;
     selected?: boolean;
     highlightQuery?: string;
+    duplicating?: boolean;
+    onDuplicate?: (thing: Thing) => Promise<{ success: boolean; error?: string }>;
     onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; error?: string }>;
     onRestore?: (thing: Thing) => void | Promise<void>;
   }>(),

@@ -24,6 +24,7 @@ const paths = {
   close: 'M6 6l12 12 M6 18L18 6',
   menu: 'M4 6h16 M4 12h16 M4 18h16',
   more: 'M12 5h.01 M12 12h.01 M12 19h.01',
+  copy: 'M9 9h12v12H9z M3 15V3h12',
   grid: 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z',
   list: 'M4 5h16v6H4z M4 13h16v6H4z',
   checkbox: 'M4 4h16v16H4z M8 12l3 3 5-6',

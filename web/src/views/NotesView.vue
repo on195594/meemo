@@ -78,6 +78,8 @@
                 :selected="selectedIds.has(thing._id)"
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
+                :on-duplicate="handleDuplicateNote"
+                :duplicating="copyingIds.has(thing._id)"
                 :on-restore="isDeleted ? handleRestoreNote : undefined"
                 @open-detail="openNoteModal"
                 @delete="handleDeleteNote"
@@ -107,6 +109,8 @@
                 :selected="selectedIds.has(thing._id)"
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
+                :on-duplicate="handleDuplicateNote"
+                :duplicating="copyingIds.has(thing._id)"
                 :on-restore="isDeleted ? handleRestoreNote : undefined"
                 @open-detail="openNoteModal"
                 @delete="handleDeleteNote"
@@ -265,7 +269,9 @@
         :open="isNoteModalOpen"
         :thing="activeModalNote"
         :can-edit="!isDeleted"
-        :busy="isModalMutating"
+        :busy="isModalMutating || copyingIds.has(activeModalNoteId || '')"
+        :duplicating="copyingIds.has(activeModalNoteId || '')"
+        :on-duplicate="handleDuplicateNote"
         :on-save-edit="saveModalNote"
         @close="closeNoteModal"
         @delete="handleModalDelete"
@@ -327,6 +333,7 @@ const {
   fetchMore,
   setFilters,
   createNote,
+  duplicateNote,
   updateNote,
   deleteNote,
   batchUpdateNotes,
@@ -471,6 +478,20 @@ async function handleModalDelete(thing: Thing) {
     if (await handleDeleteNote(thing)) closeNoteModal();
   } finally {
     isModalMutating.value = false;
+  }
+}
+
+const copyingIds = ref(new Set<string>());
+async function handleDuplicateNote(thing: Thing) {
+  if (copyingIds.value.has(thing._id)) return { success: false, error: 'A copy is already being created' };
+  copyingIds.value.add(thing._id);
+  showToast('Creating copy…');
+  try {
+    const result = await duplicateNote(thing);
+    showToast(result.success ? 'Copy created in Notes' : result.error || 'Could not create copy. Try again.');
+    return result;
+  } finally {
+    copyingIds.value.delete(thing._id);
   }
 }
 

@@ -32,6 +32,22 @@ async function openMoreMenu() {
 }
 
 describe('NoteDetailModal', () => {
+  it.each([true, false])('copies the current draft without saving the original (success=%s)', async (success) => {
+    const original = note();
+    const onSaveEdit = vi.fn();
+    const onDuplicate = vi.fn().mockResolvedValue({ success, error: success ? undefined : 'Copy failed' });
+    const wrapper = mount(NoteDetailModal, { props: { open: true, thing: original, onSaveEdit, onDuplicate } });
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.value = 'Unsaved copy content'; body.dispatchEvent(new Event('input'));
+    await openMoreMenu();
+    (document.querySelector('[role="menuitem"][aria-label="Make a copy"]') as HTMLButtonElement).click(); await flushPromises();
+    expect(onDuplicate).toHaveBeenCalledWith(expect.objectContaining({ _id: original._id, content: 'Unsaved copy content', attachments: original.attachments, color: 'mint' }));
+    expect(onSaveEdit).not.toHaveBeenCalled(); expect(wrapper.emitted('close')).toBeUndefined();
+    expect(body.value).toBe('Unsaved copy content');
+    expect(original.content).toContain('Hello **world**');
+    if (!success) expect(document.querySelector('[role="alert"]')?.textContent).toContain('Copy failed');
+    wrapper.unmount();
+  });
   afterEach(() => {
     // Clean up any remaining teleported modals in document.body
     document.body.innerHTML = '';

@@ -94,6 +94,30 @@ describe('useNotes behavior', () => {
     expect(store.isLoading.value).toBe(false);
   });
 
+  it('duplicates only content, color and independent attachment descriptors, preserving Markdown whitespace', async () => {
+    const original = note('source', { content: '    code block\n', color: 'mint', public: true, shared: true, sticky: true, archived: true,
+      attachments: [{ identifier: 'file-1', fileName: 'report.pdf', size: 12 }] });
+    const created = note('copy', { content: original.content, color: 'mint', attachments: original.attachments });
+    apiMock.create.mockResolvedValue({ thing: created });
+    const store = useNotes();
+    expect(await store.duplicateNote(original)).toEqual({ success: true, thing: created });
+    const payload = apiMock.create.mock.calls[0][0];
+    expect(payload).toEqual({ content: original.content, color: 'mint', attachments: original.attachments });
+    expect(payload.attachments).not.toBe(original.attachments);
+    expect(payload.attachments[0]).not.toBe(original.attachments[0]);
+    expect(original).toMatchObject({ _id: 'source', revision: 1, public: true, shared: true, archived: true, sticky: true });
+    expect(apiMock.update).not.toHaveBeenCalled();
+    expect(store.things.value).toEqual([created]);
+  });
+
+  it('keeps the source untouched and reports a failed duplicate', async () => {
+    apiMock.create.mockRejectedValue(new Error('Copy failed'));
+    const original = note('source');
+    expect(await useNotes().duplicateNote(original)).toEqual({ success: false, error: 'Copy failed' });
+    expect(original.content).toBe('note source');
+    expect(apiMock.update).not.toHaveBeenCalled();
+  });
+
   it('creates a trimmed note in the visible list', async () => {
     const created = note('new');
     apiMock.create.mockResolvedValue({ thing: created });

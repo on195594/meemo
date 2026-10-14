@@ -138,7 +138,15 @@ export function useNotes() {
   }
 
   // Write path operations (RF-504)
-  async function createNote(
+  function createNote(content: string, attachments: AttachmentDescriptor[] = [], color?: NoteColor) {
+    return addNote(content?.trim(), attachments, color);
+  }
+
+  function duplicateNote(thing: Thing) {
+    return addNote(thing.content, thing.attachments.map(attachment => ({ ...attachment })), thing.color);
+  }
+
+  async function addNote(
     content: string,
     attachments: AttachmentDescriptor[] = [],
     color?: NoteColor
@@ -149,7 +157,7 @@ export function useNotes() {
 
     const generation = userGeneration;
     try {
-      const payload: any = { content: content.trim(), attachments };
+      const payload: any = { content, attachments };
       if (color !== undefined) {
         payload.color = color;
       }
@@ -442,6 +450,7 @@ export function useNotes() {
 
     // Write Actions
     createNote,
+    duplicateNote,
     updateNote,
     deleteNote,
     restoreNote,

@@ -24,6 +24,20 @@ function note(overrides: Partial<Thing> = {}): Thing {
 }
 
 describe('NoteCard behavior', () => {
+  it('copies through More, reports failures and disables repeat actions while copying', async () => {
+    const thing = note();
+    const onDuplicate = vi.fn().mockResolvedValue({ success: false, error: 'Copy failed' });
+    const wrapper = mount(NoteCard, { props: { thing, onDuplicate }, attachTo: document.body });
+    await wrapper.get('[aria-label="More note actions"]').trigger('click'); await flushPromises();
+    (document.querySelector('[role="menuitem"][aria-label="Make a copy"]') as HTMLButtonElement).click(); await flushPromises();
+    expect(onDuplicate).toHaveBeenCalledOnce(); expect(onDuplicate).toHaveBeenCalledWith(thing);
+    expect(wrapper.emitted('openDetail')).toBeUndefined();
+    expect(wrapper.get('[role="alert"]').text()).toBe('Copy failed');
+    await wrapper.setProps({ duplicating: true });
+    expect((wrapper.get('[aria-label="More note actions"]').element as HTMLButtonElement).disabled).toBe(true);
+    expect(thing.content).toBe('Hello **world**');
+    wrapper.unmount();
+  });
   it('opens the detail dialog from a card click or Enter, but not from toolbar buttons', async () => {
     const thing = note();
     const onOpenDetail = vi.fn();

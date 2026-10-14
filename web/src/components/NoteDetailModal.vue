@@ -176,6 +176,9 @@
 
               <ActionMenu v-model:open="showMoreMenu" label="More note actions" :disabled="busy || isSaving || isColorSaving" @update:open="onMoreMenuChange">
                 <template #trigger><UiIcon name="more" /></template>
+                <button v-if="onDuplicate" type="button" role="menuitem" tabindex="-1" aria-label="Make a copy" @click="makeCopy">
+                  <UiIcon name="copy" /> Make a copy
+                </button>
                 <button type="button" role="menuitem" tabindex="-1" :aria-label="currentNote.public ? 'Make note private' : 'Make note public'" @click="togglePublic">
                   <UiIcon name="globe" /> {{ currentNote.public ? 'Make private' : 'Make public' }}
                 </button>
@@ -187,7 +190,7 @@
             <div v-else class="footer-placeholder"></div>
 
             <div class="footer-right">
-              <span v-if="isSaving || busy" class="save-status" role="status">Saving…</span>
+              <span v-if="isSaving || busy" class="save-status" role="status">{{ duplicating ? 'Creating copy…' : 'Saving…' }}</span>
               <button
                 type="button"
                 class="done-btn"
@@ -222,6 +225,8 @@ const props = withDefaults(
     canEdit?: boolean;
     busy?: boolean;
     highlightQuery?: string;
+    duplicating?: boolean;
+    onDuplicate?: (thing: Thing) => Promise<{ success: boolean; error?: string }>;
     onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; thing?: Thing; error?: string }>;
   }>(),
   {
@@ -722,6 +727,23 @@ async function togglePublic() {
     }
   } else {
     emit('togglePublic', props.thing || currentNote.value);
+  }
+}
+
+async function makeCopy() {
+  if (!props.canEdit || !props.onDuplicate || props.busy || props.duplicating || isSaving.value) return;
+  actionError.value = null;
+  const content = titleDraft.value === baseline.title && bodyDraft.value === baseline.body
+    ? currentNote.value.content : editDraft.value;
+  try {
+    const result = await props.onDuplicate({ ...currentNote.value, content });
+    if (!result.success) actionError.value = result.error || 'Could not create copy. Try again.';
+  } catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Could not create copy. Try again.';
+  }
+  await nextTick();
+  if (props.open && document.activeElement === document.body) {
+    overlayRef.value?.querySelector<HTMLButtonElement>('[aria-label="More note actions"]')?.focus();
   }
 }
 
