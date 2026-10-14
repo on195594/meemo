@@ -6,6 +6,7 @@ import App from './App.vue';
 import type { Thing, UserProfile } from './api/client';
 import { useAuth } from './composables/useAuth';
 import { useNotes } from './composables/useNotes';
+import { useSettings } from './composables/useSettings';
 import NotesView from './views/NotesView.vue';
 
 const accounts: Record<'a' | 'b', UserProfile> = {
@@ -41,7 +42,9 @@ function json(body: unknown, status = 200): Response {
   } as Response;
 }
 
-function backend() {
+const WALLPAPER = 'data:image/png;base64,iVBORw0KGgo=';
+
+function backend(settings: Record<string, unknown> = { showTagSidebar: false }) {
   const state: { current: 'a' | 'b' | null; rejectNextThings: boolean; emptyThings: boolean } = {
     current: 'a',
     rejectNextThings: false,
@@ -72,7 +75,7 @@ function backend() {
       return json({ things: state.current && !state.emptyThings ? [note(state.current)] : [] });
     }
     if (url === '/api/tags') return json({ tags: [] });
-    if (url === '/api/settings') return json({ settings: { showTagSidebar: false } });
+    if (url === '/api/settings') return json({ settings });
     if (url === '/api/users') {
       return json({ users: Object.values(accounts).map(({ username, displayName }) => ({ username, displayName })) });
     }
@@ -256,5 +259,83 @@ describe('App authenticated note flows', () => {
 
     expect(wrapper.find('.m3-notes-masonry').exists()).toBe(true);
     expect(wrapper.find('.note-card').exists()).toBe(true);
+  });
+
+  describe('theme and wallpaper matrix', () => {
+    afterEach(() => {
+      document.body.className = '';
+      document.body.removeAttribute('style');
+      document.documentElement.removeAttribute('data-theme');
+    });
+
+    it.each([
+      { theme: 'auto', attr: null, wallpaper: false },
+      { theme: 'auto', attr: null, wallpaper: true },
+      { theme: 'dark', attr: 'dark', wallpaper: false },
+      { theme: 'dark', attr: 'dark', wallpaper: true },
+      { theme: 'light', attr: 'light', wallpaper: false },
+      { theme: 'light', attr: 'light', wallpaper: true },
+    ] as const)(
+      'applies theme=$theme wallpaper=$wallpaper to the app shell and body',
+      async ({ theme, attr, wallpaper }) => {
+        const { fetchMock } = backend({
+          showTagSidebar: false,
+          theme,
+          ...(wallpaper ? { backgroundImageDataUrl: WALLPAPER } : {}),
+        });
+        const rendered = await renderApp(fetchMock);
+        wrapper = rendered.wrapper;
+
+        expect(document.documentElement.getAttribute('data-theme')).toBe(attr);
+        expect(wrapper.get('#meemo-app').classes().includes('has-custom-bg')).toBe(wallpaper);
+        expect(document.body.classList.contains('has-custom-bg')).toBe(wallpaper);
+        expect(document.body.style.backgroundImage.includes('data:image/png')).toBe(wallpaper);
+        expect(wrapper.get('.theme-toggle-btn').attributes('aria-label')).toContain(
+          theme === 'auto' ? 'Auto' : theme === 'dark' ? 'Dark' : 'Light',
+        );
+      },
+    );
+
+    it('keeps the wallpaper class when the theme cycles, and drops it when the wallpaper is cleared', async () => {
+      const { fetchMock } = backend({ showTagSidebar: false, backgroundImageDataUrl: WALLPAPER });
+      const rendered = await renderApp(fetchMock);
+      wrapper = rendered.wrapper;
+      expect(wrapper.get('#meemo-app').classes()).toContain('has-custom-bg');
+
+      await wrapper.get('.theme-toggle-btn').trigger('click');
+      await settle();
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+      expect(wrapper.get('#meemo-app').classes()).toContain('has-custom-bg');
+
+      await wrapper.get('.theme-toggle-btn').trigger('click');
+      await settle();
+      expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+      expect(wrapper.get('#meemo-app').classes()).toContain('has-custom-bg');
+
+      const { saveSettings } = useSettings();
+      await saveSettings({ backgroundImageDataUrl: '' });
+      await settle();
+      expect(wrapper.get('#meemo-app').classes()).not.toContain('has-custom-bg');
+      expect(document.body.classList.contains('has-custom-bg')).toBe(false);
+      expect(document.body.style.backgroundImage).toBe('');
+      expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    });
+
+    it('clears the wallpaper on logout while keeping the device theme', async () => {
+      const { fetchMock } = backend({ showTagSidebar: false, theme: 'dark', backgroundImageDataUrl: WALLPAPER });
+      const rendered = await renderApp(fetchMock);
+      wrapper = rendered.wrapper;
+      expect(document.body.classList.contains('has-custom-bg')).toBe(true);
+
+      await wrapper.get('.user-profile-btn').trigger('click');
+      await wrapper.get('.logout-btn').trigger('click');
+      await settle();
+
+      expect(wrapper.get('#meemo-app').classes()).not.toContain('has-custom-bg');
+      expect(document.body.classList.contains('has-custom-bg')).toBe(false);
+      expect(document.body.style.backgroundImage).toBe('');
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+      expect(localStorage.getItem('meemo_theme')).toBe('dark');
+    });
   });
 });

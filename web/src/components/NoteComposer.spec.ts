@@ -131,6 +131,7 @@ describe('NoteComposer behavior', () => {
 
     expect((wrapper.get('.composer-textarea').element as HTMLTextAreaElement).value).toBe('- [ ] ');
     expect(wrapper.find('.composer-title').exists()).toBe(true);
+    wrapper.unmount();
   });
 
   it('leaves focus where the outside click put it after the save finishes', async () => {
