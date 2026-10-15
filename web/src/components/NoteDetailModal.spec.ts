@@ -225,7 +225,7 @@ describe('NoteDetailModal', () => {
     const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
     textarea.value = 'Draft before action';
     textarea.dispatchEvent(new Event('input'));
-    if (action === 'Move note to trash') await openMoreMenu();
+    await openMoreMenu();
     (document.querySelector(`[aria-label="${action}"]`) as HTMLButtonElement).click();
     await flushPromises();
 
@@ -384,9 +384,11 @@ describe('NoteDetailModal', () => {
     const publicBtn = document.querySelector('[aria-label="Make note public"]') as HTMLButtonElement;
     expect(publicBtn).not.toBeNull();
     publicBtn.click();
+    await flushPromises();
     expect(onTogglePublic).toHaveBeenCalledWith(current);
 
-    // Archive toggle in footer
+    // Archive toggle in more menu
+    await openMoreMenu();
     const archiveBtn = document.querySelector('[aria-label="Archive note"]') as HTMLButtonElement;
     expect(archiveBtn).not.toBeNull();
     archiveBtn.click();

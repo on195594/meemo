@@ -162,22 +162,13 @@
                 </Teleport>
               </div>
 
-              <button
-                type="button"
-                class="action-btn"
-                :class="{ active: currentNote.archived }"
-                :title="currentNote.archived ? 'Unarchive' : 'Archive'"
-                :aria-label="currentNote.archived ? 'Restore note from archive' : 'Archive note'"
-                :disabled="busy"
-                @click="toggleArchive"
-              >
-                <UiIcon :name="currentNote.archived ? 'restore' : 'archive'" />
-              </button>
-
               <ActionMenu v-model:open="showMoreMenu" label="More note actions" :disabled="busy || isSaving || isColorSaving" @update:open="onMoreMenuChange">
                 <template #trigger><UiIcon name="more" /></template>
                 <button v-if="onDuplicate" type="button" role="menuitem" tabindex="-1" aria-label="Make a copy" @click="makeCopy">
                   <UiIcon name="copy" /> Make a copy
+                </button>
+                <button type="button" role="menuitem" tabindex="-1" :aria-label="currentNote.archived ? 'Restore note from archive' : 'Archive note'" @click="toggleArchive">
+                  <UiIcon :name="currentNote.archived ? 'restore' : 'archive'" /> {{ currentNote.archived ? 'Unarchive' : 'Archive' }}
                 </button>
                 <button type="button" role="menuitem" tabindex="-1" :aria-label="currentNote.public ? 'Make note private' : 'Make note public'" @click="togglePublic">
                   <UiIcon name="globe" /> {{ currentNote.public ? 'Make private' : 'Make public' }}

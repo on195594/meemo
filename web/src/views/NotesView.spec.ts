@@ -75,12 +75,9 @@ async function settle() {
 }
 
 async function dialogAction(action: string) {
-  if (action === 'Move note to trash') {
-    (document.querySelector('.note-modal-card [aria-label="More note actions"]') as HTMLButtonElement).click();
-    await settle();
-  }
-  const owner = action === 'Move note to trash' ? '[role="menu"]' : '.note-modal-card';
-  return document.querySelector(`${owner} [aria-label="${action}"]`) as HTMLButtonElement;
+  (document.querySelector('.note-modal-card [aria-label="More note actions"]') as HTMLButtonElement).click();
+  await settle();
+  return document.querySelector(`[role="menu"] [aria-label="${action}"]`) as HTMLButtonElement;
 }
 
 async function renderApp(fetchMock: ReturnType<typeof backend>['fetchMock']) {
@@ -173,7 +170,9 @@ describe('Keep-style notes workspace', () => {
     const { fetchMock, state } = backend();
     wrapper = (await renderApp(fetchMock)).wrapper;
 
-    await wrapper.get('.note-card [aria-label="Archive note"]').trigger('click');
+    await wrapper.get('.note-card [aria-label="More note actions"]').trigger('click');
+    await settle();
+    (document.querySelector('[role="menu"] [aria-label="Archive note"]') as HTMLButtonElement).click();
     await settle();
     expect(state.archived).toBe(true);
     expect(wrapper.find('.note-card').exists()).toBe(false);
@@ -228,7 +227,7 @@ describe('Keep-style notes workspace', () => {
     await settle();
 
     expect(body.disabled).toBe(true);
-    const lockedControl = document.querySelector(`.note-modal-card [aria-label="${action === 'Move note to trash' ? 'More note actions' : action}"]`) as HTMLButtonElement;
+    const lockedControl = document.querySelector('.note-modal-card [aria-label="More note actions"]') as HTMLButtonElement;
     expect(lockedControl.disabled).toBe(true);
     lockedControl.click();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));

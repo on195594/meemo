@@ -153,20 +153,13 @@
           </div>
         </div>
 
-        <button
-          type="button"
-          class="action-btn"
-          :title="thing.archived ? 'Unarchive' : 'Archive'"
-          :aria-label="thing.archived ? 'Unarchive note' : 'Archive note'"
-          @click="$emit('toggleArchive', thing)"
-        >
-          <UiIcon :name="thing.archived ? 'restore' : 'archive'" />
-        </button>
-
         <ActionMenu v-model:open="showMoreMenu" label="More note actions" :disabled="isColorSaving || duplicating" @update:open="onMoreMenuChange">
           <template #trigger><UiIcon name="more" /></template>
           <button v-if="onDuplicate" type="button" role="menuitem" tabindex="-1" aria-label="Make a copy" @click="makeCopy">
             <UiIcon name="copy" /> Make a copy
+          </button>
+          <button type="button" role="menuitem" tabindex="-1" :aria-label="thing.archived ? 'Unarchive note' : 'Archive note'" @click="$emit('toggleArchive', thing)">
+            <UiIcon :name="thing.archived ? 'restore' : 'archive'" /> {{ thing.archived ? 'Unarchive' : 'Archive' }}
           </button>
           <button type="button" role="menuitem" tabindex="-1" :aria-label="thing.public ? 'Make private' : 'Make public'" @click="$emit('togglePublic', thing)">
             <UiIcon name="globe" /> {{ thing.public ? 'Make private' : 'Make public' }}

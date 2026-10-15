@@ -49,7 +49,7 @@ describe('NoteCard behavior', () => {
     expect(onOpenDetail).toHaveBeenCalledTimes(2);
     expect(onOpenDetail).toHaveBeenCalledWith(thing);
 
-    await wrapper.get('button[aria-label="Archive note"]').trigger('click');
+    await wrapper.get('[aria-label="More note actions"]').trigger('click');
     await wrapper.get('.card-pin-btn').trigger('click');
     expect(onOpenDetail).toHaveBeenCalledTimes(2);
   });
@@ -229,15 +229,15 @@ describe('NoteCard behavior', () => {
   it.each([
     ['Pin note', 'toggleSticky'],
     ['Make public', 'togglePublic'],
-    ['Archive', 'toggleArchive'],
+    ['Archive note', 'toggleArchive'],
   ] as const)('emits %s action with the note', async (title, event) => {
     const thing = note();
     const wrapper = mount(NoteCard, { props: { thing } });
 
-    if (event === 'togglePublic') {
+    if (event === 'togglePublic' || event === 'toggleArchive') {
       await wrapper.get('[aria-label="More note actions"]').trigger('click');
       await flushPromises();
-      (document.querySelector('[role="menu"] [aria-label="Make public"]') as HTMLButtonElement).click();
+      (document.querySelector(`[role="menu"] [aria-label="${title}"]`) as HTMLButtonElement).click();
       await flushPromises();
     } else await wrapper.get(`[title="${title}"]`).trigger('click');
 
