@@ -1,5 +1,11 @@
 # Dependency security (VR-213)
 
+## 2026-10-15 frontend release audit remediation
+
+The note-card release audit reported nine frontend package findings, including critical findings in the development-only Vitest/Tinypool chain and a high finding in `source-map-js`. Under separate authorization, the frontend now locks Vite `6.4.4`, Vitest `4.1.11`, DOMPurify `3.4.17`, `source-map-js` `1.2.2`, and `brace-expansion` `5.0.12`; the Vitest upgrade removes Tinypool entirely. Vite 6 remains compatible with the existing Vue plugin, so Vue, its plugin, and TypeScript do not change. No dependency overrides or blanket `npm audit fix --force` are used.
+
+After a clean frontend `npm ci`, all 207 frontend tests, typechecking, and the production build pass on Node.js 22 without test/configuration changes. The complete `npm --prefix web audit` and root `npm audit --omit=dev` both report zero vulnerabilities. The root full audit still reports eight development-only findings (one low, seven high, no critical), outside this frontend remediation; they are not included in the production image. These are registry snapshots, not a guarantee against future advisories; historical audit results below are unchanged.
+
 ## 2026-10-12 upload-abort security fix
 
 The deployment candidate upgrades the existing upload dependency to `multer@2.4.0` (minimum manifest version `^2.4.0`). The official [GHSA-3pph-fpjx-jg34 advisory](https://github.com/advisories/GHSA-3pph-fpjx-jg34) identifies orphaned disk writes after aborted uploads in `>=2.2.0, <2.4.0`; `2.4.0` is the first patched version. Disk-backed archive imports cross this boundary; memory-backed attachment uploads do not leave disk files through that mechanism.
