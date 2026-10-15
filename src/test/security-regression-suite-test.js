@@ -40,9 +40,7 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
     this.timeout(20000);
 
     var app;
-    var usersFilePath = path.join(os.tmpdir(), 'meemo-sec-reg-users-' + process.pid + '.json');
     var testAttachmentDir = path.join(os.tmpdir(), 'meemo-sec-reg-storage-' + process.pid);
-    var prevUsersFile = process.env.USERS_FILE;
     var prevAttachmentDir = config.attachmentDir;
 
     var agentA;
@@ -51,10 +49,8 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
     var userB;
 
     before(function (done) {
-        process.env.USERS_FILE = usersFilePath;
         config.attachmentDir = testAttachmentDir;
 
-        fs.rmSync(usersFilePath, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
         fs.mkdirSync(testAttachmentDir, { recursive: true });
 
@@ -120,9 +116,7 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
 
     after(function (done) {
         authService._resetRateLimits();
-        process.env.USERS_FILE = prevUsersFile;
         config.attachmentDir = prevAttachmentDir;
-        fs.rmSync(usersFilePath, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
         config._clearDatabase(done);
     });

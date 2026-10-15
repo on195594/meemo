@@ -4,10 +4,8 @@ set -eu
 
 TEST_RUN_ID="${MEEMO_TEST_RUN_ID:-$$}"
 CONTAINER_NAME="mongo-server-meemo-test-${TEST_RUN_ID}-$$"
-USERS_FILE_PATH="/tmp/meemo-users-test-${TEST_RUN_ID}-$$.json"
 
 cleanup() {
-    rm -f "${USERS_FILE_PATH}"
     docker rm --force --volumes "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -29,6 +27,5 @@ while [ -z "${MONGODB_IP:-}" ]; do
 done
 
 export MONGODB_URL="mongodb://${MONGODB_IP}:27017/meemo"
-export USERS_FILE="${USERS_FILE_PATH}"
 
 ./node_modules/.bin/mocha --exit --timeout 10000 src/test/*-test.js

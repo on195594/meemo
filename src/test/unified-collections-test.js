@@ -162,25 +162,6 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             });
         });
 
-        it('persists tags in unified tags collection with usage increment', function (done) {
-            tags.update(testUserId, 'javascript', function (err) {
-                if (err) return done(err);
-
-                tags.update(testUserId, 'javascript', function (err) {
-                    if (err) return done(err);
-
-                    tags.get(testUserId, function (err, list) {
-                        if (err) return done(err);
-                        expect(list.length).to.equal(1);
-                        expect(list[0].name).to.equal('javascript');
-                        expect(list[0].ownerId).to.equal(testUserId);
-                        expect(list[0].usage).to.equal(2);
-                        done();
-                    });
-                });
-            });
-        });
-
         it('persists settings in unified settings collection', async function () {
             await settings.put(testUserId, { title: 'My Unified Meemo' });
             var res = await settings.get(testUserId);
@@ -196,11 +177,9 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
     describe('Unified-only runtime and pagination (VR-205/VR-206/VR-207)', function () {
         var thingOwner = 'rf703_partial_owner';
         var paginationOwner = 'vr207_pagination_owner';
-        var tagOwner = 'rf703_tag_owner';
         var settingsOwner = 'rf703_settings_owner';
         var legacyThings;
         var paginationThings;
-        var legacyTagId = new ObjectId();
 
         before(function (done) {
             legacyThings = Array.from({ length: 100 }, function (_, index) {
@@ -245,14 +224,6 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 db.collection(thingOwner + '_things').insertMany(legacyThings),
                 db.collection('things').insertMany(copiedThings),
                 db.collection('things').insertMany(paginationThings),
-                db.collection(tagOwner + '_tags').insertMany([
-                    { _id: new ObjectId(), name: 'alpha', usage: 1, createdAt: 1 },
-                    { _id: legacyTagId, name: 'beta', usage: 5, createdAt: 2 }
-                ]),
-                db.collection('tags').insertMany([
-                    { ownerId: tagOwner, name: 'alpha', usage: 10, createdAt: 3 },
-                    { ownerId: tagOwner, name: 'gamma', usage: 2, createdAt: 4 }
-                ]),
                 db.collection(settingsOwner + '_settings').insertOne({
                     type: 'frontend',
                     value: { title: 'Legacy title', legacyOnly: true }
@@ -270,8 +241,6 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 db.collection(thingOwner + '_things').drop().catch(function () {}),
                 db.collection('things').deleteMany({ ownerId: thingOwner }),
                 db.collection('things').deleteMany({ ownerId: paginationOwner }),
-                db.collection(tagOwner + '_tags').drop().catch(function () {}),
-                db.collection('tags').deleteMany({ ownerId: tagOwner }),
                 db.collection(settingsOwner + '_settings').drop().catch(function () {}),
                 db.collection('settings').deleteMany({ ownerId: settingsOwner })
             ]).then(function () { done(); }, done);
@@ -346,21 +315,6 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
                 return things.getAllLean(thingOwner);
             }).then(function (list) {
                 expect(list.length).to.equal(50);
-            });
-        });
-
-        it('reads tags only from the Unified collection', function () {
-            return tags.get(tagOwner).then(function (list) {
-                expect(list.map(function (tag) { return tag.name; })).to.eql(['alpha', 'gamma']);
-                expect(list[0].usage).to.equal(10);
-            });
-        });
-
-        it('does not delete a tag from the Legacy collection', function () {
-            return tags.del(tagOwner, String(legacyTagId)).then(function () {
-                return db.collection(tagOwner + '_tags').countDocuments({ _id: legacyTagId });
-            }).then(function (count) {
-                expect(count).to.equal(1);
             });
         });
 

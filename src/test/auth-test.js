@@ -7,7 +7,6 @@
 /* global beforeEach:false */
 
 var expect = require('expect.js'),
-    fs = require('fs'),
     request = require('supertest'),
     config = require('../config.js'),
     users = require('../users.js'),
@@ -16,13 +15,8 @@ var expect = require('expect.js'),
 
 describe('Authentication & Registration Policy (RF-101)', function () {
     var app;
-    var usersFilePath = '/tmp/meemo-auth-test-' + process.pid + '.json';
 
-    var prevUsersFile = process.env.USERS_FILE;
-
-    function resetUserFile(done) {
-        process.env.USERS_FILE = usersFilePath;
-        fs.rmSync(usersFilePath, { force: true });
+    function resetUsers(done) {
         if (config.db) {
             var promise = config.db.collection('users').deleteMany({});
             if (done) {
@@ -35,9 +29,8 @@ describe('Authentication & Registration Policy (RF-101)', function () {
     }
 
     before(function (done) {
-        process.env.USERS_FILE = usersFilePath;
         process.env.REGISTRATION_MODE = 'open';
-        resetUserFile();
+        resetUsers();
 
         config._clearDatabase(function (err) {
             if (err) return done(err);
@@ -51,16 +44,14 @@ describe('Authentication & Registration Policy (RF-101)', function () {
     });
 
     after(function (done) {
-        process.env.USERS_FILE = prevUsersFile;
         delete process.env.REGISTRATION_MODE;
-        fs.rmSync(usersFilePath, { force: true });
         config._clearDatabase(done);
     });
 
     describe('POST /api/register validation', function () {
         beforeEach(function (done) {
             process.env.REGISTRATION_MODE = 'open';
-            resetUserFile(done);
+            resetUsers(done);
         });
 
         it('rejects missing fields with 400', function (done) {
@@ -193,7 +184,7 @@ describe('Authentication & Registration Policy (RF-101)', function () {
 
     describe('REGISTRATION_MODE policies', function () {
         beforeEach(function (done) {
-            resetUserFile(done);
+            resetUsers(done);
         });
 
         it('blocks registration when REGISTRATION_MODE=disabled', function (done) {
@@ -270,7 +261,7 @@ describe('Authentication & Registration Policy (RF-101)', function () {
                 else process.env.AUTH_USER_SOURCE = previousAuthUserSource;
                 users.initRepository();
                 process.env.REGISTRATION_MODE = 'open';
-                resetUserFile();
+                resetUsers();
             });
 
             it('allows exactly one of 20 concurrent first-user registrations', async function () {
@@ -382,7 +373,7 @@ describe('Authentication & Registration Policy (RF-101)', function () {
                     users.setRepository(prevRepo);
                 }
 
-                await resetUserFile();
+                await resetUsers();
                 await request(app)
                     .post('/api/register')
                     .send({
@@ -401,7 +392,7 @@ describe('Authentication & Registration Policy (RF-101)', function () {
         beforeEach(function (done) {
             delete process.env.LOGIN_RATE_LIMIT_MAX;
             delete process.env.LOGIN_RATE_LIMIT_WINDOW_MS;
-            resetUserFile(function (err) {
+            resetUsers(function (err) {
                 if (err) return done(err);
                 request(app)
                     .post('/api/register')

@@ -17,8 +17,6 @@ var createApp = appModule.createApp;
 
 describe('Attachment Authorization (RF-104)', function () {
     var app;
-    var usersFilePath = '/tmp/meemo-attachment-test-' + process.pid + '.json';
-    var prevUsersFile = process.env.USERS_FILE;
     var prevAttachmentDir = config.attachmentDir;
     var testAttachmentDir = '/tmp/meemo-attachment-storage-' + process.pid;
 
@@ -35,9 +33,7 @@ describe('Attachment Authorization (RF-104)', function () {
     var bobPrivateFile = 'bob_secret_notes.txt';
 
     before(function (done) {
-        process.env.USERS_FILE = usersFilePath;
         config.attachmentDir = testAttachmentDir;
-        fs.rmSync(usersFilePath, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
 
         config._clearDatabase(function (err) {
@@ -114,9 +110,7 @@ describe('Attachment Authorization (RF-104)', function () {
     });
 
     after(function (done) {
-        process.env.USERS_FILE = prevUsersFile;
         config.attachmentDir = prevAttachmentDir;
-        fs.rmSync(usersFilePath, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
         config._clearDatabase(done);
     });

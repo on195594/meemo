@@ -13,9 +13,9 @@ Meemo is a small browser application served by Express and backed by MongoDB and
 7. `src/database/` reads and writes MongoDB collections (unified collections `things`, `tags`, and `settings` partitioned by `ownerId`, plus `users` and `sessions`).
 8. `src/storage/local-storage.js` owns persistent attachment filesystem access.
 9. `src/users.js` abstracts account storage targeting `MongoUserRepository` via `UserRepository` (legacy file and fallback repositories have been retired).
-10. `web/` is compiled by Vite into the generated, ignored `public/` directory, serving as the modern Vue 3 Single Page Application with client-side routing, Material Design 3 tokens, 12-color note theming, and a Google Keep-inspired expanded note viewing/editing modal dialog.
+10. `npm run build` compiles `web/` with Vite into ignored `web/dist/`, then copies the output to ignored `public/`, serving as the modern Vue 3 Single Page Application with client-side routing, Material Design 3 tokens, 12-color note theming, and a Google Keep-inspired expanded note viewing/editing modal dialog.
 
-The runtime reads and writes only unified collections. `things` is the online single source of truth for tag identity and usage: `/api/tags` aggregates the owner-partitioned `things.tags` arrays in real time, while the persisted `tags` collection is a migration/readiness projection. Ordinary Thing mutations (`add`, `put`, `del`) write directly and atomically to `things` without active-writer lease counters. For offline migration and release readiness verification (`verify-production-readiness.js`), a durable MongoDB write freeze gate (`things.acquireWriteFreeze` / `things.requireWriteFreeze`) blocks Thing mutations and fails closed when unverified. Tag reconstruction (`cleanupTags`) repairs Thing tag arrays using compare-and-set filters, aggregates fresh usage from `things`, and atomically swaps the replacement collection over `tags` via MongoDB's atomic `renameCollection`. Dynamic `<user>_*` collection discovery exists only in migration and read-only retirement tooling; it is not part of request handling.
+The runtime reads and writes only unified collections. `things` is the online single source of truth for tag identity and usage: `/api/tags` aggregates the owner-partitioned `things.tags` arrays in real time, while the persisted `tags` collection is a migration/readiness projection. Its repository exposes index/collection access and atomic replacement, not per-tag CRUD; projection test fixtures write documents directly. Ordinary Thing mutations (`add`, `put`, `del`) write directly and atomically to `things` without active-writer lease counters. For offline migration and release readiness verification (`verify-production-readiness.js`), a durable MongoDB write freeze gate (`things.acquireWriteFreeze` / `things.requireWriteFreeze`) blocks Thing mutations and fails closed when unverified. Tag reconstruction (`cleanupTags`) repairs Thing tag arrays using compare-and-set filters, aggregates fresh usage from `things`, and atomically swaps the replacement collection over `tags` via MongoDB's atomic `renameCollection`. Dynamic `<user>_*` collection discovery exists only in migration and read-only retirement tooling; it is not part of request handling.
 
 Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, persistence in `src/database/`, and attachment filesystem access in `src/storage/`. HTTP routes must call services instead of database or filesystem APIs directly.
 
@@ -115,8 +115,8 @@ Meemo employs a multi-tiered performance strategy balancing database efficiency,
 
 ## Build and deployment
 
-`npm run build` compiles the modern Vue 3 + Vite + TypeScript application in `web/` into `public/`.
-`npm run build:web` compiles directly into `web/dist/`. Do not commit generated output.
+`npm run build` compiles the modern Vue 3 + Vite + TypeScript application in `web/` into staging output `web/dist/`, then copies it to the Express-served `public/`.
+`npm run build:web` updates only `web/dist/`. Do not commit generated output.
 
 The Dockerfile uses a multi-stage build (`web-builder` for `web/` and `builder` for native production dependencies), running the application as an unprivileged user while serving Vue 3 assets from `public/`. `start.sh` creates the attachment directory and starts Node inside the container. Repository `docker-compose.yml` builds `meemo:local` and supplies MongoDB and persistent named volumes.
 

@@ -10,19 +10,15 @@
  * Runtime read operations (`/api/tags`) aggregate dynamically from `things` via `things.getTagUsage`.
  * This module and the persisted `tags` collection serve exclusively as a historical
  * migration projection and verification artifact (e.g. `cleanupTags` and readiness checks).
- * Direct mutation functions (update, del, etc.) are @deprecated and retained only for
- * legacy test suite backwards compatibility.
  */
 
 var assert = require('assert'),
     crypto = require('crypto'),
-    ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
     nodeify = require('../promise.js');
 
 var collectionDatabase = null;
 var indexesCreated = false;
-var lastModifiedAt = 0;
 
 function resetCache() {
     collectionDatabase = null;
@@ -61,68 +57,6 @@ function ensureIndexes(callback) {
     return nodeify(promise, callback);
 }
 
-/**
- * @deprecated Use things.getTagUsage(userId) for online tag usage queries.
- */
-function get(userId, callback) {
-    assert.strictEqual(typeof userId, 'string');
-
-    var promise = getUnifiedCollection().find({ ownerId: userId }).toArray().then(function (result) {
-        return result.sort(function (left, right) {
-            return (right.usage || 0) - (left.usage || 0) || (right.createdAt || 0) - (left.createdAt || 0);
-        });
-    });
-    return nodeify(promise, callback);
-}
-
-/**
- * @deprecated Retained for legacy migration test suites only. Online mutations update things.tags.
- */
-function update(userId, name, callback) {
-    var promise = updateWithState(userId, name).then(function () { return undefined; });
-    return nodeify(promise, callback);
-}
-
-/**
- * @deprecated Retained for legacy migration test suites only.
- */
-function updateWithState(userId, name, callback) {
-    assert.strictEqual(typeof userId, 'string');
-    assert.strictEqual(typeof name, 'string');
-
-    var modifiedAt = Math.max(Date.now(), lastModifiedAt + 1);
-    lastModifiedAt = modifiedAt;
-    var promise = getUnifiedCollection().findOneAndUpdate({ ownerId: userId, name: name }, {
-        $inc: { usage: 1 },
-        $set: { ownerId: userId, name: name, modifiedAt: modifiedAt },
-        $setOnInsert: { createdAt: modifiedAt }
-    }, { upsert: true, returnDocument: 'before', includeResultMetadata: true }).then(function (result) {
-        var previous = result.value;
-        return {
-            name: name,
-            previous: previous,
-            documentId: previous ? previous._id : result.lastErrorObject.upserted,
-            modifiedAt: modifiedAt,
-            expectedUsage: (previous && previous.usage || 0) + 1
-        };
-    });
-    return nodeify(promise, callback);
-}
-
-/**
- * @deprecated Retained for legacy migration test suites only.
- */
-function del(userId, tagId, callback) {
-    assert.strictEqual(typeof userId, 'string');
-    assert.strictEqual(typeof tagId, 'string');
-    if (!ObjectId.isValid(tagId)) return nodeify(Promise.reject(new Error('not found')), callback);
-
-    var promise = getUnifiedCollection().deleteOne({ _id: new ObjectId(tagId), ownerId: userId }).then(function () {
-        return undefined;
-    });
-    return nodeify(promise, callback);
-}
-
 function replaceAll(documents, callback) {
     assert(Array.isArray(documents));
 
@@ -151,10 +85,6 @@ function replaceAll(documents, callback) {
 }
 
 module.exports = {
-    get: get,
-    del: del,
-    update: update,
-    updateWithState: updateWithState,
     replaceAll: replaceAll,
     ensureIndexes: ensureIndexes,
     getUnifiedCollection: getUnifiedCollection,

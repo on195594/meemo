@@ -3,37 +3,12 @@
 /* global it:false */
 /* global describe:false */
 
-var fs = require('fs'),
-    path = require('path'),
-    expect = require('expect.js'),
+var expect = require('expect.js'),
     request = require('supertest'),
     createApp = require('../../app.js').createApp;
 
-describe('Vue 3 Cutover and Legacy Retirement (RF-506)', function () {
-    var rootDir = path.resolve(__dirname, '../..');
-    var app = createApp({ sessionMemory: true, sessionSecret: 'rf-506-cutover-secret' });
-
-    describe('Legacy Retirement', function () {
-        it('removes legacy frontend directory and gulpfile', function () {
-            expect(fs.existsSync(path.join(rootDir, 'frontend'))).to.be(false);
-            expect(fs.existsSync(path.join(rootDir, 'gulpfile.js'))).to.be(false);
-        });
-
-        it('cleans legacy Gulp, Sass, jQuery, and Vue 1 from root package.json devDependencies', function () {
-            var pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
-            expect(pkg.devDependencies).not.to.have.property('gulp');
-            expect(pkg.devDependencies).not.to.have.property('gulp-sass');
-            expect(pkg.devDependencies).not.to.have.property('gulp-autoprefixer');
-            expect(pkg.devDependencies).not.to.have.property('gulp-cssnano');
-            expect(pkg.devDependencies).not.to.have.property('gulp-ejs');
-            expect(pkg.devDependencies).not.to.have.property('jquery');
-            expect(pkg.devDependencies).not.to.have.property('vue');
-            expect(pkg.devDependencies).not.to.have.property('sass');
-            expect(pkg.devDependencies).not.to.have.property('yargs');
-
-            expect(pkg.scripts.build).to.equal('node scripts/build-frontend.js');
-        });
-    });
+describe('HTTP static serving', function () {
+    var app = createApp({ sessionMemory: true, sessionSecret: 'static-serving-test-secret' });
 
     describe('Express Static Serving and SPA History Routing', function () {
         it('serves SPA index.html on root path /', function (done) {

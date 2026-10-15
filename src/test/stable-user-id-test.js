@@ -22,10 +22,8 @@ var settings = require('../database/settings.js');
 describe('Stable User ID and Decoupling (RF-203)', function () {
     var dbClient;
     var app;
-    var prevUsersFile = process.env.USERS_FILE;
     var prevAuthSource = process.env.AUTH_USER_SOURCE;
     var prevAttachmentDir = config.attachmentDir;
-    var testUsersFile = '/tmp/meemo-rf203-users-' + process.pid + '.json';
     var testAttachmentDir = '/tmp/meemo-rf203-attachments-' + process.pid;
 
     var aliceUser;
@@ -34,11 +32,9 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
     var bobAgent;
 
     before(async function () {
-        process.env.USERS_FILE = testUsersFile;
         process.env.AUTH_USER_SOURCE = 'mongo';
         config.attachmentDir = testAttachmentDir;
 
-        fs.rmSync(testUsersFile, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
         fs.mkdirSync(testAttachmentDir, { recursive: true });
 
@@ -69,16 +65,12 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
     });
 
     after(async function () {
-        if (prevUsersFile === undefined) delete process.env.USERS_FILE;
-        else process.env.USERS_FILE = prevUsersFile;
-
         if (prevAuthSource === undefined) delete process.env.AUTH_USER_SOURCE;
         else process.env.AUTH_USER_SOURCE = prevAuthSource;
 
         config.attachmentDir = prevAttachmentDir;
         users.initRepository('mongo');
 
-        fs.rmSync(testUsersFile, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
 
         if (dbClient) {

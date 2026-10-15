@@ -19,8 +19,6 @@ var createApp = appModule.createApp;
 
 describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
     var app;
-    var usersFilePath = '/tmp/meemo-upload-test-' + process.pid + '.json';
-    var prevUsersFile = process.env.USERS_FILE;
     var prevAttachmentDir = config.attachmentDir;
     var testAttachmentDir = '/tmp/meemo-upload-storage-' + process.pid;
     var authAgent;
@@ -31,12 +29,10 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
     var prevMaxImport = process.env.MAX_IMPORT_SIZE;
 
     before(function (done) {
-        process.env.USERS_FILE = usersFilePath;
         config.attachmentDir = testAttachmentDir;
         process.env.MAX_ATTACHMENT_SIZE = '1024'; // 1 KB limit for testing
         process.env.MAX_IMPORT_SIZE = '2048';     // 2 KB limit for testing
 
-        fs.rmSync(usersFilePath, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
 
         config._clearDatabase(function (err) {
@@ -65,14 +61,12 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
     });
 
     after(function (done) {
-        process.env.USERS_FILE = prevUsersFile;
         config.attachmentDir = prevAttachmentDir;
         if (prevMaxAttach === undefined) delete process.env.MAX_ATTACHMENT_SIZE;
         else process.env.MAX_ATTACHMENT_SIZE = prevMaxAttach;
         if (prevMaxImport === undefined) delete process.env.MAX_IMPORT_SIZE;
         else process.env.MAX_IMPORT_SIZE = prevMaxImport;
 
-        fs.rmSync(usersFilePath, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
         config._clearDatabase(done);
     });

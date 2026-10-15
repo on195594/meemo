@@ -58,8 +58,6 @@ function streamToBuffer(stream) {
 
 describe('Import Safety and Consistency (RF-106)', function () {
     var app;
-    var usersFilePath = '/tmp/meemo-import-test-' + process.pid + '.json';
-    var prevUsersFile = process.env.USERS_FILE;
     var prevAttachmentDir = config.attachmentDir;
     var testAttachmentDir = '/tmp/meemo-import-storage-' + process.pid;
     var authAgent;
@@ -67,10 +65,8 @@ describe('Import Safety and Consistency (RF-106)', function () {
 
     before(async function () {
         this.timeout(10000);
-        process.env.USERS_FILE = usersFilePath;
         config.attachmentDir = testAttachmentDir;
 
-        fs.rmSync(usersFilePath, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
 
         await config._clearDatabase();
@@ -90,10 +86,8 @@ describe('Import Safety and Consistency (RF-106)', function () {
     });
 
     after(function (done) {
-        process.env.USERS_FILE = prevUsersFile;
         config.attachmentDir = prevAttachmentDir;
 
-        fs.rmSync(usersFilePath, { force: true });
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
         config._clearDatabase(done);
     });
@@ -511,9 +505,13 @@ describe('Import Safety and Consistency (RF-106)', function () {
 
         it('does not mutate persisted tag projection when an import fails', async function () {
             var tagCollection = tags.getUnifiedCollection();
-            await tags.update(testUserId, 'existing');
-            await tagCollection.updateOne({ ownerId: testUserId, name: 'existing' }, {
-                $set: { usage: 7, createdAt: 111, modifiedAt: 222, marker: 'preserve' }
+            await tagCollection.insertOne({
+                ownerId: testUserId,
+                name: 'existing',
+                usage: 7,
+                createdAt: 111,
+                modifiedAt: 222,
+                marker: 'preserve'
             });
             var before = await tagCollection.findOne({ ownerId: testUserId, name: 'existing' });
             var originalInsertFull = things.insertFull;
