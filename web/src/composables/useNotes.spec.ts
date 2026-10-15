@@ -110,6 +110,15 @@ describe('useNotes behavior', () => {
     expect(store.things.value).toEqual([created]);
   });
 
+  it('duplicates notes when attachments property is undefined', async () => {
+    const original = note('source-no-attachments', { content: 'plain note', attachments: undefined });
+    const created = note('copy-no-attachments', { content: 'plain note' });
+    apiMock.create.mockResolvedValue({ thing: created });
+    const store = useNotes();
+    expect(await store.duplicateNote(original)).toEqual({ success: true, thing: created });
+    expect(apiMock.create).toHaveBeenCalledWith({ content: 'plain note', attachments: [] });
+  });
+
   it('keeps the source untouched and reports a failed duplicate', async () => {
     apiMock.create.mockRejectedValue(new Error('Copy failed'));
     const original = note('source');

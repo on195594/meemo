@@ -223,6 +223,12 @@ describe('stripImageAttachmentReferences', () => {
     expect(result).toContain('![External Cat](https://example.com/cat.jpg)');
   });
 
+  it('preserves markdown links that use attachment fileName as label and strips images with fileName in alt', () => {
+    const content = 'See [sunset.jpg](https://example.com/info) for details\n![sunset.jpg](https://other.com/sunset.jpg)';
+    const result = stripImageAttachmentReferences(content, attachments);
+    expect(result).toBe('See [sunset.jpg](https://example.com/info) for details');
+  });
+
   it('returns empty string when note contains only an image attachment reference', () => {
     expect(stripImageAttachmentReferences('[sunset.jpg]', attachments)).toBe('');
     expect(stripImageAttachmentReferences('![/api/files/me/n/hash123.jpg](/api/files/me/n/hash123.jpg)', attachments)).toBe('');

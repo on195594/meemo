@@ -143,7 +143,7 @@ export function useNotes() {
   }
 
   function duplicateNote(thing: Thing) {
-    return addNote(thing.content, thing.attachments.map(attachment => ({ ...attachment })), thing.color);
+    return addNote(thing.content, (thing.attachments || []).map(attachment => ({ ...attachment })), thing.color);
   }
 
   async function addNote(

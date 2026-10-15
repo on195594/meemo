@@ -336,11 +336,11 @@ export function stripImageAttachmentReferences(
       const nameEncoded = escapeRegExp(encodeURIComponent(nameRaw));
       const namePattern = nameEscaped === nameEncoded ? nameEscaped : `(?:${nameEscaped}|${nameEncoded})`;
 
-      // Strip bracket filename reference: [fileName.jpg]
-      result = result.replace(new RegExp(`\\[${nameEscaped}\\]`, 'gi'), '');
-
       // Strip markdown image referencing the filename: ![...](...fileName...) or ![fileName](...)
       result = result.replace(new RegExp(`!\\[[^\\]]*\\]\\([^)]*${namePattern}[^)]*\\)`, 'gi'), '');
+
+      // Strip bracket filename reference: [fileName.jpg] (not an image, not a markdown link)
+      result = result.replace(new RegExp(`(?<!!)\\[${nameEscaped}\\](?!\\()`, 'gi'), '');
     }
   }
 

@@ -23,14 +23,14 @@ Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesys
 - Web browser running on desktop and mobile viewports, accessed directly on local networks or behind private reverse proxies (e.g. Nginx with SSL).
 - Fast capture workflow: rapid creation via a Keep-style "Take a note…" composer that saves when closed or clicked away from, instant search navigation via keyboard shortcuts (`/` and `Ctrl+K`), live tag filtering (`#tag`).
 - Focused editing: Google Keep-style dialog that opens ready to edit (separate title field mapped to a leading `# Title` line, Markdown body) and saves on close; checklist items toggle directly on cards; writes use revision-checked (CAS) updates.
-- Triage and organization: Pinning notes to top, 12-color high-contrast palette tinting, archiving completed notes, and reversible trash.
+- Triage and organization: Pinning notes to top, 12-color high-contrast palette tinting, duplicating notes ("Make a copy"), archiving completed notes, and reversible trash.
 
 ## Capabilities and Constraints
 
 - **Client**: Modern Vue 3 Single Page Application with TypeScript, Vite, Material Design 3 tokens, client-side routing, and responsive row-order masonry layout (grid or list view), and a Keep-style navigation rail (Notes, labels, Archive, Trash).
 - **Server & Persistence**: Node.js/Express backend with Zod validation, MongoDB for accounts, sessions, and unified `things` collections with compound ESR and `$text` indexes, local filesystem for attachments.
 - **Content Formatting**: Markdown rendering, interactive task checkboxes, wikilinks, search-term highlighting.
-- **Organization**: Pinned notes section, 12-color Keep-calibrated palette with automatic dark mode contrast recalibration, dynamic tag aggregation, multi-select batch actions (pin, archive, color, delete to trash), and snackbar Undo for archive and trash.
+- **Organization**: Pinned notes section, 12-color Keep-calibrated palette with automatic dark mode contrast recalibration, dynamic tag aggregation, single-note actions (copy, pin, archive, public/private toggle, delete) via touch-friendly action menus, multi-select batch actions (pin, archive, color, delete to trash), and snackbar Undo for archive and trash.
 - **Import/Export**: Drag-and-drop `.tar` archive import with progress tracking; `.tar` export (`/api/export`).
 - **Authentication**: Browser username/password login with bcrypt hashing, server-side MongoDB sessions, configurable registration modes (`open`, `first-user`, `disabled`). MCP uses separately consented, user-bound OAuth tokens, not REST session substitution.
 - **Optional assistant**: Default-disabled Gemini/MCP integration supporting note search, read, create, update, and delete with optimistic concurrency control. Private-note transfer requires explicit user consent. See [current configuration and boundaries](docs/GEMINI_ASSISTANT.md).
