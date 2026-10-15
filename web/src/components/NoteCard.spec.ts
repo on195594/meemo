@@ -388,4 +388,39 @@ describe('NoteCard behavior', () => {
     await selectBtn.trigger('click');
     expect(wrapper.emitted('toggleSelect')).toEqual([[thing]]);
   });
+
+  it('does not open detail when user was selecting text within the card', async () => {
+    const thing = note({ content: 'Selectable text snippet' });
+    const onOpenDetail = vi.fn();
+    const wrapper = mount(NoteCard, { props: { thing, onOpenDetail } });
+
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => 'Selectable',
+    } as unknown as Selection);
+
+    await wrapper.get('.card-body').trigger('click');
+    expect(onOpenDetail).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('emits toggleSelect on long press and suppresses detail opening', async () => {
+    vi.useFakeTimers();
+    const thing = note();
+    const onOpenDetail = vi.fn();
+    const wrapper = mount(NoteCard, { props: { thing, onOpenDetail } });
+
+    await wrapper.trigger('touchstart', {
+      touches: [{ clientX: 100, clientY: 100 }],
+    });
+    vi.advanceTimersByTime(500);
+
+    expect(wrapper.emitted('toggleSelect')).toEqual([[thing]]);
+
+    // Releasing finger and subsequent click should not open detail
+    await wrapper.trigger('touchend');
+    await wrapper.trigger('click');
+    expect(onOpenDetail).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
 });

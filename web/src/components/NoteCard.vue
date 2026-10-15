@@ -15,6 +15,10 @@
     :aria-haspopup="hasOpenDetailListener ? 'dialog' : undefined"
     @click="handleCardClick"
     @keydown="handleCardKeydown"
+    @touchstart.passive="handleTouchStart"
+    @touchmove.passive="handleTouchMove"
+    @touchend="clearTouchTimer"
+    @touchcancel="clearTouchTimer"
   >
     <!-- Keep-style edge-to-edge image attachments -->
     <div v-if="imageAttachments.length > 0" class="card-images" :class="{ 'is-multi': imageAttachments.length > 1 }">
@@ -304,6 +308,7 @@ async function selectColor(color: NoteColor, closeAfterSave = true) {
 }
 
 onUnmounted(() => {
+  clearTouchTimer();
   document.removeEventListener('pointerdown', handleOutsideColorPicker);
   document.removeEventListener('focusin', handleOutsideColorPicker);
 });
@@ -398,9 +403,53 @@ const instance = getCurrentInstance();
 const colorPaletteId = `note-colors-${instance!.uid}`;
 const hasOpenDetailListener = computed(() => Boolean(instance?.vnode.props?.onOpenDetail));
 
+let touchTimer: ReturnType<typeof setTimeout> | null = null;
+let touchStartX = 0;
+let touchStartY = 0;
+let didLongPress = false;
+
+function handleTouchStart(event: TouchEvent) {
+  if (event.touches.length !== 1 || !props.canEdit) return;
+  const touch = event.touches[0];
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+  clearTouchTimer();
+  touchTimer = setTimeout(() => {
+    touchTimer = null;
+    didLongPress = true;
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try { navigator.vibrate(40); } catch (_) {}
+    }
+    emit('toggleSelect', props.thing);
+  }, 500);
+}
+
+function handleTouchMove(event: TouchEvent) {
+  if (!touchTimer || event.touches.length !== 1) return;
+  const touch = event.touches[0];
+  if (Math.abs(touch.clientX - touchStartX) > 10 || Math.abs(touch.clientY - touchStartY) > 10) {
+    clearTouchTimer();
+  }
+}
+
+function clearTouchTimer() {
+  if (touchTimer) {
+    clearTimeout(touchTimer);
+    touchTimer = null;
+  }
+}
+
 function handleCardClick(event: MouseEvent) {
+  if (didLongPress) {
+    didLongPress = false;
+    return;
+  }
   if (!hasOpenDetailListener.value) return;
   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+
+  // Don't open detail if user was selecting text within the card
+  const selection = window.getSelection();
+  if (selection && selection.toString().trim().length > 0) return;
 
   const target = event.target as HTMLElement | null;
   if (!target) return;
@@ -586,6 +635,7 @@ async function handleBodyClick(event: MouseEvent) {
 .note-card:focus-within,
 .note-card.has-menu-open {
   box-shadow: var(--keep-shadow-hover);
+  border-color: transparent;
 }
 
 .note-card.is-clickable {
@@ -595,6 +645,7 @@ async function handleBodyClick(event: MouseEvent) {
 .note-card.is-clickable .card-body {
   max-height: 400px;
   overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 340px, transparent 400px);
   mask-image: linear-gradient(to bottom, #000 340px, transparent 400px);
 }
 
@@ -609,7 +660,7 @@ async function handleBodyClick(event: MouseEvent) {
 
 .note-card.is-selected {
   border-color: var(--md-sys-color-on-surface);
-  box-shadow: inset 0 0 0 1px var(--md-sys-color-on-surface);
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-on-surface);
 }
 
 .card-images {
@@ -645,7 +696,7 @@ async function handleBodyClick(event: MouseEvent) {
   display: none;
 }
 
-.card-body :deep(> h1:first-child) {
+.card-body :deep(> :first-child) {
   padding-right: calc(var(--keep-control-size) - 4px);
 }
 
@@ -671,7 +722,13 @@ async function handleBodyClick(event: MouseEvent) {
   color: var(--md-sys-color-on-surface);
 }
 
-.action-btn.active {
+/* Harmonious action icons on colored notes (Keep) */
+.note-card.is-tinted .action-btn {
+  color: color-mix(in srgb, var(--md-sys-color-on-surface) 72%, transparent);
+}
+
+.note-card.is-tinted .action-btn:hover,
+.note-card.is-tinted .action-btn.active {
   color: var(--md-sys-color-on-surface);
 }
 
@@ -704,6 +761,20 @@ async function handleBodyClick(event: MouseEvent) {
 
 .card-pin-btn.active :deep(path) {
   fill: currentColor;
+}
+
+/* Pinned notes retain visible pin button at rest (Keep) */
+.note-card.is-sticky .card-pin-btn {
+  opacity: 1;
+}
+
+.note-card:has(.card-images) .card-pin-btn {
+  background: color-mix(in srgb, var(--md-sys-color-surface) 75%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.note-card:has(.card-images) .card-pin-btn:hover {
+  background: var(--md-sys-color-surface);
 }
 
 .card-select-btn {
@@ -821,30 +892,30 @@ async function handleBodyClick(event: MouseEvent) {
   overflow-wrap: break-word;
 }
 
-.card-body :deep(h1),
-.card-body :deep(h2),
-.card-body :deep(h3),
-.card-body :deep(h4),
-.card-body :deep(h5),
-.card-body :deep(h6) {
-  font-size: 0.9375rem;
-  line-height: 1.4;
-  font-weight: 500;
-}
-
-/* Leading H1 is the Keep-style note title */
+/* Heading typography hierarchy (Keep) */
 .card-body :deep(h1) {
   font-size: var(--md-sys-typescale-title-medium);
   font-weight: 500;
   line-height: 1.5;
   letter-spacing: 0.00625em;
+  margin: 0;
+}
+
+.card-body :deep(h2) {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0;
 }
 
 .card-body :deep(h3),
 .card-body :deep(h4),
 .card-body :deep(h5),
 .card-body :deep(h6) {
-  font-size: 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0;
 }
 
 .card-body :deep(> * + *) {
@@ -922,8 +993,8 @@ async function handleBodyClick(event: MouseEvent) {
 
 .card-attachments {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 6px;
   padding: 8px 16px 0;
 }
 
@@ -932,9 +1003,22 @@ async function handleBodyClick(event: MouseEvent) {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  max-width: 100%;
   color: var(--md-sys-color-on-surface);
   font-size: var(--md-sys-typescale-body-small);
   text-decoration: none;
+}
+
+.attachment-link:not(.card-image-link) {
+  padding: 4px 8px;
+  border-radius: var(--md-sys-shape-corner-xs);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent);
+  transition: background-color var(--md-sys-motion-duration-short) ease;
+}
+
+.attachment-link:not(.card-image-link):hover {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
 }
 
 .attachment-link:not(.card-image-link):hover .attachment-name {
@@ -950,6 +1034,7 @@ async function handleBodyClick(event: MouseEvent) {
 .attachment-size {
   flex-shrink: 0;
   color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.75rem;
 }
 
 .card-footer {
@@ -998,6 +1083,8 @@ async function handleBodyClick(event: MouseEvent) {
 
 .card-body :deep(a[href^="#search?#"]) {
   display: inline-block;
+  vertical-align: baseline;
+  margin: 1px 2px;
   padding: 0 6px;
   border-radius: var(--md-sys-shape-corner-full);
   background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
@@ -1032,14 +1119,24 @@ async function handleBodyClick(event: MouseEvent) {
 }
 
 :deep(.task-list-item-checkbox) {
+  position: relative;
   appearance: auto;
-  width: 1.1rem;
-  height: 1.1rem;
-  margin-right: 0.55rem;
-  margin-top: 0.2rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-right: 0.5rem;
+  margin-top: 0.15rem;
   cursor: pointer;
-  accent-color: var(--md-sys-color-on-surface-variant);
+  accent-color: var(--md-sys-color-primary, var(--md-sys-color-on-surface));
   flex-shrink: 0;
+}
+
+:deep(.task-list-item-checkbox)::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  right: -6px;
+  bottom: -6px;
 }
 
 /* Markdown Image Lightbox Cursor */

@@ -143,12 +143,12 @@ The older `--md-sys-elevation-*` tokens remain for auth, settings, and import di
 ## Components
 
 ### Note Card
-- Card surface tinted with the note's color; colored cards drop the outline.
-- A leading `# Heading` renders as the title (16px/500); body text is 14px. Clickable stream cards clip at 400px with a fade.
-- Image attachments sit edge-to-edge at the top; other attachments are compact links.
-- Hover/focus reveals the pin (top-right), the selection check (top-left, outside the corner), and the toolbar (color, archive, More). Make a copy, public/private and Delete note live in More, reducing accidental taps. The card's controls remain visible while its menu is open. On touch devices the toolbar and pin are always visible.
+- Card surface tinted with the note's color; colored cards drop the outline. Hovering/focusing cards dissolves the outline into a subtle elevation shadow.
+- A leading `# Heading` renders as the title (16px/500); internal Markdown headings follow a clear hierarchy (h2: 15px, h3+: 14px); body text is 14px. Clickable stream cards clip at 400px with a cross-browser fade mask. Text selection on cards does not trigger modal navigation.
+- Image attachments sit edge-to-edge at the top; other attachments are compact badge chips.
+- Hover/focus reveals the pin (top-right), the selection check (top-left, outside the corner), and the toolbar (color, archive, More). Pinned notes retain their pin at rest. On touch devices the toolbar and pin are always visible, and long-press initiates multi-select mode.
 - No timestamp on editable cards; read-only views (shared/public) show it in the footer.
-- Checklist items toggle in place; clicking anywhere else, or Enter on the focused card, opens the dialog.
+- Checklist items toggle in place with enlarged touch hit targets; clicking anywhere else, or Enter on the focused card, opens the dialog.
 
 ### Note Dialog
 - Opens ready to edit: Title input and auto-growing body textarea (Markdown source). No preview toggle.
