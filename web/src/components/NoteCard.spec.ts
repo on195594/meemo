@@ -73,6 +73,79 @@ describe('NoteCard behavior', () => {
     }
   });
 
+  it.each([
+    'Visible **preview** ' + 'x'.repeat(5000) + ' hidden-tail',
+    Array.from({ length: 100 }, (_, i) => `Line ${i}`).join('\n') + '\nhidden-tail',
+    'x'.repeat(3999) + '😀 hidden-tail',
+  ])('bounds list preview parsing while opening the complete note', async (content) => {
+    const render = vi.spyOn(markdown, 'renderMarkdown');
+    const thing = note({ content });
+    const onOpenDetail = vi.fn();
+    const wrapper = mount(NoteCard, { props: { thing, onOpenDetail, highlightQuery: 'Visible' } });
+    try {
+      const parsed = render.mock.calls[0][0];
+      expect(parsed.length).toBeGreaterThan(0);
+      expect(parsed.length).toBeLessThanOrEqual(4000);
+      expect(parsed).toBe(content.slice(0, parsed.length));
+      expect(parsed).not.toMatch(/[\uD800-\uDBFF]$/);
+      expect(parsed.split('\n').length).toBeLessThanOrEqual(40);
+      expect(wrapper.get('.card-body').text()).not.toContain('hidden-tail');
+      if (content.startsWith('Visible')) expect(wrapper.get('mark').text()).toBe('Visible');
+      await wrapper.get('.card-preview-hint').trigger('click');
+      expect(onOpenDetail).toHaveBeenCalledWith(thing);
+      expect(thing.content).toBe(content);
+    } finally {
+      wrapper.unmount();
+      render.mockRestore();
+    }
+  });
+
+  it.each([
+    ['40 lines', Array.from({ length: 40 }, (_, i) => `Line ${i}`).join('\n'), false],
+    ['40 lines with final LF', Array.from({ length: 40 }, (_, i) => `Line ${i}`).join('\n') + '\n', false],
+    ['40 lines with final CRLF', Array.from({ length: 40 }, (_, i) => `Line ${i}`).join('\r\n') + '\r\n', false],
+    ['40 lines with trailing blank lines', Array.from({ length: 40 }, (_, i) => `Line ${i}`).join('\n') + '\n\n  ', false],
+    ['41 nonempty lines', Array.from({ length: 41 }, (_, i) => `Line ${i}`).join('\n'), true],
+    ['4000 characters', 'x'.repeat(4000), false],
+    ['4000 characters with trailing whitespace', 'x'.repeat(4000) + '\n  ', false],
+    ['4001 non-whitespace characters', 'x'.repeat(4001), true],
+  ] as const)('only shows the read-more hint for omitted content: %s', (_name, content, truncated) => {
+    const wrapper = mount(NoteCard, { props: { thing: note({ content }), onOpenDetail: vi.fn() } });
+    try {
+      expect(wrapper.find('.card-preview-hint').exists()).toBe(truncated);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it('keeps complete standalone notes and short list notes without a truncation hint', () => {
+    const content = 'x'.repeat(5000) + '\nhidden-tail';
+    const standalone = mount(NoteCard, { props: { thing: note({ content }), canEdit: false } });
+    const short = mount(NoteCard, { props: { thing: note(), onOpenDetail: vi.fn() } });
+    expect(standalone.get('.card-body').text()).toContain('hidden-tail');
+    expect(standalone.find('.card-preview-hint').exists()).toBe(false);
+    expect(short.get('strong').text()).toBe('world');
+    expect(short.find('.card-preview-hint').exists()).toBe(false);
+    standalone.unmount();
+    short.unmount();
+  });
+
+  it('updates a preview task against the entire original note', async () => {
+    const content = Array.from({ length: 100 }, (_, i) => `- [ ] Task ${i}`).join('\n');
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteCard, { props: { thing: note({ content }), onOpenDetail: vi.fn(), onSaveEdit } });
+    try {
+      expect(wrapper.findAll('.task-list-item-checkbox')).toHaveLength(40);
+      await wrapper.findAll('.task-list-item-checkbox')[1].trigger('click');
+      await flushPromises();
+      expect(onSaveEdit).toHaveBeenCalledWith('note-1', {
+        content: content.replace('- [ ] Task 1\n', '- [x] Task 1\n'),
+      });
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
   it('renders note state, markdown, and attachments', () => {
     const wrapper = mount(NoteCard, {
       props: {

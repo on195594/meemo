@@ -68,6 +68,7 @@
     </div>
 
     <div v-if="renderedBody || !imageAttachments.length" ref="cardBodyRef" class="card-body markdown-body" v-html="renderedBody" @click="handleBodyClick"></div>
+    <p v-if="bodyPreview.truncated" class="card-preview-hint">Open note to read more</p>
 
     <!-- Non-image attachments -->
     <div v-if="fileAttachments.length > 0" class="card-attachments">
@@ -376,11 +377,15 @@ function attachmentUrl(att: AttachmentDescriptor): string {
 const imageAttachments = computed(() => (props.thing.attachments || []).filter(isImageAttachment));
 const fileAttachments = computed(() => (props.thing.attachments || []).filter((att) => !isImageAttachment(att)));
 
-const renderedMarkdown = computed(() => {
+const bodyPreview = computed(() => {
   const raw = props.thing.richContent || props.thing.content || '';
   const stripped = stripImageAttachmentReferences(raw, imageAttachments.value);
-  return renderMarkdown(stripped);
+  if (!hasOpenDetailListener.value) return { content: stripped, truncated: false };
+  // Bound parsing and DOM work when saves move cards between masonry columns.
+  const content = stripped.slice(0, 4000).split('\n', 40).join('\n').replace(/[\uD800-\uDBFF]$/, '');
+  return { content, truncated: content.length < stripped.trimEnd().length };
 });
+const renderedMarkdown = computed(() => renderMarkdown(bodyPreview.value.content));
 const renderedBody = computed(() => {
   const html = renderedMarkdown.value;
   return props.highlightQuery ? highlightKeyword(html, props.highlightQuery) : html;
@@ -924,6 +929,12 @@ async function handleBodyClick(event: MouseEvent) {
   color: var(--md-sys-color-on-surface);
   word-break: break-word;
   overflow-wrap: break-word;
+}
+
+.card-preview-hint {
+  margin: 12px 16px 0;
+  color: var(--md-sys-color-on-surface);
+  font-size: var(--md-sys-typescale-body-small);
 }
 
 /* Heading typography hierarchy (Keep) */

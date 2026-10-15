@@ -66,6 +66,23 @@ describe('NoteDetailModal', () => {
     wrapper.unmount();
   });
 
+  it('edits and saves the complete long note beyond the list preview', async () => {
+    const content = Array.from({ length: 100 }, (_, i) => `Line ${i}: ${'text '.repeat(20)}`).join('\n');
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteDetailModal, { props: { open: true, thing: note({ content }), onSaveEdit } });
+    try {
+      const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+      expect(textarea.value).toBe(content);
+      textarea.value += '\nComplete tail edit';
+      textarea.dispatchEvent(new Event('input'));
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }));
+      await flushPromises();
+      expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: content + '\nComplete tail edit' });
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
   it('opens straight into Keep-style editing with attachments and status', () => {
     const wrapper = mount(NoteDetailModal, {
       props: {

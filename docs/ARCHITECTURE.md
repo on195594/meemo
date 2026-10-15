@@ -113,6 +113,10 @@ Meemo employs a multi-tiered performance strategy balancing database efficiency,
 - Recovery: explicit `npm run verify:restore` builds and retains an image, backs up a synthetic database and attachment volume, then restores into fresh Docker resources. It checks documents/indexes, authenticated readback, session revocation, maintenance freeze, attachment/export bytes, sharing, CAS, restart persistence, and a separate-database sentinel; it validates the archive's image config digest rather than relying on a cached image. Both explicit verification entry points handle SIGINT/SIGTERM, bound subprocess/request waits, and clean up owned containers including anonymous MongoDB volumes. This is not production recovery authorization.
 - Search quality: explicit `npm run verify:search:relevance` reuses the benchmark's service path with labeled synthetic queries. `scripts/fixtures/search-relevance.json` is an agent-authored review draft, not representative production data or human-approved relevance evidence.
 
+## Note list rendering
+
+Saving updates local note state and reorders the row-order masonry columns. Cards can be remounted when they move between columns. To bound Markdown parsing, sanitization, and DOM work, `NoteCard.vue` limits its body preview to 4,000 UTF-16 code units or 40 lines when an `openDetail` listener is present. It displays an “Open note to read more” hint for truncated previews. Full source remains in state; task toggles operate on that source, not the preview. Detail dialogs and standalone private/shared note pages retain complete content. Search matching remains server-side; list highlighting applies to the visible preview.
+
 ## Build and deployment
 
 `npm run build` compiles the modern Vue 3 + Vite + TypeScript application in `web/` into staging output `web/dist/`, then copies it to the Express-served `public/`.
