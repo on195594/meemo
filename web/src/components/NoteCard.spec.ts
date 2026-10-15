@@ -429,6 +429,136 @@ describe('NoteCard behavior', () => {
     vi.useRealTimers();
   });
 
+  it.each([
+    ['pin button icon', '.card-pin-btn svg path'],
+    ['selection button icon', '.card-select-btn svg path'],
+    ['More menu icon', '[aria-label="More note actions"] svg path'],
+    ['color picker icon', '.color-btn svg path'],
+    ['image attachment', '.card-image-link img'],
+    ['file attachment name', '.attachment-name'],
+    ['Markdown link', '.markdown-body a strong'],
+    ['Markdown image', '.markdown-body img'],
+    ['task checkbox', '.task-list-item-checkbox'],
+    ['toolbar background', '.card-actions'],
+  ])('ignores a bubbling long press from %s without suppressing the next body click', async (_, selector) => {
+    vi.useFakeTimers();
+    const thing = note({
+      content: '- [ ] Todo\n\n[**Link**](https://example.test)\n\n![Diagram](/synthetic-diagram.png)',
+      attachments: [
+        { identifier: 'image-1', fileName: 'photo.png', type: 'image' },
+        { identifier: 'file-1', fileName: 'report.pdf' },
+      ],
+    });
+    const onOpenDetail = vi.fn();
+    const wrapper = mount(NoteCard, { props: { thing, onOpenDetail, onImageClick: vi.fn() } });
+    try {
+      const target = wrapper.get(selector);
+      await target.trigger('touchstart', { touches: [{ clientX: 100, clientY: 100 }] });
+      vi.advanceTimersByTime(600);
+      expect(wrapper.emitted('toggleSelect')).toBeUndefined();
+      expect(onOpenDetail).not.toHaveBeenCalled();
+      await target.trigger('touchend');
+      await wrapper.get('.card-body').trigger('click');
+      expect(onOpenDetail).toHaveBeenCalledWith(thing);
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ['horizontal movement', 'touchmove', [{ clientX: 111, clientY: 100 }]],
+    ['vertical movement', 'touchmove', [{ clientX: 100, clientY: 111 }]],
+    ['touch cancellation', 'touchcancel', []],
+    ['early release', 'touchend', []],
+  ])('cancels a body long press on %s and leaves normal clicks working', async (_, event, touches) => {
+    vi.useFakeTimers();
+    const thing = note();
+    const onOpenDetail = vi.fn();
+    const wrapper = mount(NoteCard, { props: { thing, onOpenDetail } });
+    try {
+      const body = wrapper.get('.card-body strong');
+      await body.trigger('touchstart', { touches: [{ clientX: 100, clientY: 100 }] });
+      vi.advanceTimersByTime(250);
+      await body.trigger(event, { touches });
+      vi.advanceTimersByTime(500);
+      expect(wrapper.emitted('toggleSelect')).toBeUndefined();
+      await body.trigger('touchend');
+      await body.trigger('click');
+      expect(onOpenDetail).toHaveBeenCalledWith(thing);
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('restores body clicks after the release window even without a synthetic click', async () => {
+    vi.useFakeTimers();
+    const thing = note();
+    const onOpenDetail = vi.fn();
+    const wrapper = mount(NoteCard, { props: { thing, onOpenDetail } });
+    try {
+      const body = wrapper.get('.card-body strong');
+      await body.trigger('touchstart', { touches: [{ clientX: 100, clientY: 100 }] });
+      vi.advanceTimersByTime(499);
+      expect(wrapper.emitted('toggleSelect')).toBeUndefined();
+      vi.advanceTimersByTime(1);
+      expect(wrapper.emitted('toggleSelect')).toEqual([[thing]]);
+      await body.trigger('touchend');
+      vi.advanceTimersByTime(400);
+      await body.trigger('click');
+      expect(onOpenDetail).toHaveBeenCalledWith(thing);
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps held controls, menu actions and subsequent body clicks independent', async () => {
+    vi.useFakeTimers();
+    const thing = note({ content: '- [ ] Todo' });
+    const onOpenDetail = vi.fn();
+    const wrapper = mount(NoteCard, { props: { thing, onOpenDetail }, attachTo: document.body });
+    const holdAndClick = async (element: Element) => {
+      const start = new Event('touchstart', { bubbles: true });
+      Object.defineProperty(start, 'touches', { value: [{ clientX: 100, clientY: 100 }] });
+      element.dispatchEvent(start);
+      vi.advanceTimersByTime(600);
+      element.dispatchEvent(new Event('touchend', { bubbles: true }));
+      element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await flushPromises();
+    };
+    try {
+      await holdAndClick(wrapper.get('.card-pin-btn svg path').element);
+      expect(wrapper.emitted('toggleSticky')).toEqual([[thing]]);
+      expect(wrapper.emitted('toggleSelect')).toBeUndefined();
+      await holdAndClick(wrapper.get('.card-select-btn svg path').element);
+      expect(wrapper.emitted('toggleSelect')).toEqual([[thing]]);
+
+      await holdAndClick(wrapper.get('.color-btn').element);
+      await holdAndClick(wrapper.get('[aria-label="Coral"]').element);
+      expect(wrapper.emitted('update')).toEqual([['note-1', { color: 'coral' }]]);
+      expect(wrapper.find('.color-palette-popover').exists()).toBe(false);
+
+      await holdAndClick(wrapper.get('[aria-label="More note actions"]').element);
+      const archive = document.querySelector('[role="menuitem"][aria-label="Archive note"]');
+      expect(archive).not.toBeNull();
+      await holdAndClick(archive!);
+      expect(wrapper.emitted('toggleArchive')).toEqual([[thing]]);
+      expect(document.querySelector('[role="menu"]')).toBeNull();
+
+      await holdAndClick(wrapper.get('.task-list-item-checkbox').element);
+      expect(wrapper.emitted('update')?.[1]).toEqual(['note-1', { content: '- [x] Todo' }]);
+      expect(wrapper.emitted('toggleSelect')).toHaveLength(1);
+      expect(onOpenDetail).not.toHaveBeenCalled();
+      await wrapper.get('.card-body').trigger('click');
+      expect(onOpenDetail).toHaveBeenCalledWith(thing);
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it('allows opening detail if selection is outside this card', async () => {
     const thing = note({ content: 'Card content' });
     const onOpenDetail = vi.fn();

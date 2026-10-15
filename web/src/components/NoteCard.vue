@@ -405,6 +405,9 @@ let didLongPress = false;
 
 function handleTouchStart(event: TouchEvent) {
   if (event.touches.length !== 1 || !props.canEdit) return;
+  const target = event.target as Element | null;
+  if (target?.closest('button, a, input, .card-actions') ||
+      (target?.closest('img') && hasImageClickListener.value)) return;
   const touch = event.touches[0];
   touchStartX = touch.clientX;
   touchStartY = touch.clientY;
