@@ -140,25 +140,13 @@ describe('Keep-style notes workspace', () => {
     if (!success) expect(document.querySelector('.modal-error-banner')?.textContent).toContain('Copy failed');
   });
 
-  it('lists labels alphabetically in the sidebar and filters by them', async () => {
+  it('keeps the sidebar clean with only primary navigation items', async () => {
     const { fetchMock } = backend();
     const rendered = await renderApp(fetchMock);
     wrapper = rendered.wrapper;
 
-    const labels = wrapper.findAll('.sidebar-item').map((item) => item.text());
-    expect(labels).toEqual(['Notes', 'work', 'zeta', 'Archive', 'Trash']);
-
-    await wrapper.findAll('.sidebar-item')[1].trigger('click');
-    await settle();
-    expect(rendered.router.currentRoute.value.query).toEqual({ tag: 'work' });
-    expect(wrapper.get('.sidebar-item.active').text()).toBe('work');
-  });
-
-  it('hides labels when the tag sidebar setting is off', async () => {
-    const { fetchMock } = backend({ showTagSidebar: false });
-    wrapper = (await renderApp(fetchMock)).wrapper;
-
-    expect(wrapper.findAll('.sidebar-item').map((item) => item.text())).toEqual(['Notes', 'Archive', 'Trash']);
+    const items = wrapper.findAll('.sidebar-item').map((item) => item.text());
+    expect(items).toEqual(['Notes', 'Archive', 'Trash']);
   });
 
   it('moves a note to Trash without confirmation and restores it from the snackbar Undo', async () => {

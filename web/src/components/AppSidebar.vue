@@ -20,43 +20,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router';
 import UiIcon from './UiIcon.vue';
-import { useNotes } from '../composables/useNotes';
-import { useSettings } from '../composables/useSettings';
 
 const props = defineProps<{ expanded: boolean; mobileOpen: boolean }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 
 const route = useRoute();
 const router = useRouter();
-const { tags, things, fetchTags } = useNotes();
-const { settings } = useSettings();
 
-const currentTag = computed(() => (typeof route.query.tag === 'string' ? route.query.tag : null));
 const inArchive = computed(() => route.query.archived === '1' || route.query.archived === 'true');
 const inTrash = computed(() => route.query.deleted === '1' || route.query.deleted === 'true');
 
-type Item = { key: string; label: string; icon: 'bulb' | 'label' | 'archive' | 'trash'; query: LocationQueryRaw; active: boolean };
+type Item = { key: string; label: string; icon: 'bulb' | 'archive' | 'trash'; query: LocationQueryRaw; active: boolean };
 
-const items = computed<Item[]>(() => {
-  const labels = settings.value.showTagSidebar === false
-    ? []
-    : [...tags.value].sort((a, b) => a.name.localeCompare(b.name)).map((t): Item => ({
-        key: 'tag:' + t.name,
-        label: t.name,
-        icon: 'label',
-        query: { tag: t.name },
-        active: currentTag.value === t.name && !inArchive.value && !inTrash.value,
-      }));
-  return [
-    { key: 'notes', label: 'Notes', icon: 'bulb', query: {}, active: !currentTag.value && !inArchive.value && !inTrash.value },
-    ...labels,
-    { key: 'archive', label: 'Archive', icon: 'archive', query: { archived: 'true' }, active: inArchive.value },
-    { key: 'trash', label: 'Trash', icon: 'trash', query: { deleted: 'true' }, active: inTrash.value },
-  ];
-});
+const items = computed<Item[]>(() => [
+  { key: 'notes', label: 'Notes', icon: 'bulb', query: {}, active: !inArchive.value && !inTrash.value },
+  { key: 'archive', label: 'Archive', icon: 'archive', query: { archived: 'true' }, active: inArchive.value },
+  { key: 'trash', label: 'Trash', icon: 'trash', query: { deleted: 'true' }, active: inTrash.value },
+]);
 
 function navigate(query: LocationQueryRaw) {
   if (route.path !== '/') router.push({ path: '/', query });
@@ -87,10 +70,6 @@ function trapTab(event: KeyboardEvent) {
     first.focus();
   }
 }
-
-// Refresh labels when the visible notes' tags change (create/edit/delete).
-watch(() => things.value.map((t) => (t.tags || []).join(',')).join('|'), () => fetchTags());
-onMounted(fetchTags);
 </script>
 
 <style scoped>
