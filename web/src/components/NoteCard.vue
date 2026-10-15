@@ -17,8 +17,8 @@
     @keydown="handleCardKeydown"
     @touchstart.passive="handleTouchStart"
     @touchmove.passive="handleTouchMove"
-    @touchend="clearTouchTimer"
-    @touchcancel="clearTouchTimer"
+    @touchend="handleTouchEnd"
+    @touchcancel="handleTouchCancel"
   >
     <!-- Keep-style edge-to-edge image attachments -->
     <div v-if="imageAttachments.length > 0" class="card-images" :class="{ 'is-multi': imageAttachments.length > 1 }">
@@ -309,6 +309,7 @@ async function selectColor(color: NoteColor, closeAfterSave = true) {
 
 onUnmounted(() => {
   clearTouchTimer();
+  if (touchResetTimer) clearTimeout(touchResetTimer);
   document.removeEventListener('pointerdown', handleOutsideColorPicker);
   document.removeEventListener('focusin', handleOutsideColorPicker);
 });
@@ -404,6 +405,7 @@ const colorPaletteId = `note-colors-${instance!.uid}`;
 const hasOpenDetailListener = computed(() => Boolean(instance?.vnode.props?.onOpenDetail));
 
 let touchTimer: ReturnType<typeof setTimeout> | null = null;
+let touchResetTimer: ReturnType<typeof setTimeout> | null = null;
 let touchStartX = 0;
 let touchStartY = 0;
 let didLongPress = false;
@@ -432,6 +434,26 @@ function handleTouchMove(event: TouchEvent) {
   }
 }
 
+function handleTouchEnd() {
+  clearTouchTimer();
+  if (didLongPress) {
+    if (touchResetTimer) clearTimeout(touchResetTimer);
+    touchResetTimer = setTimeout(() => {
+      didLongPress = false;
+      touchResetTimer = null;
+    }, 400);
+  }
+}
+
+function handleTouchCancel() {
+  clearTouchTimer();
+  didLongPress = false;
+  if (touchResetTimer) {
+    clearTimeout(touchResetTimer);
+    touchResetTimer = null;
+  }
+}
+
 function clearTouchTimer() {
   if (touchTimer) {
     clearTimeout(touchTimer);
@@ -442,14 +464,22 @@ function clearTouchTimer() {
 function handleCardClick(event: MouseEvent) {
   if (didLongPress) {
     didLongPress = false;
+    if (touchResetTimer) {
+      clearTimeout(touchResetTimer);
+      touchResetTimer = null;
+    }
     return;
   }
   if (!hasOpenDetailListener.value) return;
   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
 
-  // Don't open detail if user was selecting text within the card
+  // Don't open detail if user was selecting text within this card
   const selection = window.getSelection();
-  if (selection && selection.toString().trim().length > 0) return;
+  if (selection && selection.toString().trim().length > 0) {
+    const card = event.currentTarget as HTMLElement | null;
+    const anchor = selection.anchorNode;
+    if (!anchor || (card && card.contains(anchor))) return;
+  }
 
   const target = event.target as HTMLElement | null;
   if (!target) return;
@@ -700,6 +730,10 @@ async function handleBodyClick(event: MouseEvent) {
   padding-right: calc(var(--keep-control-size) - 4px);
 }
 
+.note-card:has(.card-images) .card-body :deep(> :first-child) {
+  padding-right: 0;
+}
+
 .action-btn {
   display: inline-flex;
   align-items: center;
@@ -719,6 +753,10 @@ async function handleBodyClick(event: MouseEvent) {
 
 .action-btn:hover {
   background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent);
+  color: var(--md-sys-color-on-surface);
+}
+
+.action-btn.active {
   color: var(--md-sys-color-on-surface);
 }
 
@@ -1119,7 +1157,6 @@ async function handleBodyClick(event: MouseEvent) {
 }
 
 :deep(.task-list-item-checkbox) {
-  position: relative;
   appearance: auto;
   width: 1.125rem;
   height: 1.125rem;
@@ -1128,15 +1165,6 @@ async function handleBodyClick(event: MouseEvent) {
   cursor: pointer;
   accent-color: var(--md-sys-color-primary, var(--md-sys-color-on-surface));
   flex-shrink: 0;
-}
-
-:deep(.task-list-item-checkbox)::before {
-  content: '';
-  position: absolute;
-  top: -6px;
-  left: -6px;
-  right: -6px;
-  bottom: -6px;
 }
 
 /* Markdown Image Lightbox Cursor */

@@ -416,11 +416,37 @@ describe('NoteCard behavior', () => {
 
     expect(wrapper.emitted('toggleSelect')).toEqual([[thing]]);
 
-    // Releasing finger and subsequent click should not open detail
+    // Releasing finger and immediate click should not open detail
     await wrapper.trigger('touchend');
     await wrapper.trigger('click');
     expect(onOpenDetail).not.toHaveBeenCalled();
 
+    // After reset window, normal clicks should work again
+    vi.advanceTimersByTime(400);
+    await wrapper.trigger('click');
+    expect(onOpenDetail).toHaveBeenCalledWith(thing);
+
     vi.useRealTimers();
+  });
+
+  it('allows opening detail if selection is outside this card', async () => {
+    const thing = note({ content: 'Card content' });
+    const onOpenDetail = vi.fn();
+    const wrapper = mount(NoteCard, { props: { thing, onOpenDetail } });
+
+    const outsideNode = document.createElement('div');
+    outsideNode.textContent = 'Other text';
+    document.body.appendChild(outsideNode);
+
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => 'Other',
+      anchorNode: outsideNode,
+    } as unknown as Selection);
+
+    await wrapper.trigger('click');
+    expect(onOpenDetail).toHaveBeenCalledWith(thing);
+
+    outsideNode.remove();
+    vi.restoreAllMocks();
   });
 });
