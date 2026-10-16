@@ -941,6 +941,9 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

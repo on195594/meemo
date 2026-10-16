@@ -390,7 +390,6 @@ function closeUserMenu(returnFocus = false) {
 function onAuthSuccess() {
   showAuthModal.value = false;
   showUserMenu.value = false;
-  loadSettings();
 }
 
 function handleImportFinished() {

@@ -98,9 +98,9 @@ export function useAuth() {
     isLoading.value = true;
     authError.value = null;
     try {
-      await api.auth.login(username.trim().toLowerCase(), password);
-      const res = await api.auth.profile();
-      setUser(res.user);
+      const loginRes = await api.auth.login(username.trim().toLowerCase(), password);
+      const userProfile = loginRes?.user || (await api.auth.profile()).user;
+      setUser(userProfile);
       sessionExpired.value = false;
       isFirstUser.value = false;
       setSessionMarker(true);

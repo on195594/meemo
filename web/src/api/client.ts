@@ -40,6 +40,7 @@ type LoginRequest = components['schemas']['LoginRequest'];
 type CreateThingRequest = components['schemas']['CreateThingRequest'];
 type UpdateThingRequest = components['schemas']['UpdateThingRequest'];
 type SaveSettingsRequest = components['schemas']['SaveSettingsRequest'];
+type LoginResponse = JsonResponse<paths['/api/login']['post'], 200>;
 type UploadFileResponse = JsonResponse<paths['/api/files']['post'], 201>;
 type ImportResponse = JsonResponse<paths['/api/import']['post'], 200>;
 type ListThingsQuery = paths['/api/things']['get']['parameters']['query'];
@@ -115,7 +116,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   auth: {
     login: (username: LoginRequest['username'], password: LoginRequest['password']) =>
-      request<{}>('/api/login', {
+      request<LoginResponse>('/api/login', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       }),

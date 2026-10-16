@@ -48,7 +48,8 @@ async function login(req, res, next) {
     });
     req.session.userId = user.id;
     req.session.username = user.username;
-    next(new HttpSuccess(200, {}));
+    var userProfile = await authService.profile(user.id);
+    next(new HttpSuccess(200, { user: userProfile }));
 }
 
 async function logout(req, res, next) {

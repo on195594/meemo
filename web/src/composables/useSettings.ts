@@ -63,6 +63,7 @@ const settings = ref<AppSettings>({ ...defaultSettings, theme: getStoredTheme() 
 const isLoading = ref(false);
 const error = ref<string | null>(null);
 let requestGeneration = 0;
+let activeSettingsPromise: Promise<AppSettings> | null = null;
 
 function applyToDOM(s: AppSettings) {
   if (typeof document !== 'undefined') {
@@ -88,6 +89,7 @@ if (typeof document !== 'undefined') {
 
 export function resetSettingsState(): void {
   requestGeneration++;
+  activeSettingsPromise = null;
   settings.value = { ...defaultSettings, theme: getStoredTheme() };
   isLoading.value = false;
   error.value = null;
@@ -96,32 +98,37 @@ export function resetSettingsState(): void {
 
 export function useSettings() {
   async function loadSettings(): Promise<AppSettings> {
+    if (activeSettingsPromise) return activeSettingsPromise;
     const generation = ++requestGeneration;
     isLoading.value = true;
     error.value = null;
-    try {
-      const res = await api.settings.get();
-      if (generation !== requestGeneration) return settings.value;
-      const loaded = (res.settings || {}) as AppSettings;
-      if (loaded.theme) {
-        setStoredTheme(loaded.theme);
+    activeSettingsPromise = (async () => {
+      try {
+        const res = await api.settings.get();
+        if (generation !== requestGeneration) return settings.value;
+        const loaded = (res.settings || {}) as AppSettings;
+        if (loaded.theme) {
+          setStoredTheme(loaded.theme);
+        }
+        settings.value = {
+          ...defaultSettings,
+          theme: getStoredTheme(),
+          ...loaded,
+        };
+        applyToDOM(settings.value);
+        return settings.value;
+      } catch (err: any) {
+        if (generation !== requestGeneration) return settings.value;
+        if (err.status !== 401) {
+          error.value = err.message || 'Failed to load settings';
+        }
+        return settings.value;
+      } finally {
+        if (generation === requestGeneration) isLoading.value = false;
+        activeSettingsPromise = null;
       }
-      settings.value = {
-        ...defaultSettings,
-        theme: getStoredTheme(),
-        ...loaded,
-      };
-      applyToDOM(settings.value);
-      return settings.value;
-    } catch (err: any) {
-      if (generation !== requestGeneration) return settings.value;
-      if (err.status !== 401) {
-        error.value = err.message || 'Failed to load settings';
-      }
-      return settings.value;
-    } finally {
-      if (generation === requestGeneration) isLoading.value = false;
-    }
+    })();
+    return activeSettingsPromise;
   }
 
   async function saveSettings(updates: Partial<AppSettings>): Promise<{ success: boolean; error?: string }> {

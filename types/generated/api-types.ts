@@ -734,7 +734,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            user?: components["schemas"]["UserProfile"];
+                        };
                     };
                 };
                 400: components["responses"]["BadRequest"];

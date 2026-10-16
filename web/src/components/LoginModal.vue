@@ -296,6 +296,8 @@ async function handleRegister() {
   z-index: 1000;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  will-change: opacity;
+  contain: paint;
   animation: overlay-in var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
 }
 
