@@ -188,7 +188,10 @@ describe('API Contract and Progressive Types (RF-305)', function () {
         try {
             var app = createApp({ sessionMemory: true, sessionSecret: 'rf-708-secret' });
             var agent = request.agent(app);
-            await agent.post('/api/login').send({ username: user.username, password: 'password' }).expect(200);
+            var loginResponse = await agent.post('/api/login').send({ username: user.username, password: 'password' }).expect(200);
+            expect(loginResponse.body).to.eql({
+                user: Object.assign({ email: 'contract@example.com' }, user)
+            });
 
             var profileResponse = await agent.get('/api/profile').expect(200);
             expect(profileResponse.body).to.eql({

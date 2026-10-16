@@ -132,6 +132,7 @@ export function useSettings() {
   }
 
   async function saveSettings(updates: Partial<AppSettings>): Promise<{ success: boolean; error?: string }> {
+    activeSettingsPromise = null;
     const generation = ++requestGeneration;
     isLoading.value = true;
     error.value = null;

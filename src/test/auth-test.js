@@ -439,6 +439,8 @@ describe('Authentication & Registration Policy (RF-101)', function () {
                 .end(function (err, res) {
                     expect(err).to.be(null);
                     expect(res.headers['set-cookie']).to.be.ok();
+                    expect(res.body.user).to.be.an('object');
+                    expect(res.body.user.username).to.equal('validuser');
 
                     // Profile can be accessed with authenticated session
                     agent

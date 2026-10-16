@@ -56,7 +56,7 @@ function backend(settings: Record<string, unknown> = { showTagSidebar: false }) 
 
     if (url === '/api/login' && method === 'POST') {
       state.current = 'b';
-      return json({});
+      return json({ user: accounts[state.current] });
     }
     if (url === '/api/logout' && method === 'POST') {
       state.current = null;

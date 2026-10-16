@@ -140,4 +140,40 @@ describe('useSettings theme and wallpaper DOM state', () => {
     expect(settings.value.backgroundImageDataUrl).toBe('');
     expect(document.body.classList.contains('has-custom-bg')).toBe(false);
   });
+
+  it('deduplicates concurrent loadSettings calls into a single API request', async () => {
+    const pending = deferred<{ settings: Record<string, unknown> }>();
+    apiMock.settings.get.mockReturnValue(pending.promise);
+    const { loadSettings } = useSettings();
+
+    const call1 = loadSettings();
+    const call2 = loadSettings();
+
+    expect(apiMock.settings.get).toHaveBeenCalledTimes(1);
+
+    pending.resolve({ settings: { title: 'Deduplicated' } });
+    const [res1, res2] = await Promise.all([call1, call2]);
+
+    expect(res1.title).toBe('Deduplicated');
+    expect(res2.title).toBe('Deduplicated');
+  });
+
+  it('clears active in-flight settings promise when saving new settings', async () => {
+    const pendingGet = deferred<{ settings: Record<string, unknown> }>();
+    apiMock.settings.get.mockReturnValue(pendingGet.promise);
+    apiMock.settings.save.mockResolvedValue({});
+    const { loadSettings, saveSettings } = useSettings();
+
+    // Start a load
+    loadSettings();
+    expect(apiMock.settings.get).toHaveBeenCalledTimes(1);
+
+    // Save should invalidate active in-flight load
+    await saveSettings({ title: 'New Title' });
+
+    // Next load should trigger a new GET request
+    apiMock.settings.get.mockResolvedValue({ settings: { title: 'New Title' } });
+    await loadSettings();
+    expect(apiMock.settings.get).toHaveBeenCalledTimes(2);
+  });
 });
