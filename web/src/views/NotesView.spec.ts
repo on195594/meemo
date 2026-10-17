@@ -137,6 +137,73 @@ describe('Keep-style notes workspace', () => {
     if (!success) expect(document.querySelector('.modal-error-banner')?.textContent).toContain('Copy failed');
   });
 
+  it.each(['grid', 'list'])('keeps focus, selection and dialog drafts through saves in %s mode', async (mode) => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private callback: (entries: unknown[]) => void) {}
+      observe() { this.callback([{ contentRect: { width: 600 } }]); }
+      disconnect() {}
+    });
+    localStorage.setItem('meemo_view_mode', mode);
+    const notes = [
+      { ...NOTE, _id: 'tall', content: 'short fallback', richContent: '长'.repeat(1000), modifiedAt: 3 },
+      { ...NOTE, _id: 'editable', content: 'Editable', modifiedAt: 2 },
+      { ...NOTE, _id: 'selected', content: 'Selected', modifiedAt: 1 },
+      { ...NOTE, _id: 'tail', content: 'Tail', modifiedAt: 0 },
+    ];
+    const { fetchMock } = backend();
+    const respond = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('/api/things?')) return json({ things: notes });
+      if (url.startsWith('/api/things/') && init?.method === 'PUT') {
+        const note = notes.find(note => url.endsWith('/' + note._id))!;
+        const body = JSON.parse(String(init.body));
+        Object.assign(note, body, {
+          richContent: body.content === 'Saved body' ? '长'.repeat(1000) : note.richContent,
+          revision: body.expectedRevision + 1,
+          modifiedAt: 10,
+        });
+        return json({ thing: { ...note } });
+      }
+      return respond(input, init);
+    });
+    wrapper = (await renderApp(fetchMock)).wrapper;
+    const card = (id: string) => wrapper!.get(`[data-note-id="${id}"]`);
+    const columns = () => wrapper!.findAll('.masonry-column').map(column =>
+      column.findAll('.note-card').map(card => card.attributes('data-note-id')));
+    expect(columns()).toEqual(mode === 'grid' ? [['tall'], ['editable', 'selected', 'tail']] : [['tall', 'editable', 'selected', 'tail']]);
+    const original = card('editable').element;
+    await card('selected').get('.card-select-btn').trigger('click');
+    await card('editable').get('.color-btn').trigger('click');
+    await card('editable').get('[aria-label="Coral"]').trigger('click');
+    await settle();
+    expect(card('selected').classes()).toContain('is-selected');
+    expect(document.activeElement).toBe(card('editable').get('.color-btn').element);
+    expect(card('editable').find('.color-palette-popover').exists()).toBe(false);
+    if (mode === 'grid') expect(card('editable').element).not.toBe(original);
+    expect(columns()).toEqual(mode === 'grid' ? [['editable', 'selected', 'tail'], ['tall']] : [['editable', 'tall', 'selected', 'tail']]);
+
+    await wrapper.get('[aria-label="Clear selection"]').trigger('click');
+    await card('editable').get('.card-body').trigger('click');
+    await settle();
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.focus();
+    body.value = 'Saved body';
+    body.dispatchEvent(new Event('input', { bubbles: true }));
+    body.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }));
+    await settle();
+    expect(document.querySelector('.modal-textarea')).toBe(body);
+    expect(document.activeElement).toBe(body);
+    expect(body.value).toBe('Saved body');
+    expect(columns()).toEqual(mode === 'grid' ? [['editable', 'selected'], ['tall', 'tail']] : [['editable', 'tall', 'selected', 'tail']]);
+    body.value = 'Next unsaved draft';
+    body.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    expect(body.value).toBe('Next unsaved draft');
+    expect(notes.find(note => note._id === 'editable')?.content).toBe('Saved body');
+    expect(wrapper.findAll('.note-card')).toHaveLength(4);
+  });
+
   it('keeps the sidebar clean with only primary navigation items', async () => {
     const { fetchMock } = backend();
     const rendered = await renderApp(fetchMock);

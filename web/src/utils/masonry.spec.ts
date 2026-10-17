@@ -40,6 +40,42 @@ describe('masonry', () => {
     expect(imgH).toBeGreaterThan(shortH);
   });
 
+  it.each([
+    ['short plain / long rich', '短', '长'.repeat(1000), 480],
+    ['long plain / short rich', '长'.repeat(1000), '短', 100],
+    ['empty rich', 'plain', '', 100],
+    ['missing rich', 'plain', undefined, 100],
+    ['invalid rich', 'plain', 42, 100],
+    ['rich only', undefined, '长'.repeat(1000), 480],
+    ['whitespace rich is not empty', '长'.repeat(1000), ' ', 100],
+  ])('estimates the body selected by NoteCard: %s', (_name, content, richContent, expected) => {
+    expect(estimateItemHeight({ content, richContent })).toBe(expected);
+  });
+
+  it('uses the displayed rich body when choosing the shortest column', () => {
+    const rich = { content: '短', richContent: '长'.repeat(1000) };
+    const plain = { content: 'short' };
+    const next = { content: 'next' };
+    expect(distributeColumns([rich, plain, next], 2)).toEqual([[rich], [plain, next]]);
+  });
+
+  it.each([
+    'x'.repeat(4000),
+    Array.from({ length: 40 }, () => 'line').join('\n'),
+  ])('ignores text beyond the bounded card preview', (prefix) => {
+    expect(estimateItemHeight({ content: 'short', richContent: prefix + '\nhidden'.repeat(10000) }))
+      .toBe(estimateItemHeight({ richContent: prefix }));
+  });
+
+  it('retains image and file attachment estimates with a rich body', () => {
+    const body = { content: 'short', richContent: '长'.repeat(1000) };
+    const attachments = [
+      { identifier: 'image', fileName: 'photo.png', type: 'image' },
+      { identifier: 'file', fileName: 'report.pdf' },
+    ];
+    expect(estimateItemHeight({ ...body, attachments })).toBe(480 + 220 + 36);
+  });
+
   it('handles invalid or non-finite height functions gracefully', () => {
     const items = [1, 2, 3];
     const columns = distributeColumns(items, 2, () => NaN);

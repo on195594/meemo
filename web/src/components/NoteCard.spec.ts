@@ -130,6 +130,25 @@ describe('NoteCard behavior', () => {
     short.unmount();
   });
 
+  it.each([
+    ['short plain / long rich', 'short fallback', '**Visible rich** ' + 'x'.repeat(5000), 'Visible rich'],
+    ['long plain / short rich', 'hidden fallback '.repeat(1000), '**Short rich**', 'Short rich'],
+    ['empty rich', '**Plain fallback**', '', 'Plain fallback'],
+  ])('previews the same body used for masonry: %s', (_name, content, richContent, visible) => {
+    const render = vi.spyOn(markdown, 'renderMarkdown');
+    const wrapper = mount(NoteCard, { props: { thing: note({ content, richContent }), onOpenDetail: vi.fn() } });
+    try {
+      expect(wrapper.get('.card-body strong').text()).toBe(visible);
+      const raw = richContent || content;
+      const parsed = render.mock.calls[0][0];
+      expect(parsed).toBe(raw.slice(0, 4000));
+      expect(wrapper.find('.card-preview-hint').exists()).toBe(raw.length > 4000);
+    } finally {
+      wrapper.unmount();
+      render.mockRestore();
+    }
+  });
+
   it('updates a preview task against the entire original note', async () => {
     const content = Array.from({ length: 100 }, (_, i) => `- [ ] Task ${i}`).join('\n');
     const onSaveEdit = vi.fn().mockResolvedValue({ success: true });

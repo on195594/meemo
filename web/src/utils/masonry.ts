@@ -2,7 +2,7 @@ import { isImageAttachment } from './markdown';
 
 /**
  * Estimates card height in pixels based on content and attachments, bounded by CSS rules.
- * Keeps calculation purely in-memory (O(1)) without touching DOM or triggering reflow.
+ * Bounds text sampling independently of note length; never measures DOM or triggers reflow.
  */
 export function estimateItemHeight(item: unknown): number {
   if (typeof item !== 'object' || item === null) {
@@ -13,10 +13,11 @@ export function estimateItemHeight(item: unknown): number {
     richContent?: unknown;
     attachments?: unknown;
   };
-  const text = typeof candidate.content === 'string'
-    ? candidate.content
-    : typeof candidate.richContent === 'string'
-      ? candidate.richContent
+  // Match NoteCard.bodyPreview: a nonempty rich body wins, including whitespace.
+  const text = typeof candidate.richContent === 'string' && candidate.richContent
+    ? candidate.richContent
+    : typeof candidate.content === 'string'
+      ? candidate.content
       : '';
   const attachments = Array.isArray(candidate.attachments) ? candidate.attachments : [];
 
@@ -27,9 +28,9 @@ export function estimateItemHeight(item: unknown): number {
 
   let textHeight = 0;
   if (text) {
-    // Slice first to avoid allocating large arrays when only the first ~20 lines are needed
+    // Sampling is stricter than NoteCard's 4000-character / 40-line preview; CSS caps at 20 visual lines.
     const sample = text.length > 1000 ? text.slice(0, 1000) : text;
-    const lines = sample.split('\n');
+    const lines = sample.split('\n', 20);
     let totalVisualLines = 0;
     for (let i = 0; i < lines.length && totalVisualLines < 20; i++) {
       const len = lines[i].length;
