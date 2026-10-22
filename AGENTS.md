@@ -86,7 +86,7 @@ Run the narrowest checks that cover the change:
 - Server, authentication, persistence, import/export, or API changes: `npm test`.
 - Docker or deployment changes: `docker build .`; use the Compose health/login flow when behavior spans services.
 
-- Verification scripts: retain ownership, anonymous-volume cleanup, interruption, request-deadline, and image-archive regressions. Run the full `verify:restore` / `verify:search:relevance` commands separately when changing those tools; their complete runs are not part of `npm run verify`. Synthetic passes and pending-human labels are not production recovery or relevance acceptance.
+- Verification scripts: retain ownership, anonymous-volume cleanup, interruption, request-deadline, and image-archive regressions. Run the full `verify:restore` / `verify:search:relevance` commands separately when changing those tools; their complete runs are not part of `npm run verify`. Synthetic passes, even with maintainer-approved labels, are not production recovery or relevance acceptance.
 
 Add or update a focused test under `src/test/` for non-trivial server behavior. Do not add a new test framework.
 

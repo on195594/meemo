@@ -19,7 +19,7 @@
 - [Release checklist](RELEASE_CHECKLIST.md): authorization, migration, validation, RC publication, deployment, and rollback gates.
 - [Branch protection reference](BRANCH_PROTECTION.md): policy if protection is enabled; the single-maintainer workflow permits direct commits.
 - [Dependency security](DEPENDENCY_SECURITY.md): audit procedure and recorded findings; rerun the audit rather than assuming recorded results are current.
-- [Search baseline](SEARCH_BASELINE.md): performance measurements and the explicit `verify:search:relevance` synthetic corpus; labels remain pending human review and known gaps are reported, not hidden.
+- [Search baseline](SEARCH_BASELINE.md): performance measurements and the explicit `verify:search:relevance` synthetic corpus; labels approved by the maintainer (2026-10-22); known gaps are reported, not hidden.
 - [Nginx reference](nginx-reverse-proxy.conf): reverse-proxy configuration template; adapt it before use.
 
 ## Plans and review snapshots

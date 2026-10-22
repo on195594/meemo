@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "provenance": "Synthetic, agent-authored corpus and relevance labels; pending human review. No production notes.",
+    "provenance": "Synthetic, agent-authored corpus and relevance labels; all 29 labels approved by the maintainer on 2026-10-22. No production notes.",
     "notes": [
         { "id": "travel", "owner": "alice", "content": "周末去杭州旅行，西湖徒步路线与预算。 #旅行 #计划", "tags": ["旅行", "计划"] },
         { "id": "db-backup", "owner": "alice", "content": "MongoDB 数据库备份恢复检查，核对附件和笔记。 #运维", "tags": ["运维"] },
