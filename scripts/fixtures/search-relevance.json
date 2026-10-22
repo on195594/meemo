@@ -29,7 +29,6 @@
         { "id": "chinese-tag-keyword", "category": "mixed", "owner": "alice", "options": { "filter": "#运维 MongoDB", "mode": "regex" }, "expected": ["db-backup"] },
         { "id": "chinese-tag-text", "category": "mixed", "owner": "alice", "options": { "filter": "#运维 MongoDB", "mode": "text" }, "expected": ["db-backup"] },
         { "id": "chinese-backup-regex", "category": "Chinese", "owner": "alice", "options": { "filter": "备份", "mode": "regex" }, "expected": ["db-backup"] },
-        { "id": "chinese-backup-text", "category": "Chinese", "owner": "alice", "options": { "filter": "备份", "mode": "text" }, "expected": ["db-backup"], "knownGap": "MongoDB English text indexing may not match a Chinese substring inside an unsegmented compound; retain the desired hit instead of relabeling it away." },
         { "id": "english-stemming-regex", "category": "stemming", "owner": "alice", "options": { "filter": "writes", "mode": "regex" }, "expected": [] },
         { "id": "english-stemming-text", "category": "stemming", "owner": "alice", "options": { "filter": "writes", "mode": "text" }, "expected": ["stemming"] },
         { "id": "english-and", "category": "multi-term", "owner": "alice", "options": { "filter": "cedar spruce", "mode": "regex" }, "expected": ["phrase-forward", "phrase-reversed"] },

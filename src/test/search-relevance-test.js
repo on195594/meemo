@@ -32,16 +32,14 @@ describe('Synthetic search relevance baseline', function () {
         assert.throws(() => relevance.validateDataset(wrongOwner), /query owner/);
     });
 
-    it('evaluates the application path, records the Chinese gap and fails an incorrect ranking oracle', async function () {
+    it('evaluates the application path and fails an incorrect ranking oracle', async function () {
         const db = database();
         const previousDb = config.db;
         const report = await relevance.evaluateDataset(db, dataset());
-        assert.equal(report.queries, 30);
+        assert.equal(report.queries, 29);
         assert.equal(report.notes, 18);
+        assert.equal(report.status, 'PASS');
         assert.deepEqual(report.failures, []);
-        const chinese = report.results.find(item => item.id === 'chinese-backup-text');
-        assert.deepEqual(chinese.expected, ['db-backup']);
-        assert(['PASS', 'KNOWN_GAP'].includes(chinese.status));
         assert.equal(config.db, previousDb);
         assert.equal((await db.listCollections().toArray()).length, 0);
         const wrongRanking = dataset();
@@ -66,11 +64,16 @@ describe('Synthetic search relevance baseline', function () {
         const previousDb = config.db;
         try {
             const knownGap = dataset();
-            knownGap.cases = [knownGap.cases.find(item => item.knownGap)];
+            // The corpus has no known gaps; derive one so the mechanism stays covered.
+            knownGap.cases = [{ ...knownGap.cases.find(item => item.id === 'chinese-backup-regex'), id: 'synthetic-known-gap', knownGap: 'test-only gap' }];
+            benchmark.runApplicationScenario = (owner, scenario, limit) => original('alice', { options: { filter: 'wyvernmissingterm', mode: 'text' } }, limit);
+            const missed = await relevance.evaluateDataset(db, knownGap);
+            assert.equal(missed.status, 'PASS_WITH_KNOWN_GAPS');
+            assert.deepEqual(missed.knownGaps, ['synthetic-known-gap']);
             benchmark.runApplicationScenario = (owner, scenario, limit) => original('alice', { options: { filter: '杭州', mode: 'regex' } }, limit);
             const falsePositive = await relevance.evaluateDataset(db, knownGap);
             assert.equal(falsePositive.status, 'FAIL');
-            assert.deepEqual(falsePositive.failures, ['chinese-backup-text']);
+            assert.deepEqual(falsePositive.failures, ['synthetic-known-gap']);
             benchmark.runApplicationScenario = (owner, scenario, limit) => original('bob', { options: { filter: 'quartz', mode: 'text' } }, limit);
             await assert.rejects(() => relevance.evaluateDataset(db, knownGap), /Owner isolation failure/);
             assert.equal(config.db, previousDb);

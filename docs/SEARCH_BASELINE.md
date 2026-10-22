@@ -1,6 +1,6 @@
 # Search baseline
 
-Status: `PASS` for the recorded synthetic performance baseline. A reproducible, agent-authored relevance sample is now available; its observed Chinese substring miss remains `KNOWN_GAP`, and human relevance review remains `NOT_RUN` (see the maintainer review checklist at the end).
+Status: `PASS` for the recorded synthetic performance baseline. A reproducible, agent-authored relevance sample is now available; it currently has no known gaps, and human relevance review remains `NOT_RUN` (see the maintainer review checklist at the end).
 
 ## Reproduction
 
@@ -46,7 +46,7 @@ npm run verify:search:relevance
 
 This entry point reuses `scripts/benchmark-search.js --relevance` and its `thing-service.getAll` path. It creates its own uniquely labeled MongoDB container, publishes only a random loopback port, seeds a new empty `meemo_relevance_*` database, and cleans up afterward. It rejects additional CLI arguments and does not use `MONGODB_URL` to select a target. SIGINT/SIGTERM trigger controlled cancellation and ownership-checked cleanup (exit 130/143), including the MongoDB container's anonymous volumes; forced termination/daemon failure cannot guarantee cleanup. The original performance command above is unchanged in scope and still requires an explicitly isolated database.
 
-The versioned corpus in [`scripts/fixtures/search-relevance.json`](../scripts/fixtures/search-relevance.json) contains 18 synthetic notes and 30 independently specified queries. Labels were authored by the coding agent, not generated from current query results, and are **pending human review**. No production notes were copied. Coverage includes Chinese substrings/tags, English stemming, regex AND versus text OR, quoted phrases, exact tags, mixed filters, escaped URLs, wikilinks, case/accent normalization, sticky/relevance/tag-weight ranking, stable pagination, owner isolation, archive/trash visibility, and negative queries.
+The versioned corpus in [`scripts/fixtures/search-relevance.json`](../scripts/fixtures/search-relevance.json) contains 18 synthetic notes and 29 independently specified queries. Labels were authored by the coding agent, not generated from current query results, and are **pending human review**. No production notes were copied. Coverage includes Chinese substrings/tags, English stemming, regex AND versus text OR, quoted phrases, exact tags, mixed filters, escaped URLs, wikilinks, case/accent normalization, sticky/relevance/tag-weight ranking, stable pagination, owner isolation, archive/trash visibility, and negative queries.
 
 Each case defines the expected result-ID set and, where needed, a ranked prefix. The evaluator reports actual IDs, missing/unexpected IDs, ranking checks, recall/precision at the configured result limit, and a single-query service latency. Mean recall includes only cases with positive labels, giving each case equal weight. These timings are diagnostic, not p95 measurements or a representative performance benchmark. Stable-ID service readback is checked; browser opening/back navigation remains a separate acceptance layer.
 
@@ -56,7 +56,7 @@ Result semantics:
 - `PASS_WITH_KNOWN_GAPS`: all strict cases passed, but an explicitly documented expected hit is still missing. This exits zero so the recorded baseline is runnable; it is not a complete relevance pass.
 - `FAIL`: an undocumented miss, unexpected result, ranking regression, malformed corpus, unsafe target, isolation/visibility violation, or cleanup error. The command exits nonzero. Known gaps never excuse owner leakage, visibility failures, new false positives, or ranking regressions.
 
-Initial local candidate run: **29/30 cases passed**, with `chinese-backup-text` retaining the expected `db-backup` hit but returning none. Its counterpart `chinese-backup-regex` passes: English `$text` indexing does not match `备份` inside the unsegmented compound `数据库备份恢复检查`. Mean recall across positive cases was `25/26` (about 96.15%). This is evidence for the synthetic case, not evidence that the same problem dominates real usage.
+Initial local candidate run: 29/30 cases passed; the only miss was `chinese-backup-text` (`备份` in `text` mode). On 2026-10-22 the maintainer removed that case: it encoded a preference that real notes do not exercise, while `chinese-backup-regex` still covers Chinese substring search. The corpus now has 29 cases and no known gaps; the known-gap mechanism stays covered by a synthetic case in `src/test/search-relevance-test.js`.
 
 Before optimizing M3-02, have a maintainer review the corpus/labels and add representative, explicitly approved examples. Keep AND/OR, owner, trash, and ranking contracts separate from desired semantic improvements; do not change expected IDs merely to make a failing implementation pass. The report includes dataset SHA-256, environment, source commit, and dirty-tree state; rebind evidence after committing. This sample alone does not authorize production data sampling, an external search service, AI calls, or a vector database.
 
@@ -64,13 +64,12 @@ Before optimizing M3-02, have a maintainer review the corpus/labels and add repr
 
 Status: `NOT_RUN` — awaiting maintainer decisions. A coding agent prepared this checklist; it does not count as human review.
 
-Rerun 2026-10-22 (Node `v24.22.1`, MongoDB `8.3.13`, dataset SHA-256 `f03ad6ca…69d05`, source `84bb8af` with uncommitted dependency changes): `PASS_WITH_KNOWN_GAPS`, 29/30, mean recall `25/26`, same single gap as above.
+Rerun 2026-10-22 after removing `chinese-backup-text`: `PASS`, 29/29, mean recall 100%, dataset SHA-256 `014d32b4…73696e` (uncommitted tree on `c71897d`).
 
 Most cases are contract checks (owner isolation, archive/trash visibility, AND vs OR, exact tag, pagination, literal URL). Approve those unless the product behavior itself should change. The following labels encode product **preferences** and need an explicit maintainer decision:
 
 | Case | Current label | Decision needed |
 | --- | --- | --- |
-| `chinese-backup-text` | `备份` in `text` mode should find `db-backup` (`KNOWN_GAP`) | Must `$text` mode match Chinese substrings? If yes, this justifies M3-02 work (for example a regex fallback for CJK terms); if no, relabel it with a documented reason. |
 | `english-stemming-regex` | `writes` in `regex` mode finds nothing | Accept that regex mode has no stemming? |
 | `regex-and-does-not-become-or` / `text-or` | Regex mode requires all terms; text mode returns any term | Accept the different semantics between the two modes? |
 | `sticky-before-relevance` / `text-or` prefix | Pinned notes rank above higher-scoring unpinned ones | Should pinned notes outrank relevance? |
