@@ -44,6 +44,8 @@ describe('Verification resource lifecycle', function () {
 
     for (const entry of ['restore', 'relevance']) for (const signal of ['SIGINT', 'SIGTERM']) {
         it(`cleans the real ${entry} entry point after ${signal}`, async function () {
+            // verify-restore builds its image (up to 300s) before MongoDB starts; a cold build cache must not fail the wait.
+            this.timeout(450000);
             const work = fs.mkdtempSync(path.join(os.tmpdir(), 'meemo-signal-test-'));
             const args = entry === 'restore' ? ['scripts/verify-restore.js'] : ['scripts/benchmark-search.js', '--relevance'];
             const child = spawn(process.execPath, args, { cwd: root, env: { ...process.env, TMPDIR: work }, stdio: ['ignore', 'ignore', 'pipe'] });
@@ -53,9 +55,9 @@ describe('Verification resource lifecycle', function () {
             let runId;
             let volumes = [];
             let stopped = false;
-            const timer = setTimeout(() => child.kill('SIGKILL'), 90000);
+            const timer = setTimeout(() => child.kill('SIGKILL'), 420000);
             try {
-                const deadline = Date.now() + 60000;
+                const deadline = Date.now() + 360000;
                 while (Date.now() < deadline) {
                     runId = stderr.match(/Verification run: (meemo-(?:restore|relevance)-[0-9a-f-]+)/)?.[1];
                     if (runId) {
