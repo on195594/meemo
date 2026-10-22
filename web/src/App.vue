@@ -777,12 +777,26 @@ video {
   }
 }
 
-.header-search-icon {
-  width: 48px;
+/* Out-specify UiIcon's scoped size; margin (not border-box padding) keeps the glyph visible */
+.header-search-box .ui-icon.header-search-icon {
+  width: 24px;
   height: 24px;
-  padding: 0 12px;
+  margin: 0 12px;
   color: var(--md-sys-color-on-surface-variant);
   flex-shrink: 0;
+}
+
+/* Dark: on-surface-variant on #525355 is ~2.9:1; on-surface meets AA */
+:root[data-theme="dark"] .header-search-box:not(.focused) .header-search-icon,
+:root[data-theme="dark"] .header-search-box:not(.focused) .header-search-input::placeholder {
+  color: var(--md-sys-color-on-surface);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .header-search-box:not(.focused) .header-search-icon,
+  :root:not([data-theme="light"]) .header-search-box:not(.focused) .header-search-input::placeholder {
+    color: var(--md-sys-color-on-surface);
+  }
 }
 
 .header-search-input {

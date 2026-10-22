@@ -932,7 +932,8 @@ onUnmounted(() => {
 
 .auth-hero {
   text-align: center;
-  margin-top: 3rem;
+  max-width: 560px;
+  margin: 3rem auto 0;
   padding: 2.5rem 1.5rem;
   background: var(--md-sys-color-surface-container);
   border-radius: 12px;
