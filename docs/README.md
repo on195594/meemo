@@ -24,7 +24,7 @@
 
 ## Plans and review snapshots
 
-- [Gemini assistant integration plan](roadmaps/2026-10-12-gemini-assistant-integration.md): historical staged MCP + OAuth proposal; current read/write implementation is documented in the assistant guide, and real Meemo acceptance remains pending.
+- [Gemini assistant integration plan](roadmaps/2026-10-12-gemini-assistant-integration.md): historical staged MCP + OAuth proposal; current read/write implementation is documented in the assistant guide, and real Meemo client acceptance passed by maintainer manual test (2026-10-22).
 - [AGY integration-plan review](reviews/2026-10-12-gemini-assistant-agy-review.md): independent CLI review, verified findings, plan revisions, and scoped PASS on recheck; not implementation acceptance.
 - [AGY MCP implementation review](reviews/2026-10-12-gemini-mcp-implementation-agy-review.md): real independent CLI review, SDK evidence-based adjudication and scoped recheck PASS; not production acceptance.
 - [Codex MCP review and fixes](reviews/2026-10-12-gemini-mcp-codex-review.md): four verified findings repaired, full candidate recheck PASS_WITH_NOTES, local regressions and isolation evidence; not production acceptance.

@@ -91,8 +91,10 @@ Follow [backup/restore](BACKUP_RESTORE.md). Database dumps include these collect
 
 Rollback can disable MCP without dropping collections or editing notes. Disabling immediately makes protocol and connection APIs return 404; re-enabling before grant expiry makes still-valid grants usable again. If the intention is permanent access removal, revoke grants separately with authorization rather than treating the feature flag as revocation.
 
-## Evidence and pending acceptance
+## Evidence and acceptance
 
 Tests cover real isolated Mongo persistence and SDK HTTP transport, user separation, confidential/public clients, PKCE/resource/redirect checks, code replay/expiry, CSRF/consent denial, tool schemas/output limits, tag pagination, scoped writes, revision conflicts, public/shared-note write rejection, legacy read-only grants, grant/token expiry, revocation and REST/Bearer separation. Frontend behavior tests cover read/write consent wording, acknowledgement, denial, error states, stale responses and connection revocation.
 
-Before production: authorize deployment separately, including the requested write capability; verify public discovery/callback/Origin settings and session cookies; then perform Meemo real Gemini web/mobile tests for connection, search/read/tags, create/update/trash, stale-revision rejection and conflict recovery, partial-field updates, read-only scope enforcement, and user-level revocation. Record client/version, deployment version and dates without private note content or credentials. These real-client acceptance checks are explicitly **pending** (`NOT_RUN`), and are not implied by travel-cards acceptance, local unit/integration test passes, or historical read-only review conclusions.
+Real-client acceptance: **PASS** (maintainer manual acceptance, recorded 2026-10-22). The maintainer reported completing the production Gemini acceptance by hand; client versions and per-check details were not recorded in this repository. The acceptance scope is connection, search/read/tags, create/update/trash, stale-revision rejection and conflict recovery, partial-field updates, read-only scope enforcement, and user-level revocation.
+
+Repeat that scope after changes to MCP tools, OAuth, scopes or deployment settings. Record client/version, deployment version and dates without private note content or credentials. Local unit/integration test passes do not replace real-client acceptance.

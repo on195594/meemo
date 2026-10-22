@@ -22,7 +22,7 @@ Use this checklist for v2.1 release candidates and later releases. Stop on any f
 - Real Gemini client acceptance gate:
   - Test real Meemo Gemini web/mobile clients across both read and write workflows: consent flow (read-only vs read-and-write disclosures), search/read/tags, create/update/trash, optimistic revision conflict handling, partial-field updates, legacy read-only scope enforcement, and user-level revocation.
   - Verify `search_notes` with `include_content: true` returns full Markdown without follow-up reads, `batch_get_notes` reads up to 20 notes, and `batch_delete_notes` trashes multiple notes with one client confirmation. Check partial-failure summaries and the 128 KiB response limit.
-  - Record client/deployment versions and dates without private content. These real-client checks are explicitly **pending** (`NOT_RUN`), and are not implied by travel-cards acceptance, local automated test passes, or historical read-only review conclusions.
+  - Record client/deployment versions and dates without private content. Initial maintainer manual acceptance passed (recorded 2026-10-22); repeat these checks when MCP tools, OAuth, scopes or deployment settings change. Local automated test passes do not replace them.
 - Recovery gate:
   - Recovery must invalidate restored MCP authorization state before enabling access; disabling is rollback, not permanent grant revocation. The existing synthetic restore fixture does not yet test MCP state.
 

@@ -1,6 +1,6 @@
 # Search baseline
 
-Status: `PASS` for the recorded synthetic performance baseline. A reproducible, agent-authored relevance sample is now available; its observed Chinese substring miss remains `KNOWN_GAP`, and human relevance review remains `NOT_RUN`.
+Status: `PASS` for the recorded synthetic performance baseline. A reproducible, agent-authored relevance sample is now available; its observed Chinese substring miss remains `KNOWN_GAP`, and human relevance review remains `NOT_RUN` (see the maintainer review checklist at the end).
 
 ## Reproduction
 
@@ -59,3 +59,23 @@ Result semantics:
 Initial local candidate run: **29/30 cases passed**, with `chinese-backup-text` retaining the expected `db-backup` hit but returning none. Its counterpart `chinese-backup-regex` passes: English `$text` indexing does not match `备份` inside the unsegmented compound `数据库备份恢复检查`. Mean recall across positive cases was `25/26` (about 96.15%). This is evidence for the synthetic case, not evidence that the same problem dominates real usage.
 
 Before optimizing M3-02, have a maintainer review the corpus/labels and add representative, explicitly approved examples. Keep AND/OR, owner, trash, and ranking contracts separate from desired semantic improvements; do not change expected IDs merely to make a failing implementation pass. The report includes dataset SHA-256, environment, source commit, and dirty-tree state; rebind evidence after committing. This sample alone does not authorize production data sampling, an external search service, AI calls, or a vector database.
+
+## Maintainer label review (M3-01 human review)
+
+Status: `NOT_RUN` — awaiting maintainer decisions. A coding agent prepared this checklist; it does not count as human review.
+
+Rerun 2026-10-22 (Node `v24.22.1`, MongoDB `8.3.13`, dataset SHA-256 `f03ad6ca…69d05`, source `84bb8af` with uncommitted dependency changes): `PASS_WITH_KNOWN_GAPS`, 29/30, mean recall `25/26`, same single gap as above.
+
+Most cases are contract checks (owner isolation, archive/trash visibility, AND vs OR, exact tag, pagination, literal URL). Approve those unless the product behavior itself should change. The following labels encode product **preferences** and need an explicit maintainer decision:
+
+| Case | Current label | Decision needed |
+| --- | --- | --- |
+| `chinese-backup-text` | `备份` in `text` mode should find `db-backup` (`KNOWN_GAP`) | Must `$text` mode match Chinese substrings? If yes, this justifies M3-02 work (for example a regex fallback for CJK terms); if no, relabel it with a documented reason. |
+| `english-stemming-regex` | `writes` in `regex` mode finds nothing | Accept that regex mode has no stemming? |
+| `regex-and-does-not-become-or` / `text-or` | Regex mode requires all terms; text mode returns any term | Accept the different semantics between the two modes? |
+| `sticky-before-relevance` / `text-or` prefix | Pinned notes rank above higher-scoring unpinned ones | Should pinned notes outrank relevance? |
+| `tag-weight-before-content` | A tag hit outranks a content-only hit | Accept the tag weight? |
+| `wikilink-label` | `[[Project Atlas\|Custom label]]` finds the note even though its displayed label is `Atlas` | Should wikilink searches match only the target? |
+| `accent-folding` | `cafe` finds `Café` in text mode | Accept accent-insensitive search? |
+
+To record the review: set each decision (approve / relabel with a reason) in this table, update `provenance` in `scripts/fixtures/search-relevance.json` to name the reviewer and date, rerun `npm run verify:search:relevance` on a clean commit, and change the status above to `PASS` with the reviewer and date. Add representative examples from your own usage as new synthetic cases, never copied production notes.

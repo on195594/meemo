@@ -24,7 +24,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `DESIGN.md`: Material Design 3 and Google Keep tokens, color palette, and layout specs.
 - `docs/README.md`: documentation index and directory maintenance rules.
 - `docs/ARCHITECTURE.md`: component boundaries, API contracts, and runtime flow.
-- `docs/GEMINI_ASSISTANT.md`: current optional MCP configuration, privacy, limits, revocation, recovery, and pending real-client acceptance.
+- `docs/GEMINI_ASSISTANT.md`: current optional MCP configuration, privacy, limits, revocation, recovery, and real-client acceptance record.
 - `docs/LONG_TERM_ARCHITECTURE.md`: normative long-term architectural constraints and complexity budget.
 - `docs/BACKUP_RESTORE.md`: production backup, disaster recovery, and verification runbooks.
 - `docs/BRANCH_PROTECTION.md`: reference master branch protection and check policies (disabled for single-maintainer development).

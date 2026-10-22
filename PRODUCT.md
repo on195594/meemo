@@ -46,7 +46,7 @@ Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesys
 - Vue 3 frontend (`web/src/`) validated by build, typecheck and Vitest component/store/route behavior tests. Exact counts belong in dated validation records, not this product baseline.
 - Express runtime covered by Mocha server and integration tests.
 - Authoritative OpenAPI 3.0 specification (`docs/openapi.yaml`) and TypeScript domain definitions (`types/api.d.ts`).
-- Docker Compose packaging with healthchecks and graceful shutdown; candidate releases require the [release checklist](docs/RELEASE_CHECKLIST.md). MCP deployment and real-client acceptance are still pending.
+- Docker Compose packaging with healthchecks and graceful shutdown; candidate releases require the [release checklist](docs/RELEASE_CHECKLIST.md). MCP real Gemini client acceptance passed by maintainer manual test (recorded 2026-10-22).
 
 ## Product Principles
 
