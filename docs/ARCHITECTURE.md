@@ -56,7 +56,7 @@ Ordinary routes are registered by `src/http/router.js` from `src/http/app.js`:
 
 - Optional `/mcp`, `/oauth/*`, OAuth `/.well-known/*`, and `/api/mcp/*` are separately mounted by `src/http/mcp.js`; `/assistant/*` are SPA views.
 
-- `/api/register`, `/api/login`, `/api/logout`: local authentication and session management
+- `/api/register`, `/api/login`, `/api/logout`: local authentication and session management; a successful login returns the user profile so the client skips a follow-up `/api/profile` request
 - `/api/profile`: authenticated user identity and settings
 - `/api/things`, `/api/things/:id/restore`, `/api/files`, `/api/tags`, `/api/settings`: authenticated application API; Thing revisions use CAS and deletes move notes to reversible trash
 - `/api/import`, `/api/export`: archive transfer with size limits and path traversal protection
@@ -115,7 +115,7 @@ Meemo employs a multi-tiered performance strategy balancing database efficiency,
 
 ## Note list rendering
 
-Saving updates local note state and reorders the row-order masonry columns. Cards can be remounted when they move between columns. To bound Markdown parsing, sanitization, and DOM work, `NoteCard.vue` limits its body preview to 4,000 UTF-16 code units or 40 lines when an `openDetail` listener is present. It displays an “Open note to read more” hint for truncated previews. Full source remains in state; task toggles operate on that source, not the preview. Detail dialogs and standalone private/shared note pages retain complete content. Search matching remains server-side; list highlighting applies to the visible preview.
+Saving updates local note state and redistributes the height-balanced masonry columns (shortest column first, from bounded estimates of the displayed body). Cards can be remounted when they move between columns. To bound Markdown parsing, sanitization, and DOM work, `NoteCard.vue` limits its body preview to 4,000 UTF-16 code units or 40 lines when an `openDetail` listener is present. It displays an “Open note to read more” hint for truncated previews. Full source remains in state; task toggles operate on that source, not the preview. Detail dialogs and standalone private/shared note pages retain complete content. Search matching remains server-side; list highlighting applies to the visible preview.
 
 ## Build and deployment
 

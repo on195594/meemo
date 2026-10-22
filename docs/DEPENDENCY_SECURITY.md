@@ -1,5 +1,18 @@
 # Dependency security (VR-213)
 
+## 2026-10-22 audit snapshot (open, not remediated)
+
+A live `npm audit` against `7b6eec8` reports new advisories published after the 2026-10-15 triage. They are recorded here, not yet fixed:
+
+| Scope | Finding | Reachability | Available fix |
+| --- | --- | --- | --- |
+| Root, `--omit=dev` | `markdown-it@15.0.2` (high): [GHSA-vfgh-jcmw-g37q](https://github.com/advisories/GHSA-vfgh-jcmw-g37q) quadratic inline-HTML parsing with `html` enabled; [GHSA-gfr2-rv44-r23c](https://github.com/advisories/GHSA-gfr2-rv44-r23c) quadratic multi-line link reference definitions | Reachable: `src/services/thing-service.js` and `src/http/routes/public.js` render user note content with `html: true`. | `markdown-it@15.0.3` (in the current `^15.0.2` range; lockfile-only change). |
+| Frontend, full | `markdown-it@14.x` (high): the two advisories above plus [GHSA-r7fv-28h4-cvq7](https://github.com/advisories/GHSA-r7fv-28h4-cvq7) smartquotes | Reachable in the browser renderer `web/src/utils/markdown.ts` (`html: true`); impact is client-side CPU on the viewer's own notes or shared notes. | `markdown-it@14.3.3` (in the `^14.1.0` range). |
+| Frontend, full | `vitest`/`@vitest/mocker` `<=4.1.11` (moderate) | Development/test only. | Requires a Vitest upgrade; validate separately. |
+| Root, full | `mocha` chain (`braces`, `chokidar`, `serialize-javascript`) | Unchanged from the 2026-10-15 conditional retention below. | `mocha@12` major upgrade. |
+
+Re-run `npm audit` before acting; this table is a dated snapshot.
+
 ## 2026-10-15 root development dependency triage
 
 This follow-up was verified against `c9062b061037f0af6d4c1ba69683caf5d5bba5eb` (which includes frontend remediation `7988740c73f3f1af563b1bda7b231b6187bbaf50`). Results below are live registry snapshots from 2026-10-15, not a guarantee against later advisories.

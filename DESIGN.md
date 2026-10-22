@@ -119,7 +119,7 @@ System font stack (`--md-sys-typescale-font`) throughout; code uses `--md-sys-ty
 
 - **Header Bar**: Full-width, 64px, 1px bottom divider. Hamburger, logo, search box (max 720px, 8px radius, turns white with shadow on focus), grid/list toggle, theme toggle (icon only), avatar.
 - **Sidebar**: Notes, Archive, Trash. Desktop: 80px icon rail that peeks open on hover, or 280px when expanded via the hamburger (remembered per browser). Below 768px: overlay drawer with scrim; focus moves into it, Tab stays inside, and Escape or a scrim click closes it and returns focus to the menu button. Navigation writes the existing `tag` / `archived` / `deleted` route query.
-- **Masonry Grid**: Row-order (left-to-right) columns of fixed 240px cards with 16px gaps, centered. When the stream itself is narrower than 600px (phones, or a narrow window with the sidebar expanded) columns become flexible with a 160px minimum and 8px gaps — two columns on a typical phone. Items are distributed into columns balancing height estimates (`web/src/utils/masonry.ts`) to keep column baselines even. List view is a single 600px column.
+- **Masonry Grid**: Height-balanced columns of fixed 240px cards with 16px gaps, centered. When the stream itself is narrower than 600px (phones, or a narrow window with the sidebar expanded) columns become flexible with a 160px minimum and 8px gaps — two columns on a typical phone. Each item goes to the currently shortest column using bounded height estimates of the displayed body (`web/src/utils/masonry.ts`); ties fall back to left-to-right order, so reading order is approximate rather than strict row order. List view is a single 600px column.
 - **Composer**: 600px, centered. Collapsed: "Take a note…" with New list and image shortcuts. Expanded: Title, auto-growing body, toolbar, and a `Close` text button. Close, Escape or a click outside saves a non-empty draft; a failed save keeps the draft open. It stays mounted (hidden) in Archive/Trash so a draft survives view switches.
 - **Modal Layer**: Note dialog `min(600px, 100%)` (full screen below 600px); auth/import 440-480px, cheatsheet 540px.
 - **Snackbar**: Bottom-left, 4px radius, auto-dismisses (6s with Undo, 3s otherwise). Archive and Trash actions offer Undo.
@@ -165,7 +165,7 @@ The older `--md-sys-elevation-*` tokens remain for auth, settings, and import di
 - Shows the `/` shortcut hint when empty, a clear `×` when populated; results show a "Results for …" line with Clear search.
 
 ### Label Chips
-- Inline `#tags` render as small rounded chips inside the card body and filter the stream on click. The sidebar lists the same labels.
+- Inline `#tags` render as small rounded chips inside the card body and filter the stream on click. Labels are not listed in the sidebar.
 
 ### Color Picker
 - 12 circular swatches in a 4-column popover below the trigger; the Default swatch has a ring.

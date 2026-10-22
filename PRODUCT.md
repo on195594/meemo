@@ -27,7 +27,7 @@ Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesys
 
 ## Capabilities and Constraints
 
-- **Client**: Modern Vue 3 Single Page Application with TypeScript, Vite, Material Design 3 tokens, client-side routing, and responsive row-order masonry layout (grid or list view), and a Keep-style navigation rail (Notes, Archive, Trash).
+- **Client**: Modern Vue 3 Single Page Application with TypeScript, Vite, Material Design 3 tokens, client-side routing, and responsive height-balanced masonry layout (grid or list view), and a Keep-style navigation rail (Notes, Archive, Trash).
 - **Server & Persistence**: Node.js/Express backend with Zod validation, MongoDB for accounts, sessions, and unified `things` collections with compound ESR and `$text` indexes, local filesystem for attachments.
 - **Content Formatting**: Markdown rendering, interactive task checkboxes, wikilinks, search-term highlighting.
 - **Organization**: Pinned notes section, 12-color Keep-calibrated palette with automatic dark mode contrast recalibration, dynamic tag aggregation, single-note actions (copy, pin, archive, public/private toggle, delete) via touch-friendly action menus, multi-select batch actions (pin, archive, color, delete to trash), and snackbar Undo for archive and trash.

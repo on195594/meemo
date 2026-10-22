@@ -163,6 +163,8 @@ Do not commit generated `public/`, `web/dist/`, `node_modules/`, `web/node_modul
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Master branch protection](docs/BRANCH_PROTECTION.md)
 - [Dependency security](docs/DEPENDENCY_SECURITY.md)
+- [Gemini assistant (MCP)](docs/GEMINI_ASSISTANT.md)
+- [Search baseline](docs/SEARCH_BASELINE.md)
 - [Security policy](SECURITY.md)
 
 ## License
