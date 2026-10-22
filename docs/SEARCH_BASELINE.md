@@ -64,7 +64,7 @@ Before optimizing M3-02, add representative, explicitly approved examples from r
 
 Status: `PASS` — the maintainer reviewed and accepted all 29 labels on 2026-10-22, including the six preference decisions below. A synthetic corpus pass is not production relevance acceptance.
 
-Rerun 2026-10-22 after removing `chinese-backup-text`: `PASS`, 29/29, mean recall 100%, dataset SHA-256 `014d32b4…73696e` (uncommitted tree on `c71897d`).
+Approved-label run 2026-10-22 (clean tree at `b411349`, Node `v24.22.1`, MongoDB `8.3.13`, dataset SHA-256 `94094e1d…803b76b0`): `PASS`, 29/29, mean recall 100%, no known gaps.
 
 Most cases are contract checks (owner isolation, archive/trash visibility, AND vs OR, exact tag, pagination, literal URL). The following labels encode product **preferences**; each was explicitly accepted:
 
