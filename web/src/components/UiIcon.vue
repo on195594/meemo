@@ -15,7 +15,6 @@ const paths = {
   trash: 'M3 6h18 M9 6V3h6v3 M5 6l1 15h12l1-15 M10 10v7 M14 10v7',
   attach: 'M8 12l6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9 M6 14l8-8',
   restore: 'M3 10a9 9 0 1 1 2 8 M3 4v6h6',
-  expand: 'M14 4h6v6 M20 4l-7 7 M10 20H4v-6 M4 20l7-7',
   sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M12 2v2 M12 20v2 M2 12h2 M20 12h2 M5 5l1.5 1.5 M17.5 17.5L19 19 M5 19l1.5-1.5 M17.5 6.5L19 5',
   moon: 'M21 13A9 9 0 0 1 11 3a9 9 0 1 0 10 10',
   system: 'M3 4h18v13H3z M8 21h8 M12 17v4',

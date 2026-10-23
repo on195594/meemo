@@ -127,7 +127,7 @@ System and multilingual CJK font stack (`--md-sys-typescale-font`) throughout wi
 ## Elevation & Depth
 
 - Resting cards: no shadow, 1px outline (default color only).
-- `--keep-shadow-hover`: hovered or focused cards, focused search box.
+- `--keep-shadow-hover`: hovered or focused cards (with `translateY(-2px)` tactile lift and `z-index: 1` elevation), focused search box.
 - `--keep-shadow-raised`: composer, color popovers, peeking sidebar rail.
 - `--keep-shadow-dialog`: note dialog and mobile drawer.
 
