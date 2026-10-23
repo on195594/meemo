@@ -699,6 +699,11 @@ describe('MCP read/write tools and OAuth isolation', function () {
         assert(search.notes[0].summary.length <= 300);
         var textSearch = toolBody(await rpc(app, aliceToken, 'tools/call', { name: 'search_notes', arguments: { query: 'marker', mode: 'text' } }));
         assert.equal(textSearch.notes[0].id, noteId);
+        var searchLog = logs.map(function (line) { return JSON.parse(line); }).filter(function (entry) {
+            return entry.event === 'mcp_tool' && entry.tool === 'search_notes';
+        }).pop();
+        assert.equal(searchLog.mode, 'text');
+        assert.equal(searchLog.count, textSearch.notes.length);
         var invalid = await rpc(app, aliceToken, 'tools/call', { name: 'search_notes', arguments: { skip: 1001 } });
         assert(invalid.body.result.isError || invalid.body.error);
         await protocol(app, 'post', '/mcp').set('Authorization', 'Bearer ' + aliceToken).send({ huge: 'x'.repeat(66000) }).expect(413);

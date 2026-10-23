@@ -85,6 +85,7 @@ function authorize(rawUserId, thingId, identifier, session, callback) {
 
         return {
             attachment: attachment,
+            visible: !!(thing.public || thing.shared),
             root: await storage.resolveAttachmentRoot(targetUserId, targetUsername, identifier)
         };
     }).catch(function (error) {

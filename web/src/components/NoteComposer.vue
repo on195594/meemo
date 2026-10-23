@@ -168,6 +168,7 @@ import { NOTE_COLORS } from '../constants/noteColors';
 import { joinTitle } from '../utils/noteTitle';
 import { isImageAttachment } from '../utils/markdown';
 import { loadDraft, saveDraft } from '../utils/drafts';
+import { shrinkImage } from '../utils/image';
 
 const props = withDefaults(defineProps<{
   onSave: (content: string, attachments?: AttachmentDescriptor[], color?: NoteColor) => Promise<{ success: boolean; error?: string }>;
@@ -410,7 +411,7 @@ async function uploadFiles(files: File[]) {
     uploadingFileName.value = file.name;
 
     try {
-      const uploaded = await api.files.upload(file, (pct) => {
+      const uploaded = await api.files.upload(await shrinkImage(file), (pct) => {
         uploadProgress.value = pct;
       });
       attachments.value.push(uploaded);

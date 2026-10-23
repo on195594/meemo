@@ -128,8 +128,10 @@ function createProvider(settings) {
         verifyAccessToken: async function (token) {
             if (typeof token !== 'string' || token.length > 256) throw new errors.InvalidTokenError('Invalid token');
             var record = await repository.get('tokens', hash(token));
-            if (!record || !await provider.clientsStore.getClient(record.clientId)) throw new errors.InvalidTokenError('Invalid token');
-            var grant = await activeGrant(record.grantId);
+            if (!record) throw new errors.InvalidTokenError('Invalid token');
+            var checks = await Promise.all([provider.clientsStore.getClient(record.clientId), activeGrant(record.grantId)]);
+            if (!checks[0]) throw new errors.InvalidTokenError('Invalid token');
+            var grant = checks[1];
             return {
                 token: token, clientId: record.clientId, scopes: grantScopes(grant), resource: resource,
                 expiresAt: Math.floor(record.expiresAt.getTime() / 1000), extra: { userId: grant.userId, grantId: grant._id, clientName: grant.clientName }

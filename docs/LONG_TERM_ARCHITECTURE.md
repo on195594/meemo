@@ -10,6 +10,7 @@
 - 账号只在 MongoDB；旧 file/fallback 用户源已从运行时删除，只保留离线迁移输入。
 - NoteColor 已有单一定义（`src/note-colors.js` ↔ `web/src/constants/noteColors.ts`）。
 - 可选 MCP（Gemini）读写工具已实现，默认关闭，2026-10-22 真实客户端验收通过；助手写入留下可见、可撤销的 `assistant` 标记（见 §12）。
+- 浏览器端：service worker 提供安装与离线只读（决策记录见 ARCHITECTURE.md「Offline shell」）；图片在浏览器上传前缩小，不保留原图。
 - 未实现：内置 AI 聊天、语义/向量检索、对象存储。
 - 未决：见 §17。
 

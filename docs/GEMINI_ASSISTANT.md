@@ -79,11 +79,22 @@ Every successful write records a visible trace on the note: `assistant.action` (
 
 Private note and tag content is untrusted data, not an instruction. No attachment uploads, public sharing, imports, account changes, or general URL/network tools are exposed.
 
+## Measuring assistant round trips
+
+Each tool call costs the assistant a model turn, which dominates latency; server time is a few milliseconds. The `search_notes` description therefore tells clients that an empty query with `include_content=true` reads up to 50 complete notes in one call, that `regex` mode needs every keyword (write Chinese as short space-separated keywords), and to retry once with fewer keywords or the other mode before concluding nothing exists.
+
+Production Compose uses the `journald` log driver (tag `meemo`) so audit events survive container recreation. Summarize calls per tool, empty searches and modes without reading note content:
+
+```sh
+journalctl CONTAINER_NAME=meemo -o cat --since -7d | grep '"event":"mcp_tool"' \
+  | jq -r '[.tool, .result, (.mode // "-"), (if .count == 0 then "empty" else "-" end)] | @tsv' | sort | uniq -c | sort -rn
+```
+
 ## Reverse proxy and credential hygiene
 
 Route `/mcp`, `/oauth/*`, `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp`, `/api/mcp/*` and `/assistant/*` to this application without SPA interception or caching. Preserve Host and Authorization; do not rewrite resource URLs or redirect the discovery endpoint. MCP requires both JSON and event-stream in the client's Accept header as checked by the SDK, even though successful responses here are JSON.
 
-The app sets no-store for protocol/browser API responses and no-referrer/no-store for assistant HTML. If the proxy serves the SPA HTML itself, apply equivalent headers there too. Do not log OAuth query strings, consent request IDs, Authorization, Cookie, client secrets, codes, CSRF values or Referer. A proxy access format using `$request` or `$request_uri` leaks query values; use `$request_method $uri` and omit Referer for these routes. Application HTTP logs omit query strings; tool audit includes request/user/client IDs, tool, note ID where applicable, outcome and duration, never body or search terms.
+The app sets no-store for protocol/browser API responses and no-referrer/no-store for assistant HTML. If the proxy serves the SPA HTML itself, apply equivalent headers there too. Do not log OAuth query strings, consent request IDs, Authorization, Cookie, client secrets, codes, CSRF values or Referer. A proxy access format using `$request` or `$request_uri` leaks query values; use `$request_method $uri` and omit Referer for these routes. Application HTTP logs omit query strings; tool audit (`mcp_tool` events) includes request/user/client IDs, tool, note ID where applicable, outcome, duration, the number of returned notes or tags (`count`) and the validated search `mode`, never body or search terms.
 
 ## Persistence, recovery and rollback
 

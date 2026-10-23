@@ -123,6 +123,8 @@ describe('Attachment Authorization (RF-104)', function () {
                 .end(function (err, res) {
                     expect(err).to.be(null);
                     expect(res.text).to.equal('Alice Private Secret');
+                    // Owner-only files may be cached by the browser but never by shared proxies.
+                    expect(res.headers['cache-control']).to.equal('private, max-age=31536000, immutable');
                     done();
                 });
         });
@@ -156,6 +158,7 @@ describe('Attachment Authorization (RF-104)', function () {
                 .end(function (err, res) {
                     expect(err).to.be(null);
                     expect(res.text).to.equal('Alice Public Content');
+                    expect(res.headers['cache-control']).to.equal('public, max-age=0');
                     done();
                 });
         });

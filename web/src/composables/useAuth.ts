@@ -8,6 +8,7 @@ import {
 import { resetNotesState } from './useNotes';
 import { resetSettingsState } from './useSettings';
 import { clearDrafts } from '../utils/drafts';
+import { clearOfflineData } from '../utils/pwa';
 
 export interface RegisterPayload {
   username: string;
@@ -146,6 +147,7 @@ export function useAuth() {
     isLoading.value = true;
     setSessionMarker(false);
     clearDrafts();
+    void clearOfflineData();
     resetUserScopedState();
     try {
       await api.auth.logout();

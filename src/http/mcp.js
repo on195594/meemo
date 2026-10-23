@@ -154,7 +154,7 @@ function createMcp(options, logger) {
         if (Array.isArray(req.body) || (req.body && req.body.id !== undefined && Buffer.byteLength(JSON.stringify(req.body.id)) > 256)) {
             return res.status(400).json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Use a single request with an ID of at most 256 serialized bytes' } });
         }
-        var server = createServer(provider, logger, req.id);
+        var server = createServer(logger, req.id);
         var transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
         res.on('close', function () { server.close().catch(function () {}); });
         await server.connect(transport);
