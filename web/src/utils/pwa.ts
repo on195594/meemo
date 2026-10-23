@@ -6,12 +6,30 @@ export function registerServiceWorker(): void {
   });
 }
 
-// Remove notes cached for offline reading (explicit logout).
+// Ask the cache owner to fence in-flight reads too; never delete its cache from the page.
 export async function clearOfflineData(): Promise<void> {
-  try {
-    if (typeof caches === 'undefined') return;
-    for (const name of await caches.keys()) {
-      if (name.startsWith('meemo-data-')) await caches.delete(name);
-    }
-  } catch { /* Cache Storage unavailable */ }
+  const serviceWorker = typeof navigator !== 'undefined' && navigator.serviceWorker;
+  const worker = serviceWorker && (serviceWorker.controller || (await serviceWorker.getRegistration())?.active);
+  if (worker) {
+    const channel = new MessageChannel();
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Offline cache cleanup timed out')), 5000);
+      channel.port1.onmessage = ({ data }) => {
+        clearTimeout(timeout);
+        if (data?.ok === true) resolve();
+        else reject(new Error('Offline cache cleanup failed'));
+      };
+      try {
+        worker.postMessage({ type: 'CLEAR_OFFLINE_DATA' }, [channel.port2]);
+      } catch (error) {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    }).finally(() => { channel.port1.close(); channel.port2.close(); });
+    return;
+  }
+  if (typeof caches === 'undefined') return;
+  for (const name of await caches.keys()) {
+    if (name.startsWith('meemo-data-')) await caches.delete(name);
+  }
 }

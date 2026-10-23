@@ -25,6 +25,13 @@ const sessionExpired = ref(false);
 const isFirstUser = ref(false);
 const initialized = ref(false);
 const SESSION_STORAGE_KEY = 'meemo_has_session';
+let authChanges: Promise<unknown> = Promise.resolve();
+
+function changeAuth<T>(action: () => Promise<T>): Promise<T> {
+  const result = authChanges.then(action);
+  authChanges = result.catch(() => {});
+  return result;
+}
 
 function resetUserScopedState(): void {
   resetNotesState();
@@ -97,23 +104,27 @@ export function useAuth() {
   }
 
   async function login(username: string, password: string): Promise<{ success: boolean; error?: string }> {
-    isLoading.value = true;
-    authError.value = null;
-    try {
-      const loginRes = await api.auth.login(username.trim().toLowerCase(), password);
-      const userProfile = loginRes?.user || (await api.auth.profile()).user;
-      setUser(userProfile);
-      sessionExpired.value = false;
-      isFirstUser.value = false;
-      setSessionMarker(true);
-      return { success: true };
-    } catch (err: any) {
-      const msg = err.message || 'Invalid username or password';
-      authError.value = msg;
-      return { success: false, error: msg };
-    } finally {
-      isLoading.value = false;
-    }
+    return changeAuth(async () => {
+      isLoading.value = true;
+      authError.value = null;
+      try {
+        await clearOfflineData();
+        const loginRes = await api.auth.login(username.trim().toLowerCase(), password);
+        await clearOfflineData();
+        const userProfile = loginRes?.user || (await api.auth.profile()).user;
+        setUser(userProfile);
+        sessionExpired.value = false;
+        isFirstUser.value = false;
+        setSessionMarker(true);
+        return { success: true };
+      } catch (err: any) {
+        const msg = err.message || 'Invalid username or password';
+        authError.value = msg;
+        return { success: false, error: msg };
+      } finally {
+        isLoading.value = false;
+      }
+    });
   }
 
   async function register(payload: RegisterPayload): Promise<{ success: boolean; error?: string }> {
@@ -144,23 +155,27 @@ export function useAuth() {
   }
 
   async function logout(): Promise<void> {
-    isLoading.value = true;
-    setSessionMarker(false);
-    clearDrafts();
-    void clearOfflineData();
-    resetUserScopedState();
-    try {
-      await api.auth.logout();
-    } catch (err) {
-      // Ignore network errors during logout to allow local session clear
-      console.warn('Logout warning:', err);
-    } finally {
-      user.value = null;
-      sessionExpired.value = false;
-      authError.value = null;
-      isLoading.value = false;
-      await checkFirstUser();
-    }
+    return changeAuth(async () => {
+      isLoading.value = true;
+      setSessionMarker(false);
+      clearDrafts();
+      resetUserScopedState();
+      const clearCache = () => clearOfflineData().catch((err) => console.warn('Offline cache cleanup failed:', err));
+      try {
+        await clearCache();
+        await api.auth.logout();
+      } catch (err) {
+        // Ignore network errors during logout to allow local session clear
+        console.warn('Logout warning:', err);
+      } finally {
+        await clearCache();
+        user.value = null;
+        sessionExpired.value = false;
+        authError.value = null;
+        isLoading.value = false;
+        await checkFirstUser();
+      }
+    });
   }
 
   function clearError(): void {

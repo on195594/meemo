@@ -59,6 +59,7 @@ type GetPublicUserResponse = JsonResponse<paths['/api/users/{userId}']['get'], 2
 
 export type UnauthorizedHandler = (path: string, error: ApiError) => void;
 const unauthorizedHandlers = new Set<UnauthorizedHandler>();
+let authGeneration = 0;
 
 export function onUnauthorized(handler: UnauthorizedHandler): () => void {
   unauthorizedHandlers.add(handler);
@@ -78,6 +79,7 @@ function notifyUnauthorized(path: string, error: ApiError): void {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const requestGeneration = authGeneration;
   const headers = new Headers(options.headers || {});
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
@@ -100,7 +102,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       // Body not JSON, fallback to statusText
     }
     const apiError = new ApiError(response.status, errorCode, errorMessage);
-    if (response.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/register')) {
+    if (response.status === 401 && requestGeneration === authGeneration && !path.startsWith('/api/login') && !path.startsWith('/api/register')) {
       notifyUnauthorized(path, apiError);
     }
     throw apiError;
@@ -115,15 +117,27 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   auth: {
-    login: (username: LoginRequest['username'], password: LoginRequest['password']) =>
-      request<LoginResponse>('/api/login', {
-        method: 'POST',
-        body: JSON.stringify({ username, password }),
-      }),
-    logout: () =>
-      request<{}>('/api/logout', {
-        method: 'POST',
-      }),
+    login: async (username: LoginRequest['username'], password: LoginRequest['password']) => {
+      authGeneration++;
+      try {
+        return await request<LoginResponse>('/api/login', {
+          method: 'POST',
+          body: JSON.stringify({ username, password }),
+        });
+      } finally {
+        authGeneration++;
+      }
+    },
+    logout: async () => {
+      authGeneration++;
+      try {
+        return await request<{}>('/api/logout', {
+          method: 'POST',
+        });
+      } finally {
+        authGeneration++;
+      }
+    },
     register: (data: RegisterRequest) =>
       request<{}>('/api/register', {
         method: 'POST',
@@ -182,6 +196,7 @@ export const api = {
 
   files: {
     upload: (file: File, onProgress?: (percent: number) => void): Promise<UploadFileResponse> => {
+      const requestGeneration = authGeneration;
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/files');
@@ -211,7 +226,7 @@ export const api = {
               if (err.message) message = err.message;
             } catch {}
             const apiError = new ApiError(xhr.status, code, message);
-            if (xhr.status === 401) {
+            if (xhr.status === 401 && requestGeneration === authGeneration) {
               notifyUnauthorized('/api/files', apiError);
             }
             reject(apiError);
@@ -231,6 +246,7 @@ export const api = {
 
   transfer: {
     importArchive: (file: File, onProgress?: (percent: number) => void): Promise<ImportResponse> => {
+      const requestGeneration = authGeneration;
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/import');
@@ -260,7 +276,7 @@ export const api = {
               if (err.message) message = err.message;
             } catch {}
             const apiError = new ApiError(xhr.status, code, message);
-            if (xhr.status === 401) {
+            if (xhr.status === 401 && requestGeneration === authGeneration) {
               notifyUnauthorized('/api/import', apiError);
             }
             reject(apiError);
