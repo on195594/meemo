@@ -499,6 +499,40 @@ describe('MCP read/write tools and OAuth isolation', function () {
         assert.equal(sharedDelete.code, 'not_allowed');
     });
 
+    it('marks assistant writes with changed fields until the owner writes or restores', async function () {
+        var created = toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'create_note', arguments: { content: 'assistant draft #provenance' }
+        }));
+        var stored = await db.collection('things').findOne({ _id: new ObjectId(created.id) });
+        assert.equal(stored.assistant.action, 'create');
+        assert.equal(stored.assistant.client, 'Synthetic Gemini');
+        assert.equal(stored.assistant.previous, undefined);
+
+        toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'update_note', arguments: { id: created.id, expectedRevision: 1, content: 'assistant rewrite #provenance', sticky: true }
+        }));
+        stored = await db.collection('things').findOne({ _id: new ObjectId(created.id) });
+        assert.equal(stored.assistant.action, 'update');
+        assert.deepEqual(stored.assistant.previous, { content: 'assistant draft #provenance', sticky: false });
+        var listed = (await alice.get('/api/things').query({ filter: 'rewrite' }).expect(200)).body.things;
+        assert.deepEqual(listed[0].assistant.previous, stored.assistant.previous, 'owner REST reads expose the marker for undo');
+
+        // Owner undo is an ordinary revision-checked PUT and clears the marker.
+        var undone = (await alice.put('/api/things/' + created.id).send({
+            content: stored.assistant.previous.content, sticky: false, expectedRevision: 2
+        }).expect(201)).body.thing;
+        assert.equal(undone.content, 'assistant draft #provenance');
+        assert.equal(undone.assistant, undefined);
+
+        toolBody(await rpc(app, aliceToken, 'tools/call', {
+            name: 'delete_note', arguments: { id: created.id, expectedRevision: 3 }
+        }));
+        stored = await db.collection('things').findOne({ _id: new ObjectId(created.id) });
+        assert.equal(stored.assistant.action, 'delete');
+        var restored = (await alice.post('/api/things/' + created.id + '/restore').send({ expectedRevision: 4 }).expect(200)).body.thing;
+        assert.equal(restored.assistant, undefined);
+    });
+
     it('restricts legacy grants without stored scopes to read-only access', async function () {
         var db = config.db;
         var legacyGrantId = 'legacy-grant-' + Date.now();

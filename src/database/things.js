@@ -353,12 +353,19 @@ function getById(thingId, callback) {
     return nodeify(promise, callback);
 }
 
-function add(userId, content, tags, attachments, externalContent, color, callback) {
+function add(userId, content, tags, attachments, externalContent, color, assistant, callback) {
     if (typeof color === 'function') {
         callback = color;
         color = 'default';
     }
-    return addFull(userId, content, tags, attachments, externalContent, Date.now(), Date.now(), color, callback);
+    if (typeof assistant === 'function') {
+        callback = assistant;
+        assistant = undefined;
+    }
+    var promise = insertFull(userId, content, tags, attachments, externalContent, Date.now(), Date.now(), color, assistant).then(function (result) {
+        return get(userId, result._id);
+    });
+    return nodeify(promise, callback);
 }
 
 function addFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color, callback) {
@@ -372,10 +379,14 @@ function addFull(userId, content, tags, attachments, externalContent, createdAt,
     return nodeify(promise, callback);
 }
 
-function insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color, callback) {
+function insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color, assistant, callback) {
     if (typeof color === 'function') {
         callback = color;
         color = 'default';
+    }
+    if (typeof assistant === 'function') {
+        callback = assistant;
+        assistant = undefined;
     }
     if (color === undefined) color = 'default';
     if (!noteColors.isValidNoteColor(color)) {
@@ -403,6 +414,7 @@ function insertFull(userId, content, tags, attachments, externalContent, created
         sticky: false,
         color: color
     };
+    if (assistant) doc.assistant = assistant;
 
     var promise = Promise.resolve().then(async function () {
         await checkNotFrozen();
@@ -415,10 +427,14 @@ function insertFull(userId, content, tags, attachments, externalContent, created
     return nodeify(promise, callback);
 }
 
-function put(userId, thingId, content, tags, attachments, externalContent, isPublic, isShared, isArchived, isSticky, color, expectedRevision, callback) {
+function put(userId, thingId, content, tags, attachments, externalContent, isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant, callback) {
     if (typeof expectedRevision === 'function') {
         callback = expectedRevision;
         expectedRevision = undefined;
+    }
+    if (typeof assistant === 'function') {
+        callback = assistant;
+        assistant = undefined;
     }
     if (typeof color === 'function') {
         callback = color;
@@ -446,6 +462,10 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
     if (typeof color === 'string') {
         data.color = color;
     }
+    // Assistant writes record what they changed; any other write means the owner took over.
+    var update = { $set: data, $inc: { revision: 1 } };
+    if (assistant) data.assistant = assistant;
+    else update.$unset = { assistant: '' };
 
     var promise = Promise.resolve().then(async function () {
         requireRevision(expectedRevision, true);
@@ -454,7 +474,7 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
         var collection = getUnifiedCollection();
         var result = await collection.findOneAndUpdate(
             { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: false } },
-            { $set: data, $inc: { revision: 1 } },
+            update,
             { returnDocument: 'after', includeResultMetadata: false }
         );
         if (!result) {
@@ -467,10 +487,14 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
     return nodeify(promise, callback);
 }
 
-function del(userId, thingId, expectedRevision, callback) {
+function del(userId, thingId, expectedRevision, assistant, callback) {
     if (typeof expectedRevision === 'function') {
         callback = expectedRevision;
         expectedRevision = undefined;
+    }
+    if (typeof assistant === 'function') {
+        callback = assistant;
+        assistant = undefined;
     }
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
@@ -484,13 +508,13 @@ function del(userId, thingId, expectedRevision, callback) {
         var result = await collection.updateOne(
             { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: false } },
             {
-                $set: {
+                $set: Object.assign({
                     deletedAt: Date.now(),
                     modifiedAt: Date.now(),
                     public: false,
                     shared: false,
                     sticky: false
-                },
+                }, assistant ? { assistant: assistant } : {}),
                 $inc: { revision: 1 }
             }
         );
@@ -519,7 +543,7 @@ function restore(userId, thingId, expectedRevision, callback) {
         var result = await collection.findOneAndUpdate(
             { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: true } },
             {
-                $unset: { deletedAt: '' },
+                $unset: { deletedAt: '', assistant: '' },
                 $set: { modifiedAt: Date.now(), public: false, shared: false },
                 $inc: { revision: 1 }
             },

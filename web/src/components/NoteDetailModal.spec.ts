@@ -54,6 +54,43 @@ describe('NoteDetailModal', () => {
     document.body.style.overflow = '';
   });
 
+  it('shows the assistant edit and undoes only the fields it changed', async () => {
+    const edited = note({ assistant: { action: 'update', client: 'Gemini', at: 1, previous: { content: 'before', sticky: false } } });
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true, thing: note({ content: 'before' }) });
+    const wrapper = mount(NoteDetailModal, { props: { open: true, thing: edited, onSaveEdit } });
+    expect(document.querySelector('.modal-status')?.textContent).toContain('Gemini edited');
+
+    (document.querySelector('.undo-assistant-btn') as HTMLButtonElement).click();
+    await flushPromises();
+
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'before', sticky: false });
+    expect(document.querySelector('.undo-assistant-btn')).toBeNull();
+    wrapper.unmount();
+  });
+
+  it('restores unsaved edits after a reload and saves them when the page is hidden', async () => {
+    const first = mount(NoteDetailModal, { props: { open: true, thing: note(), onSaveEdit: vi.fn(), draftScope: 'draft-user' } });
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.value = 'typed before the tab closed'; body.dispatchEvent(new Event('input'));
+    await flushPromises();
+    first.unmount();
+    document.body.innerHTML = '';
+
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true, thing: note({ content: 'typed before the tab closed', revision: 2 }) });
+    const second = mount(NoteDetailModal, { props: { open: true, thing: note(), onSaveEdit, draftScope: 'draft-user' } });
+    expect((document.querySelector('.modal-textarea') as HTMLTextAreaElement).value).toBe('typed before the tab closed');
+    expect(document.body.textContent).toContain('Restored unsaved edits from this device');
+
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushPromises();
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'typed before the tab closed' });
+    expect(localStorage.getItem('meemo_draft:note:draft-user:note-1')).toBeNull();
+    second.unmount();
+  });
+
   it('does not render modal dialog when closed', () => {
     const wrapper = mount(NoteDetailModal, {
       props: {

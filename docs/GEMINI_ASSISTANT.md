@@ -75,6 +75,8 @@ MCP uses stateless Streamable HTTP with JSON responses: single POST requests, OP
 
 Limits per app process: 120 protocol requests/minute/IP; 60 MCP requests/minute/client and user; 16 simultaneous authenticated MCP requests. Browser connection APIs are separately limited by IP and user. Registration/consent capacity guards are soft concurrency limits: 500 live clients, 20 pending requests/client, 50 live grants/user; concurrent requests can briefly exceed these counts. Rate state resets on restart; coordinate it before adding replicas. Tag grouping still scans user data despite paged output, so execution limits and throttling remain necessary.
 
+Every successful write records a visible trace on the note: `assistant.action` (`create`, `update` or `delete`), the client's self-reported registration name, the time and, for updates, the previous values of only the fields that changed. The web UI labels such notes (for example “Gemini edited”) and offers **Undo** for updates; Undo is an ordinary revision-checked save. The owner's next web write or restore clears the trace, so only the latest assistant write is undoable. Traces are not exported and are not returned by MCP tools.
+
 Private note and tag content is untrusted data, not an instruction. No attachment uploads, public sharing, imports, account changes, or general URL/network tools are exposed.
 
 ## Reverse proxy and credential hygiene

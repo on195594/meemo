@@ -60,7 +60,7 @@ describe('Thing service avoids redundant work', function () {
         assert.strictEqual(renders, 2);
         assert.deepStrictEqual(enrichedUrls, ['https://example.com/#fragment']);
         assert.deepStrictEqual(received.slice(0, 5), ['owner', 'note', content, ['work'], []]);
-        assert.deepStrictEqual(received.slice(6), [true, false, true, false, 'mint', 7]);
+        assert.deepStrictEqual(received.slice(6), [true, false, true, false, 'mint', 7, undefined]);
         assert.deepStrictEqual(result, { revision: 8 });
     });
 

@@ -7,6 +7,7 @@ import {
 } from '../api/client';
 import { resetNotesState } from './useNotes';
 import { resetSettingsState } from './useSettings';
+import { clearDrafts } from '../utils/drafts';
 
 export interface RegisterPayload {
   username: string;
@@ -144,6 +145,7 @@ export function useAuth() {
   async function logout(): Promise<void> {
     isLoading.value = true;
     setSessionMarker(false);
+    clearDrafts();
     resetUserScopedState();
     try {
       await api.auth.logout();

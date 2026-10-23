@@ -186,26 +186,34 @@ function getPublicShared(thingId, callback) {
     return nodeify(promise, callback);
 }
 
-function add(userId, content, attachments, color, callback) {
+function add(userId, content, attachments, color, assistant, callback) {
     if (typeof color === 'function') {
         callback = color;
         color = 'default';
+    }
+    if (typeof assistant === 'function') {
+        callback = assistant;
+        assistant = undefined;
     }
     var promise = Promise.resolve().then(async function () {
         var urls = extractURLs(content);
         var externalContent = await ssrf.enrichUrls(urls);
         var tagObjects = extractTags(content, urls);
-        var result = await things.add(userId, content, tagObjects, attachments, externalContent, color);
+        var result = await things.add(userId, content, tagObjects, attachments, externalContent, color, assistant);
         if (!result) throw new Error('no result returned');
         return addRichContent(userId, [result])[0];
     });
     return nodeify(promise, callback);
 }
 
-function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, color, expectedRevision, callback) {
+function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant, callback) {
     if (typeof expectedRevision === 'function') {
         callback = expectedRevision;
         expectedRevision = undefined;
+    }
+    if (typeof assistant === 'function') {
+        callback = assistant;
+        assistant = undefined;
     }
     if (typeof color === 'function') {
         callback = color;
@@ -225,17 +233,21 @@ function put(userId, thingId, content, attachments, isPublic, isShared, isArchiv
 
         // The repository still checks owner, deletion state and expectedRevision atomically.
         return things.put(userId, thingId, content, tagObjects, attachments, externalContent,
-            isPublic, isShared, isArchived, isSticky, color, expectedRevision);
+            isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant);
     });
     return nodeify(promise, callback);
 }
 
-function del(userId, thingId, expectedRevision, callback) {
+function del(userId, thingId, expectedRevision, assistant, callback) {
     if (typeof expectedRevision === 'function') {
         callback = expectedRevision;
         expectedRevision = undefined;
     }
-    return nodeify(things.del(userId, thingId, expectedRevision), callback);
+    if (typeof assistant === 'function') {
+        callback = assistant;
+        assistant = undefined;
+    }
+    return nodeify(things.del(userId, thingId, expectedRevision, assistant), callback);
 }
 
 function restore(userId, thingId, expectedRevision, callback) {

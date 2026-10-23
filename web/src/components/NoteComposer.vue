@@ -167,11 +167,14 @@ import { api, type AttachmentDescriptor, type NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import { joinTitle } from '../utils/noteTitle';
 import { isImageAttachment } from '../utils/markdown';
+import { loadDraft, saveDraft } from '../utils/drafts';
 
 const props = withDefaults(defineProps<{
   onSave: (content: string, attachments?: AttachmentDescriptor[], color?: NoteColor) => Promise<{ success: boolean; error?: string }>;
   // false while hidden (Archive/Trash) so clicks there don't trigger saves.
   active?: boolean;
+  // Signed-in user ID; when set, the unsaved draft is kept on this device.
+  draftScope?: string;
 }>(), { active: true });
 
 const emit = defineEmits<{
@@ -202,6 +205,23 @@ const error = ref<string | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 
 const hasDraft = computed(() => !!(title.value.trim() || content.value.trim() || attachments.value.length));
+
+// Mirror the unsaved composer to this device and bring it back after a reload or re-login.
+type ComposerDraft = { title: string; content: string; attachments: AttachmentDescriptor[]; color: NoteColor };
+const draftKey = computed(() => (props.draftScope ? `composer:${props.draftScope}` : null));
+watch(draftKey, (key) => {
+  const saved = loadDraft<ComposerDraft>(key);
+  if (!saved || hasDraft.value) return;
+  title.value = saved.title || '';
+  content.value = saved.content || '';
+  attachments.value = Array.isArray(saved.attachments) ? saved.attachments : [];
+  selectedColor.value = saved.color || 'default';
+}, { immediate: true });
+watch([title, content, attachments, selectedColor], () => {
+  saveDraft(draftKey.value, hasDraft.value
+    ? { title: title.value, content: content.value, attachments: attachments.value, color: selectedColor.value }
+    : null);
+}, { deep: true });
 const isExpanded = computed(() => isFocused.value || hasDraft.value);
 
 function autosize() {

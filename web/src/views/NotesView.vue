@@ -50,6 +50,7 @@
           v-show="!isArchived && !isDeleted"
           :active="!isArchived && !isDeleted"
           :on-save="createNote"
+          :draft-scope="user?.id"
         />
 
         <!-- Top Search/Filter Loading Bar when updating existing notes -->
@@ -273,6 +274,7 @@
         :duplicating="copyingIds.has(activeModalNoteId || '')"
         :on-duplicate="handleDuplicateNote"
         :on-save-edit="saveModalNote"
+        :draft-scope="user?.id"
         @close="closeNoteModal"
         @delete="handleModalDelete"
         @toggle-sticky="handleToggleSticky"

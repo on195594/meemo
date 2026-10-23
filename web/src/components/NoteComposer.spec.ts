@@ -24,6 +24,23 @@ describe('NoteComposer behavior', () => {
     expect(wrapper.find('.composer-title').exists()).toBe(false);
   });
 
+  it('keeps an unsaved draft on this device and clears it after saving', async () => {
+    const first = mount(NoteComposer, { props: { onSave: vi.fn(), draftScope: 'draft-user' } });
+    await first.get('.composer-textarea').setValue('half-written idea');
+    await flushPromises();
+    first.unmount();
+
+    const onSave = vi.fn().mockResolvedValue({ success: true });
+    const second = mount(NoteComposer, { props: { onSave, draftScope: 'draft-user' } });
+    expect((second.get('.composer-textarea').element as HTMLTextAreaElement).value).toBe('half-written idea');
+    await second.get('.btn-close').trigger('click');
+    await flushPromises();
+
+    expect(onSave).toHaveBeenCalledWith('half-written idea', []);
+    expect(localStorage.getItem('meemo_draft:composer:draft-user')).toBeNull();
+    second.unmount();
+  });
+
   it('saves trimmed content on Close, clears the composer, and emits created', async () => {
     const onSave = vi.fn().mockResolvedValue({ success: true });
     const wrapper = mount(NoteComposer, { props: { onSave } });

@@ -278,6 +278,40 @@ components:
           type: number
           description: Relevance match score when search mode is text
           example: 1.25
+        assistant:
+          $ref: '#/components/schemas/AssistantWrite'
+
+    AssistantWrite:
+      type: object
+      description: Present only while the latest write came from an MCP assistant; the owner's next write or restore clears it. Not exported.
+      required:
+        - action
+        - client
+        - at
+      properties:
+        action:
+          type: string
+          enum: [create, update, delete]
+        client:
+          type: string
+          description: Self-reported client name from the assistant's OAuth registration
+          example: Gemini
+        at:
+          type: integer
+          description: Unix timestamp in milliseconds
+          example: 1694000000000
+        previous:
+          type: object
+          description: Values of the fields an update changed, as they were before it
+          properties:
+            content:
+              type: string
+            color:
+              $ref: '#/components/schemas/NoteColor'
+            archived:
+              type: boolean
+            sticky:
+              type: boolean
 
     Tag:
       type: object

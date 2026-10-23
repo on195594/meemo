@@ -57,6 +57,32 @@ const hasActiveFilter = computed(() => {
   return !!activeFilter.value || isArchived.value || isDeleted.value;
 });
 
+const MERGE_FIELDS = ['content', 'attachments', 'public', 'shared', 'archived', 'sticky', 'color'] as const;
+type MergeField = typeof MERGE_FIELDS[number];
+
+function fieldValue(thing: Record<string, any>, field: MergeField): unknown {
+  if (field === 'content') return (thing.content || '').trim();
+  if (field === 'attachments') return thing.attachments || [];
+  if (field === 'color') return thing.color || 'default';
+  return !!thing[field];
+}
+
+// Field-level three-way merge of a full PUT body; null when both sides changed the same field differently.
+export function mergeUpdate(base: Thing, mine: Record<string, any>, theirs: Thing): Record<string, any> | null {
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const merged: Record<string, any> = { expectedRevision: theirs.revision };
+  for (const field of MERGE_FIELDS) {
+    if (!(field in mine)) continue;
+    const b = fieldValue(base, field);
+    const m = fieldValue(mine, field);
+    const t = fieldValue(theirs, field);
+    if (same(m, b)) merged[field] = t;
+    else if (same(t, b) || same(t, m)) merged[field] = m;
+    else return null;
+  }
+  return merged;
+}
+
 export function useNotes() {
 
   async function fetchTags(): Promise<void> {
@@ -212,7 +238,17 @@ export function useNotes() {
       if (updates.color !== undefined) payload.color = updates.color;
 
       try {
-        const res = await api.things.update(id, payload);
+        let res;
+        try {
+          res = await api.things.update(id, payload);
+        } catch (err: any) {
+          if (err.code !== 'revision_conflict' || generation !== userGeneration) throw err;
+          // Someone else (often the assistant) saved first; retry once if our fields don't overlap theirs.
+          const latest = (await api.things.get(id)).thing;
+          const merged = mergeUpdate(existing, payload, latest);
+          if (!merged) throw err;
+          res = await api.things.update(id, merged as typeof payload);
+        }
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
         const updated = res.thing;
 

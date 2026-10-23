@@ -1962,6 +1962,29 @@ export interface components {
              * @example 1.25
              */
             score?: number;
+            assistant?: components["schemas"]["AssistantWrite"];
+        };
+        /** @description Present only while the latest write came from an MCP assistant; the owner's next write or restore clears it. Not exported. */
+        AssistantWrite: {
+            /** @enum {string} */
+            action: "create" | "update" | "delete";
+            /**
+             * @description Self-reported client name from the assistant's OAuth registration
+             * @example Gemini
+             */
+            client: string;
+            /**
+             * @description Unix timestamp in milliseconds
+             * @example 1694000000000
+             */
+            at: number;
+            /** @description Values of the fields an update changed, as they were before it */
+            previous?: {
+                content?: string;
+                color?: components["schemas"]["NoteColor"];
+                archived?: boolean;
+                sticky?: boolean;
+            };
         };
         Tag: {
             /** @example meeting */

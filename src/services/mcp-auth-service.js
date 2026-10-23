@@ -132,7 +132,7 @@ function createProvider(settings) {
             var grant = await activeGrant(record.grantId);
             return {
                 token: token, clientId: record.clientId, scopes: grantScopes(grant), resource: resource,
-                expiresAt: Math.floor(record.expiresAt.getTime() / 1000), extra: { userId: grant.userId, grantId: grant._id }
+                expiresAt: Math.floor(record.expiresAt.getTime() / 1000), extra: { userId: grant.userId, grantId: grant._id, clientName: grant.clientName }
             };
         },
         revokeToken: async function (client, request) {

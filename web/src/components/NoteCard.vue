@@ -88,7 +88,10 @@
     </div>
 
     <!-- Status chips -->
-    <footer v-if="thing.public || thing.shared || !canEdit" class="card-footer">
+    <footer v-if="thing.public || thing.shared || thing.assistant || !canEdit" class="card-footer">
+      <span v-if="thing.assistant" class="status-chip" :title="`${assistantLabel(thing)} this note; open it to review`">
+        <UiIcon name="edit" /> {{ assistantLabel(thing) }}
+      </span>
       <span v-if="thing.public" class="status-chip" title="Visible on your public stream">
         <UiIcon name="globe" /> Public
       </span>
@@ -183,6 +186,7 @@ import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
 import { NOTE_COLORS } from '../constants/noteColors';
 import { renderMarkdown, highlightKeyword, toggleTaskItem, stripImageAttachmentReferences, isImageAttachment } from '../utils/markdown';
 import type { LightboxImage } from './ImageLightbox.vue';
+import { assistantLabel } from '../utils/assistant';
 
 const showColorPicker = ref(false);
 const showMoreMenu = ref(false);

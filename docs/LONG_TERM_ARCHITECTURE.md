@@ -1078,7 +1078,7 @@ Secrets：
 
 # 33. AI 能力的长期接入原则
 
-当前实现状态：外部 Gemini/MCP 的第一阶段只读候选实现已通过本地验证，默认关闭；真实 Meemo 客户端验收与部署仍 pending。它使用 OAuth 授权，不要求 Meemo 持有 Gemini API Key。写工具、内置 AI 聊天、向量/语义检索等仍未实现；本章长期设计不代表这些能力已上线。当前契约以 [Gemini 接入说明](GEMINI_ASSISTANT.md) 为准。
+当前实现状态（2026-10-23）：外部 Gemini/MCP 读写工具已实现，默认关闭，真实 Gemini 客户端验收已于 2026-10-22 通过。它使用 OAuth 授权，不要求 Meemo 持有 Gemini API Key。助手写入会在 Thing 上留下可见、可由用户撤销的 `assistant` 标记（第 35 条的落地方式）。内置 AI 聊天、向量/语义检索仍未实现；本章长期设计不代表这些能力已上线。当前契约以 [Gemini 接入说明](GEMINI_ASSISTANT.md) 为准。
 
 AI 可以成为 Meemo 的重要增强能力，但：
 

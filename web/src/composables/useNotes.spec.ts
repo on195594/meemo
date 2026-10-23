@@ -5,6 +5,7 @@ const apiMock = vi.hoisted(() => ({
   tags: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
+  get: vi.fn(),
   delete: vi.fn(),
   restore: vi.fn(),
 }));
@@ -237,6 +238,7 @@ describe('useNotes behavior', () => {
   it('keeps a draft and reports an explicit conflict on stale writes', async () => {
     apiMock.list.mockResolvedValue({ things: [note('one')] });
     apiMock.update.mockRejectedValue({ code: 'revision_conflict', message: 'stale revision' });
+    apiMock.get.mockResolvedValue({ thing: note('one', { content: 'assistant rewrite', revision: 2 }) });
     const store = useNotes();
     await store.fetchNotes();
 
@@ -250,7 +252,24 @@ describe('useNotes behavior', () => {
     expect(store.things.value[0].content).toBe('note one');
   });
 
-  it('reorders the visible list after a color update changes modifiedAt', async () => {
+  it('retries once with a field-level merge when a concurrent write touched other fields', async () => {
+    apiMock.list.mockResolvedValue({ things: [note('one')] });
+    apiMock.update
+      .mockRejectedValueOnce({ code: 'revision_conflict', message: 'stale revision' })
+      .mockResolvedValueOnce({ thing: note('one', { content: 'my edit', sticky: true, color: 'mint', revision: 3 }) });
+    apiMock.get.mockResolvedValue({ thing: note('one', { sticky: true, color: 'mint', revision: 2 }) });
+    const store = useNotes();
+    await store.fetchNotes();
+
+    const result = await store.updateNote('one', { content: 'my edit' });
+
+    expect(result.success).toBe(true);
+    expect(apiMock.update).toHaveBeenLastCalledWith('one', expect.objectContaining({
+      content: 'my edit', sticky: true, expectedRevision: 2,
+    }));
+  });
+
+  it("reorders the visible list after a color update changes modifiedAt", async () => {
     const first = note('first', { modifiedAt: 3 });
     const second = note('second', { modifiedAt: 2, color: 'default' });
     apiMock.list.mockResolvedValue({ things: [first, second] });

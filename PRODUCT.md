@@ -22,7 +22,7 @@ Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesys
 
 - Web browser running on desktop and mobile viewports, accessed directly on local networks or behind private reverse proxies (e.g. Nginx with SSL).
 - Fast capture workflow: rapid creation via a Keep-style "Take a note…" composer that saves when closed or clicked away from, instant search navigation via keyboard shortcuts (`/` and `Ctrl+K`), live tag filtering (`#tag`).
-- Focused editing: Google Keep-style dialog that opens ready to edit (separate title field mapped to a leading `# Title` line, Markdown body) and saves on close; checklist items toggle directly on cards; writes use revision-checked (CAS) updates.
+- Focused editing: Google Keep-style dialog that opens ready to edit (separate title field mapped to a leading `# Title` line, Markdown body) and saves on close or when the page is hidden; unsaved composer and dialog text survives reloads and expired sessions on the same device; checklist items toggle directly on cards; writes use revision-checked (CAS) updates, and non-overlapping concurrent edits merge automatically.
 - Triage and organization: Pinning notes to top, 12-color high-contrast palette tinting, duplicating notes ("Make a copy"), archiving completed notes, and reversible trash.
 
 ## Capabilities and Constraints
@@ -33,7 +33,7 @@ Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesys
 - **Organization**: Pinned notes section, 12-color Keep-calibrated palette with automatic dark mode contrast recalibration, dynamic tag aggregation, single-note actions (copy, pin, archive, public/private toggle, delete) via touch-friendly action menus, multi-select batch actions (pin, archive, color, delete to trash), and snackbar Undo for archive and trash.
 - **Import/Export**: Drag-and-drop `.tar` archive import with progress tracking; `.tar` export (`/api/export`).
 - **Authentication**: Browser username/password login with bcrypt hashing, server-side MongoDB sessions, configurable registration modes (`open`, `first-user`, `disabled`). MCP uses separately consented, user-bound OAuth tokens, not REST session substitution.
-- **Optional assistant**: Default-disabled Gemini/MCP integration supporting note search, read, create, update, and delete with optimistic concurrency control. Private-note transfer requires explicit user consent. See [current configuration and boundaries](docs/GEMINI_ASSISTANT.md).
+- **Optional assistant**: Default-disabled Gemini/MCP integration supporting note search, read, create, update, and delete with optimistic concurrency control. Private-note transfer requires explicit user consent. Assistant writes are labeled on the note (for example “Gemini edited”) and an edit can be undone from the note dialog. See [current configuration and boundaries](docs/GEMINI_ASSISTANT.md).
 - **Constraints**: Self-hosted only; URL enrichment (outbound fetch) is disabled by default for SSRF safety; note colors are designed toward WCAG AA contrast (not formally audited).
 
 ## Brand Commitments

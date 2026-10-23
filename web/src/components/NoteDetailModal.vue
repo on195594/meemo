@@ -107,11 +107,23 @@
                 </a>
               </div>
 
-              <div v-if="currentNote.public || currentNote.shared" class="modal-status">
+              <div v-if="currentNote.public || currentNote.shared || currentNote.assistant" class="modal-status">
                 <span v-if="currentNote.public" class="status-chip"><UiIcon name="globe" /> Public</span>
                 <span v-if="currentNote.shared" class="status-chip"><UiIcon name="attach" /> Shared</span>
+                <span v-if="currentNote.assistant" class="status-chip"><UiIcon name="edit" /> {{ assistantLabel(currentNote) }}</span>
+                <button
+                  v-if="canUndoAssistant"
+                  type="button"
+                  class="status-chip undo-assistant-btn"
+                  :disabled="busy || isSaving || hasUnsavedChanges"
+                  :title="hasUnsavedChanges ? 'Save or discard your edits first' : 'Restore the fields the assistant changed'"
+                  @click="undoAssistantEdit"
+                >
+                  <UiIcon name="restore" /> Undo
+                </button>
               </div>
 
+              <p v-if="restoredDraft && hasUnsavedChanges" class="edited-at">Restored unsaved edits from this device</p>
               <time class="edited-at" :datetime="isoDate" :title="fullDate">{{ editedLabel }}</time>
             </main>
           </div>
@@ -208,6 +220,8 @@ import UiIcon from './UiIcon.vue';
 import ActionMenu from './ActionMenu.vue';
 import { usePopoverPosition } from '../composables/usePopoverPosition';
 import { splitTitle, joinTitle } from '../utils/noteTitle';
+import { assistantLabel } from '../utils/assistant';
+import { loadDraft, saveDraft } from '../utils/drafts';
 
 const props = withDefaults(
   defineProps<{
@@ -219,6 +233,8 @@ const props = withDefaults(
     duplicating?: boolean;
     onDuplicate?: (thing: Thing) => Promise<{ success: boolean; error?: string }>;
     onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; thing?: Thing; error?: string }>;
+    // Signed-in user ID; when set, unsaved edits are kept on this device.
+    draftScope?: string;
   }>(),
   {
     canEdit: true,
@@ -300,6 +316,19 @@ const hasUnsavedChanges = computed(() => {
   if (!props.canEdit || !currentNote.value) return false;
   return titleDraft.value !== baseline.title || bodyDraft.value !== baseline.body;
 });
+
+// Unsaved edits survive a closed tab or expired session on this device.
+const noteDraftKey = computed(() => (props.draftScope && currentNote.value._id ? `note:${props.draftScope}:${currentNote.value._id}` : null));
+const restoredDraft = ref(false);
+watch([editDraft, hasUnsavedChanges], () => {
+  if (!props.open) return;
+  saveDraft(noteDraftKey.value, hasUnsavedChanges.value && editDraft.value.trim() ? { content: editDraft.value } : null);
+});
+
+// Phones may discard a backgrounded tab, so save when the page is hidden instead of waiting for close.
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden' && hasUnsavedChanges.value) saveContent();
+}
 
 const dateValue = computed(() => {
   return currentNote.value.modifiedAt || currentNote.value.createdAt || Date.now();
@@ -546,6 +575,28 @@ async function saveContent(): Promise<boolean> {
 
 const isClosing = ref(false);
 
+const canUndoAssistant = computed(() => props.canEdit && !!props.onSaveEdit &&
+  currentNote.value.assistant?.action === 'update' && !!currentNote.value.assistant.previous);
+
+// An ordinary revision-checked save of the previous values; it also clears the marker.
+async function undoAssistantEdit() {
+  const previous = currentNote.value.assistant?.previous;
+  if (!previous || !props.onSaveEdit || isSaving.value || hasUnsavedChanges.value) return;
+  isSaving.value = true;
+  actionError.value = null;
+  try {
+    const result = await props.onSaveEdit(currentNote.value._id, { ...previous });
+    if (result.success && result.thing) {
+      currentNote.value = { ...result.thing };
+      setDraft(result.thing.content || '');
+    } else if (!result.success) {
+      actionError.value = result.error || 'Failed to undo the assistant edit';
+    }
+  } finally {
+    isSaving.value = false;
+  }
+}
+
 async function savePendingDraft(): Promise<boolean> {
   if (props.busy) return false;
   if (!hasUnsavedChanges.value) return true;
@@ -773,10 +824,19 @@ watch(
     if (isOpen) {
       document.body.style.overflow = 'hidden';
       window.addEventListener('keydown', handleWindowKeydown);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
       if (props.thing) {
         currentNote.value = { ...props.thing };
         setDraft(props.thing.content || '');
         draftGeneration = 0;
+        const saved = props.canEdit ? loadDraft<{ content: string }>(noteDraftKey.value) : null;
+        restoredDraft.value = !!saved?.content && saved.content !== props.thing.content;
+        if (saved && restoredDraft.value) {
+          const parts = splitTitle(saved.content);
+          titleDraft.value = parts.title;
+          bodyDraft.value = parts.body;
+          nextTick(autosize);
+        }
         nextTick(() => {
           if (!showColorPicker.value && !showMoreMenu.value) overlayRef.value?.focus();
         });
@@ -784,6 +844,8 @@ watch(
     } else {
       document.body.style.overflow = '';
       window.removeEventListener('keydown', handleWindowKeydown);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      restoredDraft.value = false;
       closeColorPicker();
       showMoreMenu.value = false;
       actionError.value = null;
@@ -811,6 +873,7 @@ watch(
 onUnmounted(() => {
   document.body.style.overflow = '';
   window.removeEventListener('keydown', handleWindowKeydown);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
   document.removeEventListener('pointerdown', handleOutsideColorPicker);
   document.removeEventListener('focusin', handleOutsideColorPicker);
 });
@@ -1190,6 +1253,21 @@ onUnmounted(() => {
 .status-chip .ui-icon {
   width: 14px;
   height: 14px;
+}
+
+.undo-assistant-btn {
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.undo-assistant-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 14%, transparent);
+}
+
+.undo-assistant-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .edited-at {

@@ -68,7 +68,7 @@ function createServer(provider, logger, requestId) {
                     code = 'insufficient_scope';
                     return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: code, message: 'Token lacks required scope: ' + requiredScope }) }] };
                 }
-                var result = await definition[3](auth.extra.userId, definition[2].parse(params));
+                var result = await definition[3](auth.extra.userId, definition[2].parse(params), auth.extra.clientName || 'Assistant');
                 var text = JSON.stringify(result);
                 // Envelope headroom includes request IDs, capped at 256 serialized bytes by the transport entrypoint.
                 if (Buffer.byteLength(JSON.stringify({ content: [{ type: 'text', text: text }] })) > 128 * 1024 - 1024) {
