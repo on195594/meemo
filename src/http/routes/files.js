@@ -32,9 +32,9 @@ async function get(req, res, next) {
     }
 
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    // Identifiers are random and never rewritten. Owner-only files must stay out of shared caches;
-    // public/shared files keep revalidating so unsharing takes effect.
-    if (!result.visible) res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    // Owner-only files stay out of shared caches and revalidate against the session on every use
+    // (a cheap 304 via ETag), so logout or revocation takes effect; public/shared files keep the default.
+    if (!result.visible) res.setHeader('Cache-Control', 'private, no-cache');
     if (result.attachment.type !== attachments.TYPE_IMAGE) {
         res.setHeader('Content-Disposition', 'attachment; filename="' + encodeURIComponent(result.attachment.fileName || 'attachment') + '"');
     }

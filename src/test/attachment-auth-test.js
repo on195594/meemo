@@ -123,10 +123,17 @@ describe('Attachment Authorization (RF-104)', function () {
                 .end(function (err, res) {
                     expect(err).to.be(null);
                     expect(res.text).to.equal('Alice Private Secret');
-                    // Owner-only files may be cached by the browser but never by shared proxies.
-                    expect(res.headers['cache-control']).to.equal('private, max-age=31536000, immutable');
+                    // Owner-only files are never stored by shared proxies and always revalidate with the session.
+                    expect(res.headers['cache-control']).to.equal('private, no-cache');
                     done();
                 });
+        });
+
+        it('answers the owner\'s revalidation with 304 instead of the file body', async function () {
+            var first = await aliceAgent.get('/api/files/alice/' + alicePrivateThingId + '/' + alicePrivateFile).expect(200);
+            expect(first.headers.etag).to.be.ok();
+            await aliceAgent.get('/api/files/alice/' + alicePrivateThingId + '/' + alicePrivateFile)
+                .set('If-None-Match', first.headers.etag).expect(304);
         });
 
         it('blocks other authenticated user from accessing private attachment with 403', function (done) {

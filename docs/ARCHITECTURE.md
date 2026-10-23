@@ -64,7 +64,7 @@ Ordinary routes are registered by `src/http/router.js` from `src/http/app.js`:
 
 - `/api/register`, `/api/login`, `/api/logout`: local authentication and session management; a successful login returns the user profile so the client skips a follow-up `/api/profile` request
 - `/api/profile`: authenticated user identity and settings
-- `/api/things`, `/api/things/:id/restore`, `/api/files`, `/api/tags`, `/api/settings`: authenticated application API; Thing revisions use CAS and deletes move notes to reversible trash. Attachment identifiers are random and immutable: owner-only files are served `private, max-age=31536000, immutable`, while files of public or shared notes keep `public, max-age=0` so unsharing takes effect
+- `/api/things`, `/api/things/:id/restore`, `/api/files`, `/api/tags`, `/api/settings`: authenticated application API; Thing revisions use CAS and deletes move notes to reversible trash. Owner-only attachments are served `private, no-cache` (never stored by shared proxies; the browser revalidates with the session, usually a 304), so logout and revocation take effect; files of public or shared notes keep `public, max-age=0` so unsharing takes effect
 - `/api/import`, `/api/export`: archive transfer with size limits and path traversal protection
 - `/api/public/*`, `/api/rss/*`, `/public/*`, `/shared/*`: public streams, RSS feeds with canonical note URLs, and shared notes; `/note/:thingId` is an authenticated stable private link
 - `/api/health/live`, `/api/health/ready`, `/api/healthcheck`: container and orchestration health probes
