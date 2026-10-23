@@ -465,7 +465,13 @@ defineExpose({
   border: 1px solid var(--note-border-color);
   border-radius: var(--keep-card-radius);
   box-shadow: var(--keep-shadow-raised);
-  transition: background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing);
+  transition: background-color var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing),
+              box-shadow var(--md-sys-motion-duration-short) ease,
+              border-color var(--md-sys-motion-duration-short) ease;
+}
+
+.note-composer-card:not(.focused):hover {
+  border-color: var(--note-border-hover);
 }
 
 :root[data-theme="dark"] .note-composer-card {

@@ -34,7 +34,7 @@ colors:
   note-chalk: "#efeff1"
 typography:
   body:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif"
+    fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif"
     fontWeight: 400
 rounded:
   none: "0px"
@@ -113,7 +113,7 @@ Note colors are background fills read with `--md-sys-color-on-surface` (dark tex
 
 ## Typography
 
-System font stack (`--md-sys-typescale-font`) throughout; code uses `--md-sys-typescale-font-mono`. Font sizes come from the M3 type scale tokens in `web/src/styles/tokens.css` (`--md-sys-typescale-{display,headline,title,body,label}-{large,medium,small}`).
+System and multilingual CJK font stack (`--md-sys-typescale-font`) throughout with subpixel anti-aliasing and legibility optimizations; code uses `--md-sys-typescale-font-mono`. Font sizes come from the M3 type scale tokens in `web/src/styles/tokens.css` (`--md-sys-typescale-{display,headline,title,body,label}-{large,medium,small}`).
 
 ## Layout
 

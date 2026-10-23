@@ -653,7 +653,8 @@ async function handleBodyClick(event: MouseEvent) {
   border: 1px solid var(--note-border-color);
   border-radius: var(--keep-card-radius);
   color: var(--md-sys-color-on-surface);
-  transition: box-shadow var(--md-sys-motion-duration-short) ease,
+  transition: transform var(--md-sys-motion-duration-short) cubic-bezier(0.2, 0, 0, 1),
+              box-shadow var(--md-sys-motion-duration-short) ease,
               border-color var(--md-sys-motion-duration-short) ease;
 }
 
@@ -665,8 +666,10 @@ async function handleBodyClick(event: MouseEvent) {
 .note-card:hover,
 .note-card:focus-within,
 .note-card.has-menu-open {
+  transform: translateY(-2px);
   box-shadow: var(--keep-shadow-hover);
   border-color: transparent;
+  z-index: 1;
 }
 
 .note-card.is-clickable {
@@ -973,9 +976,26 @@ async function handleBodyClick(event: MouseEvent) {
 }
 
 .card-body :deep(blockquote) {
-  padding-left: 0.75rem;
-  border-left: 2px solid var(--md-sys-color-outline-variant);
+  padding: 0.25rem 0.75rem;
+  border-left: 3px solid var(--md-sys-color-outline);
   color: var(--md-sys-color-on-surface-variant);
+  margin: 0.5rem 0;
+  font-style: italic;
+}
+
+.card-body :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  margin: 0.75rem 0;
+}
+
+.card-body :deep(:not(pre) > code) {
+  font-family: var(--md-sys-typescale-font-mono);
+  font-size: 0.85em;
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  padding: 0.15em 0.35em;
+  border-radius: var(--md-sys-shape-corner-xs);
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent);
 }
 
 .card-body :deep(mark) {
@@ -1028,12 +1048,36 @@ async function handleBodyClick(event: MouseEvent) {
   border-radius: var(--md-sys-shape-corner-xs);
   padding: 0.5rem 0.75rem;
   font-size: 0.8125rem;
+  font-family: var(--md-sys-typescale-font-mono);
+  line-height: 1.45;
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 }
 
 .card-body :deep(table) {
+  width: 100%;
   max-width: 100%;
   overflow-x: auto;
   display: block;
+  border-collapse: collapse;
+  border-spacing: 0;
+  margin: 0.5rem 0;
+  font-size: var(--md-sys-typescale-body-small);
+}
+
+.card-body :deep(th),
+.card-body :deep(td) {
+  padding: 6px 10px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  text-align: left;
+}
+
+.card-body :deep(th) {
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 6%, transparent);
+  font-weight: 600;
+}
+
+.card-body :deep(tr:nth-child(even) td) {
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 3%, transparent);
 }
 
 .card-attachments {

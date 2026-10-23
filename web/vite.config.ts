@@ -25,7 +25,11 @@ export default defineConfig({
       },
     },
   },
+  esbuild: {
+    legalComments: 'none',
+  },
   build: {
+    target: 'es2022',
     outDir: 'dist',
     sourcemap: false,
     rollupOptions: {

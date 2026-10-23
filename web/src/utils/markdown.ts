@@ -145,7 +145,11 @@ export function renderMarkdown(content: string): string {
   const shouldCache = content.length <= MAX_CACHEABLE_CHARS;
   if (shouldCache) {
     const cached = markdownCache.get(content);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+      markdownCache.delete(content);
+      markdownCache.set(content, cached);
+      return cached;
+    }
   }
 
   const rawHtml = md.render(content);

@@ -991,8 +991,37 @@ onUnmounted(() => {
   display: none;
 }
 
+.modal-markdown-body :deep(h1) {
+  font-size: var(--md-sys-typescale-headline-small);
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0.5rem 0;
+}
+
+.modal-markdown-body :deep(h2) {
+  font-size: var(--md-sys-typescale-title-large);
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0.5rem 0;
+}
+
+.modal-markdown-body :deep(h3),
+.modal-markdown-body :deep(h4),
+.modal-markdown-body :deep(h5),
+.modal-markdown-body :deep(h6) {
+  font-size: var(--md-sys-typescale-title-medium);
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0.5rem 0;
+}
+
 .modal-markdown-body :deep(> * + *) {
   margin-top: 0.5rem;
+}
+
+.modal-markdown-body :deep(ul),
+.modal-markdown-body :deep(ol) {
+  padding-left: 1.5rem;
 }
 
 .modal-markdown-body :deep(.task-list) {
@@ -1008,6 +1037,104 @@ onUnmounted(() => {
 .modal-markdown-body :deep(.task-list-item.is-completed) {
   text-decoration: line-through;
   opacity: 0.65;
+}
+
+.modal-markdown-body :deep(blockquote) {
+  padding: 0.25rem 0.75rem;
+  border-left: 3px solid var(--md-sys-color-outline);
+  color: var(--md-sys-color-on-surface-variant);
+  margin: 0.5rem 0;
+  font-style: italic;
+}
+
+.modal-markdown-body :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  margin: 0.75rem 0;
+}
+
+.modal-markdown-body :deep(:not(pre) > code) {
+  font-family: var(--md-sys-typescale-font-mono);
+  font-size: 0.85em;
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  padding: 0.15em 0.35em;
+  border-radius: var(--md-sys-shape-corner-xs);
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent);
+}
+
+.modal-markdown-body :deep(pre) {
+  max-width: 100%;
+  overflow-x: auto;
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 6%, transparent);
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-xs);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-family: var(--md-sys-typescale-font-mono);
+  line-height: 1.45;
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+}
+
+.modal-markdown-body :deep(table) {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  display: block;
+  border-collapse: collapse;
+  border-spacing: 0;
+  margin: 0.5rem 0;
+  font-size: var(--md-sys-typescale-body-medium);
+}
+
+.modal-markdown-body :deep(th),
+.modal-markdown-body :deep(td) {
+  padding: 6px 10px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  text-align: left;
+}
+
+.modal-markdown-body :deep(th) {
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 6%, transparent);
+  font-weight: 600;
+}
+
+.modal-markdown-body :deep(tr:nth-child(even) td) {
+  background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 3%, transparent);
+}
+
+.modal-markdown-body :deep(.wikilink) {
+  display: inline;
+  color: var(--md-sys-color-primary);
+  background-color: var(--md-sys-color-primary-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-xs);
+  padding: 1px 6px;
+  font-size: 0.9em;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--md-sys-motion-duration-short) ease;
+}
+
+.modal-markdown-body :deep(.wikilink):hover {
+  text-decoration: underline;
+}
+
+.modal-markdown-body :deep(a[href^="#search?#"]) {
+  display: inline-block;
+  vertical-align: baseline;
+  margin: 1px 2px;
+  padding: 0 6px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  font-size: var(--md-sys-typescale-label-medium);
+  line-height: 1.5;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.modal-markdown-body :deep(a[href^="#search?#"]):hover {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 14%, transparent);
 }
 
 .modal-attachments {

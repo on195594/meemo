@@ -68,7 +68,7 @@
           <section v-if="pinnedThings.length > 0" class="notes-section" aria-labelledby="pinned-heading">
             <h2 id="pinned-heading" class="section-label">Pinned</h2>
             <div class="m3-notes-masonry" :class="{ 'is-list': viewMode === 'list', 'is-compact': isCompact }">
-              <div v-for="(column, ci) in distributeColumns(pinnedThings, columnCount)" :key="'pinned-' + ci" class="masonry-column">
+              <div v-for="(column, ci) in pinnedColumns" :key="'pinned-' + ci" class="masonry-column">
               <NoteCard
                 v-for="thing in column"
                 :key="thing._id"
@@ -99,7 +99,7 @@
           <section v-if="otherThings.length > 0" class="notes-section" :aria-labelledby="pinnedThings.length > 0 ? 'others-heading' : undefined">
             <h2 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">Others</h2>
             <div class="m3-notes-masonry" :class="{ 'is-list': viewMode === 'list', 'is-compact': isCompact }">
-              <div v-for="(column, ci) in distributeColumns(otherThings, columnCount)" :key="'other-' + ci" class="masonry-column">
+              <div v-for="(column, ci) in otherColumns" :key="'other-' + ci" class="masonry-column">
               <NoteCard
                 v-for="thing in column"
                 :key="thing._id"
@@ -384,6 +384,8 @@ const categorizedThings = computed(() => {
 });
 const pinnedThings = computed(() => categorizedThings.value.pinned);
 const otherThings = computed(() => categorizedThings.value.other);
+const pinnedColumns = computed(() => distributeColumns(pinnedThings.value, columnCount.value));
+const otherColumns = computed(() => distributeColumns(otherThings.value, columnCount.value));
 
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
@@ -1149,11 +1151,12 @@ onUnmounted(() => {
   margin: 0 auto 8px;
   padding-left: 12px;
   font-size: var(--md-sys-typescale-label-small);
-  font-weight: 500;
-  letter-spacing: 0.07em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   line-height: 1rem;
   text-transform: uppercase;
   color: var(--md-sys-color-on-surface-variant);
+  user-select: none;
 }
 
 .load-more-section {

@@ -522,7 +522,9 @@ video {
 }
 
 .app-nav {
-  background-color: var(--md-sys-color-surface);
+  background-color: color-mix(in srgb, var(--md-sys-color-surface) 95%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
   position: sticky;
   top: 0;
@@ -596,8 +598,13 @@ video {
   text-decoration: none;
   color: var(--md-sys-color-on-surface-variant);
   font-size: var(--md-sys-typescale-title-large);
-  font-weight: 400;
-  letter-spacing: 0;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: color var(--md-sys-motion-duration-short) ease;
+}
+
+.brand-logo:hover {
+  color: var(--md-sys-color-on-surface);
 }
 
 .logo-text {
@@ -760,6 +767,11 @@ video {
   padding: 0 4px 0 4px;
   transition: background-color var(--md-sys-motion-duration-short) ease,
               box-shadow var(--md-sys-motion-duration-short) ease;
+}
+
+.header-search-box:not(.focused):hover {
+  background-color: color-mix(in srgb, var(--md-sys-color-surface-container-high), var(--md-sys-color-on-surface) 6%);
+  box-shadow: 0 1px 3px 0 rgba(60, 64, 67, 0.12);
 }
 
 .header-search-box.focused {
