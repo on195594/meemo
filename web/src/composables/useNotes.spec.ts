@@ -269,6 +269,25 @@ describe('useNotes behavior', () => {
     }));
   });
 
+  it('does not auto-merge over an assistant write and shows its trace instead', async () => {
+    apiMock.list.mockResolvedValue({ things: [note('one')] });
+    apiMock.update.mockRejectedValue({ code: 'revision_conflict', message: 'stale revision' });
+    const assistant = { action: 'update', client: 'Gemini', at: 2, previous: { content: 'note one' } };
+    apiMock.get.mockResolvedValue({ thing: note('one', { content: 'assistant rewrite', revision: 2, assistant }) });
+    const store = useNotes();
+    await store.fetchNotes();
+
+    const result = await store.updateNote('one', { sticky: true });
+
+    expect(result).toEqual({
+      success: false,
+      code: 'revision_conflict',
+      error: 'Gemini just edited this note. Your draft was kept; review the change, then save again.',
+    });
+    expect(apiMock.update).toHaveBeenCalledTimes(1);
+    expect(store.things.value[0].assistant).toEqual(assistant);
+  });
+
   it("reorders the visible list after a color update changes modifiedAt", async () => {
     const first = note('first', { modifiedAt: 3 });
     const second = note('second', { modifiedAt: 2, color: 'default' });

@@ -245,6 +245,12 @@ export function useNotes() {
           if (err.code !== 'revision_conflict' || generation !== userGeneration) throw err;
           // Someone else (often the assistant) saved first; retry once if our fields don't overlap theirs.
           const latest = (await api.things.get(id)).thing;
+          if (generation !== userGeneration) throw err;
+          // Never auto-merge over an assistant write: our save would clear its trace before the owner saw it.
+          if (latest.assistant) {
+            placeNoteInCurrentView(latest);
+            throw { code: 'revision_conflict', assistant: latest.assistant.client };
+          }
           const merged = mergeUpdate(existing, payload, latest);
           if (!merged) throw err;
           res = await api.things.update(id, merged as typeof payload);
@@ -256,9 +262,11 @@ export function useNotes() {
         return { success: true, thing: updated };
       } catch (err: any) {
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
-        const error = err.code === 'revision_conflict'
-          ? 'This note changed elsewhere. Your draft was kept; reload before retrying.'
-          : (err.message || 'Failed to update note');
+        const error = err.assistant
+          ? `${err.assistant} just edited this note. Your draft was kept; review the change, then save again.`
+          : err.code === 'revision_conflict'
+            ? 'This note changed elsewhere. Your draft was kept; reload before retrying.'
+            : (err.message || 'Failed to update note');
         return { success: false, error, code: err.code };
       }
     }).catch((err: any) => ({
