@@ -3,18 +3,14 @@
 'use strict';
 
 var assert = require('assert'),
-    util = require('util'),
     ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
-    nodeify = require('../promise.js'),
-    UserRepository = require('./user-repository.js');
+    nodeify = require('../promise.js');
 
 function MongoUserRepository(db) {
-    UserRepository.call(this);
     this._db = db || null;
     this._indexesCreated = false;
 }
-util.inherits(MongoUserRepository, UserRepository);
 
 function isDuplicateKey(error) {
     return error.code === 11000 || (error.message && error.message.indexOf('E11000') !== -1);

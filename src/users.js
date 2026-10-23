@@ -6,7 +6,6 @@ var assert = require('assert'),
     util = require('util'),
     bcrypt = require('bcrypt'),
     nodeify = require('./promise.js'),
-    UserRepository = require('./database/user-repository.js'),
     MongoUserRepository = require('./database/users-mongo.js');
 
 function UserError(code, messageOrError) {
@@ -164,7 +163,7 @@ module.exports = {
     create: create,
     verify: verify,
     resolveUser: resolveUser,
-    UserRepository: UserRepository,
+    UserRepository: MongoUserRepository,
     MongoUserRepository: MongoUserRepository,
     getRepository: getRepository,
     setRepository: setRepository,
