@@ -5,7 +5,7 @@
 /**
  * Unified tags collection projection repository.
  *
- * NOTE: As defined in docs/LONG_TERM_ARCHITECTURE.md (Section 10), the authoritative
+ * NOTE: As defined in docs/LONG_TERM_ARCHITECTURE.md (section 5, tag authority), the authoritative
  * online single source of truth for tag identity and usage is `things.tags` in MongoDB.
  * Runtime read operations (`/api/tags`) aggregate dynamically from `things` via `things.getTagUsage`.
  * This module and the persisted `tags` collection serve exclusively as a historical

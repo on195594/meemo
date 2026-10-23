@@ -4,7 +4,7 @@
 
 - [Project README](../README.md): setup, configuration, directory map, and development commands.
 - [Architecture](ARCHITECTURE.md): implemented boundaries, runtime flow, persistence, and endpoint groups.
-- [Long-term architecture](LONG_TERM_ARCHITECTURE.md): normative architectural constraints and complexity budget; planned work is not proof of implementation.
+- [Long-term architecture](LONG_TERM_ARCHITECTURE.md): normative architectural constraints and complexity budget, opening with a dated current-state summary; planned work is not proof of implementation.
 - [OpenAPI specification](openapi.yaml): authoritative HTTP contract. Regenerate `types/generated/api-types.ts` with `npm run api:generate` when it changes.
 - [Contribution guide](../CONTRIBUTING.md): coding and validation workflow.
 - [Product specification](../PRODUCT.md): target user persona, scope, positioning, and product boundaries.
