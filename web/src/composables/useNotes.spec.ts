@@ -162,6 +162,31 @@ describe('useNotes behavior', () => {
     }
   });
 
+  it('updates matching note in place during active search without refetching', async () => {
+    const original = note('one', { content: 'important meeting notes' });
+    apiMock.list.mockResolvedValueOnce({ things: [original] });
+    apiMock.update.mockResolvedValueOnce({ thing: note('one', { content: 'important meeting notes updated', revision: 2 }) });
+    const store = useNotes();
+    await store.setFilters({ search: 'meeting', tag: null, archived: false });
+    expect(apiMock.list).toHaveBeenCalledTimes(1);
+
+    const result = await store.updateNote('one', { content: 'important meeting notes updated' });
+    expect(result.success).toBe(true);
+    // Should stay in list and update in-place without triggering another apiMock.list call
+    expect(apiMock.list).toHaveBeenCalledTimes(1);
+    expect(store.things.value[0].content).toBe('important meeting notes updated');
+  });
+
+  it('removes a note after its exact searched tag changes', async () => {
+    const original = note('one', { content: '#work', tags: ['work'] });
+    apiMock.list.mockResolvedValueOnce({ things: [original] }).mockResolvedValue({ things: [] });
+    apiMock.update.mockResolvedValue({ thing: note('one', { content: '#workshop', tags: ['workshop'], revision: 2 }) });
+    const store = useNotes();
+    await store.setFilters({ search: '#work', tag: null, archived: false });
+    await store.updateNote('one', { content: '#workshop' });
+    expect(store.things.value).toEqual([]);
+  });
+
   it('keeps the dialog snapshot revision after an edit leaves the current search results', async () => {
     const original = note('one');
     apiMock.list.mockResolvedValueOnce({ things: [original] }).mockResolvedValue({ things: [] });

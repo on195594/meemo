@@ -1,5 +1,7 @@
 import { isImageAttachment } from './markdown';
 
+const itemHeightCache = new WeakMap<object, number>();
+
 /**
  * Estimates card height in pixels based on content and attachments, bounded by CSS rules.
  * Bounds text sampling independently of note length; never measures DOM or triggers reflow.
@@ -7,6 +9,10 @@ import { isImageAttachment } from './markdown';
 export function estimateItemHeight(item: unknown): number {
   if (typeof item !== 'object' || item === null) {
     return 100;
+  }
+  const cached = itemHeightCache.get(item);
+  if (cached !== undefined) {
+    return cached;
   }
   const candidate = item as {
     content?: unknown;
@@ -59,7 +65,9 @@ export function estimateItemHeight(item: unknown): number {
     attachHeight += Math.min(120, fileCount * 36);
   }
 
-  return BASE_HEIGHT + textHeight + attachHeight;
+  const height = BASE_HEIGHT + textHeight + attachHeight;
+  itemHeightCache.set(item, height);
+  return height;
 }
 
 // Bounded heuristic masonry: places each item into the shortest column using CSS-bounded height estimates.

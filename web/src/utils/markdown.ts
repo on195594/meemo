@@ -180,7 +180,7 @@ export function renderMarkdown(content: string): string {
 }
 
 // Toggles the checked state of the Nth task item in markdown text
-export function toggleTaskItem(content: string, targetIndex: number): string {
+export function toggleTaskItem(content: string, targetIndex: number, forceChecked?: boolean): string {
   if (!content) return '';
   let inFence = false;
   let inList = false;
@@ -211,7 +211,7 @@ export function toggleTaskItem(content: string, targetIndex: number): string {
       return line.replace(taskRegex, (m, prefix, status, suffix) => {
         if (currentIndex === targetIndex) {
           currentIndex++;
-          const nextStatus = status === ' ' ? 'x' : ' ';
+          const nextStatus = forceChecked !== undefined ? (forceChecked ? 'x' : ' ') : (status === ' ' ? 'x' : ' ');
           return prefix + nextStatus + suffix;
         }
         currentIndex++;

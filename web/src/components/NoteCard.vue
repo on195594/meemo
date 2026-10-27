@@ -558,6 +558,16 @@ function openLightbox(src: string) {
 
 const hasImageClickListener = computed(() => Boolean(instance?.vnode.props?.onImageClick));
 const isTaskSaving = ref(false);
+const taskOverrides = new Map<number, boolean>();
+let activeTaskSaves = 0;
+
+function applyTaskOverrides(base: string): string {
+  let content = base;
+  for (const [idx, checked] of taskOverrides.entries()) {
+    content = toggleTaskItem(content, idx, checked);
+  }
+  return content;
+}
 
 function handleAttachmentClick(event: MouseEvent, att: AttachmentDescriptor) {
   if (hasImageClickListener.value && isImageAttachment(att) && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
@@ -576,7 +586,7 @@ async function handleBodyClick(event: MouseEvent) {
   const checkbox = targetEl.closest<HTMLInputElement>('.task-list-item-checkbox');
   if (checkbox) {
     event.stopPropagation();
-    if (!props.canEdit || isTaskSaving.value) {
+    if (!props.canEdit) {
       event.preventDefault();
       return;
     }
@@ -585,29 +595,40 @@ async function handleBodyClick(event: MouseEvent) {
     const taskIndex = parseInt(rawIndex, 10);
     if (isNaN(taskIndex)) return;
 
-    const currentContent = props.thing.content || '';
-    const updatedContent = toggleTaskItem(currentContent, taskIndex);
-    if (updatedContent === currentContent) return;
+    const targetChecked = checkbox.checked;
+    taskOverrides.set(taskIndex, targetChecked);
 
-    const wasChecked = !checkbox.checked;
+    const updatedContent = applyTaskOverrides(props.thing.content || '');
+    const wasChecked = !targetChecked;
     isTaskSaving.value = true;
+    activeTaskSaves++;
     actionError.value = null;
 
     try {
       if (props.onSaveEdit) {
         const result = await props.onSaveEdit(props.thing._id, { content: updatedContent });
         if (!result.success) {
+          taskOverrides.delete(taskIndex);
           checkbox.checked = wasChecked;
           actionError.value = result.error || 'Failed to update task';
+        } else {
+          taskOverrides.delete(taskIndex);
         }
       } else {
+        taskOverrides.delete(taskIndex);
         emit('update', props.thing._id, { content: updatedContent });
       }
     } catch (err: any) {
+      taskOverrides.delete(taskIndex);
       checkbox.checked = wasChecked;
       actionError.value = err.message || 'Failed to update task';
     } finally {
-      isTaskSaving.value = false;
+      activeTaskSaves--;
+      if (activeTaskSaves <= 0) {
+        activeTaskSaves = 0;
+        isTaskSaving.value = false;
+        taskOverrides.clear();
+      }
     }
     return;
   }

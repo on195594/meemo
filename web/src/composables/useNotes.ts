@@ -341,16 +341,44 @@ export function useNotes() {
 
   // Search matching belongs to the server; other views can place notes locally.
   function placeNoteInCurrentView(thing: Thing) {
-    things.value = things.value.filter((t) => t._id !== thing._id);
-    if (thing.archived !== isArchived.value || isDeleted.value) return;
+    if (thing.archived !== isArchived.value || isDeleted.value) {
+      things.value = things.value.filter((t) => t._id !== thing._id);
+      return;
+    }
     if (searchQuery.value.trim() && !selectedTag.value) {
-      // Relevance search runs on the server; refetch instead of guessing a match.
+      const q = searchQuery.value.trim().toLowerCase();
+      let matches = false;
+      if (q.startsWith('#')) {
+        const searchedTag = q.replace(/^#+/, '');
+        matches = (thing.tags || []).some((t) => t.toLowerCase() === searchedTag);
+      } else if (!/[\s"'-]/.test(q)) {
+        // Simple single-keyword search: matches if content still contains the word
+        matches = (thing.content || '').toLowerCase().includes(q);
+      }
+      if (matches) {
+        const index = things.value.findIndex((t) => t._id === thing._id);
+        if (index !== -1) {
+          const next = [...things.value];
+          next[index] = thing;
+          things.value = next;
+        } else {
+          things.value = [thing, ...things.value];
+        }
+        return;
+      }
+      // Relevance search runs on the server; refetch if content leaves search match.
       fetchNotes(true);
       return;
     }
     const tag = selectedTag.value?.toLowerCase();
-    if (tag && !(thing.tags || []).some((t) => t.toLowerCase() === tag)) return;
-    things.value = [...things.value, thing].sort((a, b) => {
+    if (tag && !(thing.tags || []).some((t) => t.toLowerCase() === tag)) {
+      things.value = things.value.filter((t) => t._id !== thing._id);
+      return;
+    }
+    things.value = [
+      ...things.value.filter((t) => t._id !== thing._id),
+      thing,
+    ].sort((a, b) => {
       if (a.sticky !== b.sticky) return a.sticky ? -1 : 1;
       return (b.modifiedAt || 0) - (a.modifiedAt || 0);
     });

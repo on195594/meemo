@@ -377,6 +377,57 @@ describe('NoteCard behavior', () => {
     expect(wrapper.emitted('openDetail')).toBeUndefined();
   });
 
+  it('supports rapid consecutive checklist clicks without dropping toggles', async () => {
+    let resolveFirst: (v: any) => void;
+    const firstPromise = new Promise((resolve) => { resolveFirst = resolve; });
+    const onSaveEdit = vi.fn()
+      .mockImplementationOnce(() => firstPromise)
+      .mockResolvedValueOnce({ success: true });
+
+    const wrapper = mount(NoteCard, {
+      props: {
+        thing: note({ content: '- [ ] Item 1\n- [ ] Item 2' }),
+        canEdit: true,
+        onSaveEdit,
+      },
+    });
+
+    const checkboxes = wrapper.findAll('.task-list-item-checkbox');
+    expect(checkboxes).toHaveLength(2);
+
+    // Click first, then click second while first save is still in flight
+    await checkboxes[0].trigger('click');
+    await checkboxes[1].trigger('click');
+
+    expect(onSaveEdit).toHaveBeenNthCalledWith(1, 'note-1', {
+      content: '- [x] Item 1\n- [ ] Item 2',
+    });
+    expect(onSaveEdit).toHaveBeenNthCalledWith(2, 'note-1', {
+      content: '- [x] Item 1\n- [x] Item 2',
+    });
+
+    resolveFirst!({ success: true });
+    await flushPromises();
+  });
+
+  it('keeps a click consistent with the rerendered checkbox while a later save is pending', async () => {
+    let resolveFirst!: (v: any) => void;
+    const onSaveEdit = vi.fn()
+      .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }))
+      .mockImplementation(() => new Promise(() => {}));
+    const w = mount(NoteCard, { props: { thing: note({ content: '- [ ] A\n- [ ] B' }), canEdit: true, onSaveEdit } });
+    await w.findAll('input.task-list-item-checkbox')[0].trigger('click');
+    await w.findAll('input.task-list-item-checkbox')[1].trigger('click');
+    // First queued update publishes its server snapshot before the second update finishes.
+    await w.setProps({ thing: note({ content: '- [x] A\n- [ ] B' }) });
+    resolveFirst({ success: true });
+    await flushPromises();
+    const second = w.findAll('input.task-list-item-checkbox')[1];
+    expect((second.element as HTMLInputElement).checked).toBe(false);
+    await second.trigger('click');
+    expect(onSaveEdit).toHaveBeenLastCalledWith('note-1', { content: '- [x] A\n- [x] B' });
+  });
+
   it('emits imageClick when clicking an image in markdown or image attachment if listener provided', async () => {
     const onImageClick = vi.fn();
     const wrapper = mount(NoteCard, {

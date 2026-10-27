@@ -174,6 +174,32 @@ function probeUrl(rawUrl, options, callback) {
     return nodeify(promise, callback);
 }
 
+var probeCache = new Map();
+var MAX_PROBE_CACHE_SIZE = 1000;
+var PROBE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function clearProbeCache() {
+    probeCache.clear();
+}
+
+function getCachedProbe(url) {
+    var entry = probeCache.get(url);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > PROBE_CACHE_TTL_MS) {
+        probeCache.delete(url);
+        return null;
+    }
+    return entry.result;
+}
+
+function setCachedProbe(url, result) {
+    if (probeCache.size >= MAX_PROBE_CACHE_SIZE) {
+        var oldest = probeCache.keys().next().value;
+        if (oldest !== undefined) probeCache.delete(oldest);
+    }
+    probeCache.set(url, { timestamp: Date.now(), result: result });
+}
+
 function isEnrichmentEnabled() {
     return process.env.URL_ENRICHMENT_ENABLED === 'true';
 }
@@ -197,7 +223,15 @@ function enrichUrls(urls, options, callback) {
         async function worker() {
             while (nextIndex < toProbe.length) {
                 var index = nextIndex++;
-                results[index] = await probeUrl(toProbe[index], options);
+                var targetUrl = toProbe[index];
+                var cached = getCachedProbe(targetUrl);
+                if (cached) {
+                    results[index] = cached;
+                } else {
+                    var res = await module.exports.probeUrl(targetUrl, options);
+                    setCachedProbe(targetUrl, res);
+                    results[index] = res;
+                }
             }
         }
 
@@ -212,6 +246,7 @@ module.exports = {
     isSafeUrl: isSafeUrl,
     probeUrl: probeUrl,
     enrichUrls: enrichUrls,
+    clearProbeCache: clearProbeCache,
     isEnrichmentEnabled: isEnrichmentEnabled,
     TYPE_IMAGE: TYPE_IMAGE,
     TYPE_UNKNOWN: TYPE_UNKNOWN,

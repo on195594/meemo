@@ -45,6 +45,7 @@
                 :disabled="busy"
                 @keydown="handleTextareaKeydown"
                 @input="handleTextareaInput"
+                @blur="handleInputBlur"
               />
               <h2 v-else-if="titleDraft" class="modal-title-input">{{ titleDraft }}</h2>
               <span v-else class="modal-title-spacer"></span>
@@ -81,6 +82,7 @@
                 :disabled="busy"
                 @keydown="handleTextareaKeydown"
                 @input="handleTextareaInput"
+                @blur="handleInputBlur"
               ></textarea>
               <div
                 v-else
@@ -197,7 +199,7 @@
               <button
                 type="button"
                 class="done-btn"
-                :disabled="isSaving || busy"
+                :disabled="isClosing || busy"
                 @click="closeWithSave"
               >
                 Close
@@ -426,11 +428,14 @@ async function handleBodyClick(event: MouseEvent) {
   const targetEl = event.target as HTMLElement | null;
   if (!targetEl) return;
 
+let pendingModalTaskContent: string | null = null;
+let activeModalTaskSaves = 0;
+
   // 1. Task checkbox toggle
   const checkbox = targetEl.closest<HTMLInputElement>('.task-list-item-checkbox');
   if (checkbox) {
     event.stopPropagation();
-    if (!props.canEdit || isTaskSaving.value) {
+    if (!props.canEdit) {
       event.preventDefault();
       return;
     }
@@ -439,12 +444,14 @@ async function handleBodyClick(event: MouseEvent) {
     const taskIndex = parseInt(rawIndex, 10);
     if (isNaN(taskIndex)) return;
 
-    const currentContent = currentNote.value.content || '';
-    const updatedContent = toggleTaskItem(currentContent, taskIndex);
-    if (updatedContent === currentContent) return;
+    const baseContent = pendingModalTaskContent !== null ? pendingModalTaskContent : (currentNote.value.content || '');
+    const updatedContent = toggleTaskItem(baseContent, taskIndex);
+    if (updatedContent === baseContent) return;
 
+    pendingModalTaskContent = updatedContent;
     const wasChecked = !checkbox.checked;
     isTaskSaving.value = true;
+    activeModalTaskSaves++;
     actionError.value = null;
 
     try {
@@ -457,6 +464,7 @@ async function handleBodyClick(event: MouseEvent) {
         } else {
           checkbox.checked = wasChecked;
           actionError.value = result.error || 'Failed to update task';
+          pendingModalTaskContent = null;
         }
       } else {
         emit('update', currentNote.value._id, { content: updatedContent });
@@ -466,8 +474,14 @@ async function handleBodyClick(event: MouseEvent) {
     } catch (err: any) {
       checkbox.checked = wasChecked;
       actionError.value = err.message || 'Failed to update task';
+      pendingModalTaskContent = null;
     } finally {
-      isTaskSaving.value = false;
+      activeModalTaskSaves--;
+      if (activeModalTaskSaves <= 0) {
+        activeModalTaskSaves = 0;
+        isTaskSaving.value = false;
+        pendingModalTaskContent = null;
+      }
     }
     return;
   }
@@ -514,10 +528,37 @@ async function handleBodyClick(event: MouseEvent) {
   }
 }
 
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearAutoSaveTimer() {
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+}
+
+function scheduleAutoSave() {
+  clearAutoSaveTimer();
+  if (!props.canEdit || props.busy || !props.open) return;
+  autoSaveTimer = setTimeout(() => {
+    if (hasUnsavedChanges.value && !isSaving.value && !isClosing.value && props.open) {
+      saveContent();
+    }
+  }, 1000);
+}
+
+function handleInputBlur() {
+  clearAutoSaveTimer();
+  if (hasUnsavedChanges.value && !isSaving.value && !isClosing.value && props.open) {
+    saveContent();
+  }
+}
+
 function handleTextareaInput() {
   draftGeneration++;
   actionError.value = null;
   autosize();
+  scheduleAutoSave();
 }
 
 function handleTextareaKeydown(e: KeyboardEvent) {
@@ -530,8 +571,12 @@ function handleTextareaKeydown(e: KeyboardEvent) {
   }
 }
 
+let activeSavePromise: Promise<boolean> | null = null;
+
 async function saveContent(): Promise<boolean> {
-  if (!props.canEdit || props.busy || isSaving.value || !currentNote.value) return false;
+  if (!props.canEdit || props.busy || !currentNote.value) return false;
+  if (activeSavePromise) return activeSavePromise;
+
   const trimmed = editDraft.value.trim();
   if (!trimmed) {
     actionError.value = 'Note content cannot be empty';
@@ -539,38 +584,54 @@ async function saveContent(): Promise<boolean> {
   }
 
   if (trimmed === (currentNote.value.content || '')) {
+    baseline.title = titleDraft.value;
+    baseline.body = bodyDraft.value;
     return true;
   }
 
-  isSaving.value = true;
-  actionError.value = null;
-  const saveGeneration = draftGeneration;
+  const promise = (async () => {
+    isSaving.value = true;
+    actionError.value = null;
+    const saveGeneration = draftGeneration;
 
-  try {
-    if (props.onSaveEdit) {
-      const result = await props.onSaveEdit(currentNote.value._id, { content: trimmed });
-      if (result.success) {
-        if (result.thing) currentNote.value = { ...result.thing };
-        else currentNote.value.content = trimmed;
+    try {
+      if (props.onSaveEdit) {
+        const result = await props.onSaveEdit(currentNote.value._id, { content: trimmed });
+        if (result.success) {
+          if (result.thing) currentNote.value = { ...result.thing };
+          else currentNote.value.content = trimmed;
+          if (saveGeneration === draftGeneration) {
+            baseline.title = titleDraft.value;
+            baseline.body = bodyDraft.value;
+          }
+          return true;
+        } else {
+          actionError.value = result.error || 'Failed to save note';
+          return false;
+        }
+      } else {
+        emit('update', currentNote.value._id, { content: trimmed });
+        currentNote.value.content = trimmed;
         if (saveGeneration === draftGeneration) {
-          setDraft(currentNote.value.content || '');
+          baseline.title = titleDraft.value;
+          baseline.body = bodyDraft.value;
         }
         return true;
-      } else {
-        actionError.value = result.error || 'Failed to save note';
-        return false;
       }
-    } else {
-      emit('update', currentNote.value._id, { content: trimmed });
-      currentNote.value.content = trimmed;
-      return true;
+    } catch (err: any) {
+      actionError.value = err.message || 'Failed to save note';
+      return false;
+    } finally {
+      isSaving.value = false;
+      activeSavePromise = null;
+      if (hasUnsavedChanges.value && !isClosing.value && props.open) {
+        scheduleAutoSave();
+      }
     }
-  } catch (err: any) {
-    actionError.value = err.message || 'Failed to save note';
-    return false;
-  } finally {
-    isSaving.value = false;
-  }
+  })();
+
+  activeSavePromise = promise;
+  return promise;
 }
 
 const isClosing = ref(false);
@@ -598,6 +659,7 @@ async function undoAssistantEdit() {
 }
 
 async function savePendingDraft(): Promise<boolean> {
+  clearAutoSaveTimer();
   if (props.busy) return false;
   if (!hasUnsavedChanges.value) return true;
   const generation = draftGeneration;
@@ -605,9 +667,17 @@ async function savePendingDraft(): Promise<boolean> {
 }
 
 async function closeWithSave() {
-  if (props.busy || isClosing.value || isSaving.value) return;
+  if (props.busy || isClosing.value) return;
+  clearAutoSaveTimer();
   isClosing.value = true;
   try {
+    if (activeSavePromise) {
+      const ok = await activeSavePromise;
+      if (!ok) return;
+      if (hasUnsavedChanges.value && editDraft.value.trim() && !await savePendingDraft()) return;
+      emit('close');
+      return;
+    }
     // Keep the dialog open if saving failed or the user typed during the save.
     if (editDraft.value.trim() && !await savePendingDraft()) return;
     emit('close');
@@ -871,6 +941,7 @@ watch(
 );
 
 onUnmounted(() => {
+  clearAutoSaveTimer();
   document.body.style.overflow = '';
   window.removeEventListener('keydown', handleWindowKeydown);
   document.removeEventListener('visibilitychange', handleVisibilityChange);

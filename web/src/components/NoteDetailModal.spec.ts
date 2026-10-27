@@ -207,6 +207,105 @@ describe('NoteDetailModal', () => {
     wrapper.unmount();
   });
 
+  it('preserves a trailing newline while the user pauses typing', async () => {
+    vi.useFakeTimers();
+    const onSaveEdit = vi.fn().mockImplementation(async (_id, updates) => ({ success: true, thing: note({ ...updates }) }));
+    const wrapper = mount(NoteDetailModal, {
+      props: { open: true, thing: note(), onSaveEdit },
+    });
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'new line\n';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushPromises();
+    expect(textarea.value).toBe('new line\n');
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('saves new input after an overlapping auto-save completes', async () => {
+    vi.useFakeTimers();
+    let finish!: (v: any) => void;
+    const onSaveEdit = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+      .mockResolvedValue({ success: true });
+    const wrapper = mount(NoteDetailModal, {
+      props: { open: true, thing: note(), onSaveEdit },
+    });
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'first';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onSaveEdit).toHaveBeenCalledTimes(1);
+
+    textarea.value = 'second';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    finish({ success: true, thing: note({ content: 'first' }) });
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushPromises();
+
+    expect(onSaveEdit).toHaveBeenCalledTimes(2);
+    expect(onSaveEdit).toHaveBeenLastCalledWith('note-1', { content: 'second' });
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('closes after a pointer click which blurs the edited body', async () => {
+    let finish!: (v: { success: boolean; thing: Thing }) => void;
+    const onSaveEdit = vi.fn(() => new Promise<{ success: boolean; thing: Thing }>((resolve) => { finish = resolve; }));
+    const wrapper = mount(NoteDetailModal, {
+      props: { open: true, thing: note(), onSaveEdit },
+    });
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'changed';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+
+    textarea.dispatchEvent(new Event('blur'));
+    await flushPromises();
+    const closeBtn = document.querySelector('.done-btn') as HTMLButtonElement;
+    closeBtn.click();
+    await flushPromises();
+
+    finish({ success: true, thing: note({ content: 'changed' }) });
+    await flushPromises();
+    expect(wrapper.emitted('close')).toHaveLength(1);
+
+    wrapper.unmount();
+  });
+
+  it('auto-saves silently on input blur when unsaved changes exist', async () => {
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: true, thing: note({ content: 'Blurred auto save' }) });
+    const wrapper = mount(NoteDetailModal, {
+      props: {
+        open: true,
+        thing: note(),
+        onSaveEdit,
+      },
+    });
+
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'Blurred auto save';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+    expect(onSaveEdit).not.toHaveBeenCalled();
+
+    textarea.dispatchEvent(new Event('blur'));
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Blurred auto save' });
+
+    wrapper.unmount();
+  });
+
   it('auto-saves modified draft and closes when Close button is clicked', async () => {
     const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
     const wrapper = mount(NoteDetailModal, {

@@ -69,4 +69,31 @@ describe('Thing service avoids redundant work', function () {
             assert.deepStrictEqual(service.extractTags(body, service.extractURLs(body)), service.extractTags(body));
         });
     });
+
+    it('caches probeUrl results across subsequent enrichments to prevent repeated network delays', async function () {
+        var prevEnv = process.env.URL_ENRICHMENT_ENABLED;
+        process.env.URL_ENRICHMENT_ENABLED = 'true';
+        ssrf.clearProbeCache();
+        var originalProbe = ssrf.probeUrl;
+        var probeCount = 0;
+        ssrf.probeUrl = async function (url) {
+            probeCount++;
+            return { url: url, type: 'image' };
+        };
+        try {
+            var first = await originalEnrich(['https://example.com/photo.jpg']);
+            assert.strictEqual(probeCount, 1);
+            assert.deepStrictEqual(first, [{ url: 'https://example.com/photo.jpg', type: 'image' }]);
+
+            // Second call with same URL should hit probeCache without calling probeUrl again
+            var second = await originalEnrich(['https://example.com/photo.jpg']);
+            assert.strictEqual(probeCount, 1);
+            assert.deepStrictEqual(second, [{ url: 'https://example.com/photo.jpg', type: 'image' }]);
+        } finally {
+            ssrf.probeUrl = originalProbe;
+            ssrf.clearProbeCache();
+            if (prevEnv !== undefined) process.env.URL_ENRICHMENT_ENABLED = prevEnv;
+            else delete process.env.URL_ENRICHMENT_ENABLED;
+        }
+    });
 });

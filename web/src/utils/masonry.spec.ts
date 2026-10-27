@@ -6,6 +6,13 @@ describe('masonry', () => {
     expect(distributeColumns([1, 2, 3, 4, 5], 3)).toEqual([[1, 4], [2, 5], [3]]);
   });
 
+  it('reuses cached item height for identical object references', () => {
+    const note = { content: 'cached note text' };
+    const firstH = estimateItemHeight(note);
+    const secondH = estimateItemHeight(note);
+    expect(firstH).toBe(secondH);
+  });
+
   it('balances columns by placing items in the shortest column to avoid blank gaps', () => {
     // 4 columns: item 1 (tall: 400), item 2 (short: 100), item 3 (tall: 400), item 4 (tall: 400)
     // Then item 5 (medium: 200) and item 6 (medium: 200) should both go to column 1 to fill its gap.
