@@ -20,7 +20,22 @@ See the [Development](README.md#development) section in `README.md` for environm
 For the single-maintainer repository, make focused commits directly on `master` after the relevant checks pass. External contributors should fork the repository, create a focused branch, and open a pull request describing the problem, solution, and checks run. If branch protection is re-enabled, follow [`docs/BRANCH_PROTECTION.md`](docs/BRANCH_PROTECTION.md) instead.
 
 1. Make one logically scoped change.
-2. Run the narrowest relevant checks: `npm test` for server/script changes; frontend typecheck, Vitest, and build for frontend changes; `docker build .` for container changes. If API contracts changed, run `npm run api:generate` and include updated types. Use `npm run verify` for the full quality and isolated Compose gate. Changes to recovery/search verification also require the separate `npm run verify:restore` / `npm run verify:search:relevance` commands; these use synthetic data, and search labels still require human review.
+2. Run the relevant [validation](#validation) and report any checks not completed.
 3. Use a short imperative commit subject; Conventional Commit prefixes such as `fix:`, `feat:`, and `docs:` are preferred.
 
 CI validates pull requests and pushes to `master`, including local multi-architecture image builds; it does not publish images. Publication is a separate, manually dispatched **RC release** workflow from the current `master` head. It reruns validation, publishes an immutable RC image to GHCR, then creates a GitHub prerelease without moving stable aliases. See the [release checklist](docs/RELEASE_CHECKLIST.md).
+
+## Validation
+
+Run the checks for the parts changed; unrelated checks are not a prerequisite for a focused commit.
+
+| Change | Checks |
+| --- | --- |
+| Documentation or metadata | `git diff --check` and relative Markdown links |
+| Server or scripts | `npm test` |
+| Frontend | `npm --prefix web run typecheck`, `npm --prefix web test`, `npm run build` |
+| API contract | `npm run api:generate`, include updated types, and run affected server/frontend checks |
+| Container or deployment | `docker build .`; Compose health/login when behavior spans services |
+| Recovery/search verification tools | `npm test` plus the affected `npm run verify:restore` / `npm run verify:search:relevance` command |
+
+`npm run verify` runs the complete quality and isolated Compose gate. It already includes generation/type checks, frontend tests/build, and backend tests; do not rerun its individual steps for the same unchanged candidate. Recovery/search exercises remain separate and use synthetic data; their passes do not establish production recovery or search relevance.

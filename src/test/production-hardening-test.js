@@ -6,7 +6,6 @@
 var fs = require('fs'),
     path = require('path'),
     expect = require('expect.js'),
-    request = require('supertest'),
     appModule = require('../../app.js'),
     createApp = appModule.createApp,
     startServer = appModule.startServer;
@@ -86,23 +85,6 @@ describe('Production Deployment Hardening (RF-602)', function () {
                 if (originalSource !== undefined) process.env.AUTH_USER_SOURCE = originalSource;
                 else delete process.env.AUTH_USER_SOURCE;
                 users.initRepository();
-            }
-        });
-    });
-
-    describe('Readiness probe dependency failure detection', function () {
-        it('returns 503 when database is disconnected or ping fails', async function () {
-            var app = createApp({ sessionMemory: true, sessionSecret: 'hardening-test-secret' });
-            var config = require('../config.js');
-            var originalDb = config.db;
-
-            try {
-                config.db = null;
-                var res = await request(app).get('/api/health/ready').expect(503);
-                expect(res.body.code).to.equal('service_unavailable');
-                expect(res.body.message).to.contain('Database not connected');
-            } finally {
-                config.db = originalDb;
             }
         });
     });

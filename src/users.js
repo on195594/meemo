@@ -163,7 +163,6 @@ module.exports = {
     create: create,
     verify: verify,
     resolveUser: resolveUser,
-    UserRepository: MongoUserRepository,
     MongoUserRepository: MongoUserRepository,
     getRepository: getRepository,
     setRepository: setRepository,

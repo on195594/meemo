@@ -9,6 +9,7 @@
 
 var expect = require('expect.js');
 var http = require('http');
+var EventEmitter = require('events').EventEmitter;
 var ssrf = require('../ssrf.js');
 var logic = require('../services/thing-service.js');
 var config = require('../config.js');
@@ -184,65 +185,37 @@ describe('SSRF Protection', function () {
     });
 
     describe('probeUrl and redirects', function () {
-        var server;
-        var serverPort;
-
-        before(function (done) {
-            server = http.createServer(function (req, res) {
-                if (req.url === '/redirect-to-private') {
-                    res.writeHead(302, { 'Location': 'http://127.0.0.1:9999/secret' });
-                    res.end();
-                } else if (req.url === '/redirect-to-metadata') {
-                    res.writeHead(302, { 'Location': 'http://169.254.169.254/latest/meta-data' });
-                    res.end();
-                } else if (req.url === '/redirect-loop') {
-                    res.writeHead(302, { 'Location': '/redirect-loop' });
-                    res.end();
-                } else if (req.url === '/image.png') {
-                    res.writeHead(200, { 'Content-Type': 'image/png' });
-                    res.end();
-                } else {
-                    res.writeHead(200, { 'Content-Type': 'text/html' });
-                    res.end('Hello');
-                }
-            });
-
-            server.listen(0, '127.0.0.1', function () {
-                serverPort = server.address().port;
-                done();
-            });
-        });
-
-        after(function (done) {
-            if (server) {
-                server.close(done);
-            } else {
-                done();
-            }
-        });
-
         it('blocks direct probe to loopback address', function (done) {
-            ssrf.probeUrl('http://127.0.0.1:' + serverPort + '/image.png', function (err, result) {
+            ssrf.probeUrl('http://127.0.0.1/image.png', function (err, result) {
                 expect(err).to.be(null);
                 expect(result.type).to.equal(ssrf.TYPE_UNKNOWN);
-                expect(result.url).to.equal('http://127.0.0.1:' + serverPort + '/image.png');
+                expect(result.url).to.equal('http://127.0.0.1/image.png');
                 done();
             });
         });
 
-        it('blocks redirect to private loopback address', function (done) {
-            // We bypass the initial check to simulate a public URL redirecting to private
-            var customOptions = {
-                timeout: 2000,
-                maxRedirects: 3
+        it('blocks redirects from a public URL to loopback and metadata addresses', async function () {
+            var originalRequest = http.request;
+            var hosts = [];
+            var location;
+            http.request = function (options, onResponse) {
+                hosts.push(options.hostname);
+                var request = new EventEmitter();
+                request.end = function () {
+                    onResponse({ statusCode: 302, headers: { location: location }, destroy: function () {} });
+                };
+                return request;
             };
-
-            // Test with direct probe to redirect endpoint: initial check blocks it because 127.0.0.1 is private
-            ssrf.probeUrl('http://127.0.0.1:' + serverPort + '/redirect-to-private', customOptions, function (err, result) {
-                expect(err).to.be(null);
-                expect(result.type).to.equal(ssrf.TYPE_UNKNOWN);
-                done();
-            });
+            try {
+                for (location of ['http://127.0.0.1/secret', 'http://169.254.169.254/latest/meta-data']) {
+                    hosts = [];
+                    var result = await ssrf.probeUrl('http://93.184.216.34/redirect');
+                    expect(hosts).to.eql(['93.184.216.34']);
+                    expect(result).to.eql({ url: 'http://93.184.216.34/redirect', type: ssrf.TYPE_UNKNOWN });
+                }
+            } finally {
+                http.request = originalRequest;
+            }
         });
     });
 
@@ -260,7 +233,7 @@ describe('SSRF Protection', function () {
             expect(ssrf.isEnrichmentEnabled()).to.be(false);
 
             var note = 'Check out http://127.0.0.1/secret and http://example.com/test.png';
-            logic.extractExternalContent(note, function (err, result) {
+            ssrf.enrichUrls(logic.extractURLs(note), function (err, result) {
                 expect(err).to.be(null);
                 expect(result.length).to.equal(2);
                 expect(result[0].type).to.equal(ssrf.TYPE_UNKNOWN);
@@ -269,27 +242,26 @@ describe('SSRF Protection', function () {
             });
         });
 
-        it('caps outbound URL enrichment to MAX_ENRICH_URLS (5) when enabled', function (done) {
+        it('probes only the first five URLs by default when enrichment is enabled', async function () {
             process.env.URL_ENRICHMENT_ENABLED = 'true';
-
-            var urls = [
-                'http://127.0.0.1/1',
-                'http://127.0.0.1/2',
-                'http://127.0.0.1/3',
-                'http://127.0.0.1/4',
-                'http://127.0.0.1/5',
-                'http://127.0.0.1/6',
-                'http://127.0.0.1/7'
-            ];
-
-            ssrf.enrichUrls(urls, { maxUrls: 5 }, function (err, result) {
-                expect(err).to.be(null);
-                expect(result.length).to.equal(7);
-                result.forEach(function (item) {
-                    expect(item.type).to.equal(ssrf.TYPE_UNKNOWN);
-                });
-                done();
-            });
+            ssrf.clearProbeCache();
+            var urls = Array.from({ length: 7 }, function (_, index) { return 'https://example.com/' + index; });
+            var probed = [];
+            var originalProbe = ssrf.probeUrl;
+            ssrf.probeUrl = async function (url) {
+                probed.push(url);
+                return { url: url, type: ssrf.TYPE_IMAGE };
+            };
+            try {
+                var result = await ssrf.enrichUrls(urls);
+                expect(probed).to.eql(urls.slice(0, 5));
+                expect(result).to.eql(urls.map(function (url, index) {
+                    return { url: url, type: index < 5 ? ssrf.TYPE_IMAGE : ssrf.TYPE_UNKNOWN };
+                }));
+            } finally {
+                ssrf.probeUrl = originalProbe;
+                ssrf.clearProbeCache();
+            }
         });
 
         it('saves notes cleanly with private URLs without failing or hanging', function (done) {

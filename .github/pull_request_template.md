@@ -4,9 +4,8 @@
 
 ## Validation
 
-<!-- List the commands or manual checks you ran. -->
+<!-- List relevant commands or manual checks and their results. Explain any required checks not run; see CONTRIBUTING.md#validation. -->
 
-- [ ] `npm test`
-- [ ] `npm run build`
+- [ ] Relevant checks completed for the changed areas
 - [ ] Documentation or changelog updated when needed
 - [ ] No generated files, credentials, or local data committed

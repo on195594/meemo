@@ -9,13 +9,9 @@ Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It
 - Fast list previews capped at 4,000 characters or 40 lines; open a note to read or edit its complete content (standalone note links always show the full note)
 - Attachments, archive, sticky notes, note copying ("Make a copy"), public sharing, stable private note links, and a reversible trash
 - Public feeds and RSS with canonical note URLs
-- JSON archive import and export
-- High-performance MongoDB compound ESR indexes, text indexing, and tag aggregation
+- Portable `.tar` import and export containing JSON notes and attachments
 - Local username/password accounts with bcrypt password hashes stored exclusively in MongoDB
-- MongoDB unified collection model with stable user identity decoupling
-- Read-only retirement preflight and historical v1-to-v2 migration tooling
 - Docker Compose deployment with health checks and graceful shutdown
-- Production-ready reverse proxy template offloading compression and caching to Nginx
 
 ## Quick start
 
@@ -79,7 +75,7 @@ export SESSION_SECRET="$(openssl rand -hex 32)"
 docker compose up --build -d
 ```
 
-A production-ready reverse proxy template offloading gzip/brotli compression, SSL termination, and static asset caching to Nginx is provided at [`docs/nginx-reverse-proxy.conf`](docs/nginx-reverse-proxy.conf).
+Adapt [`docs/nginx-reverse-proxy.conf`](docs/nginx-reverse-proxy.conf) for TLS termination, compression, and static asset caching on your host.
 
 ## Gemini assistant (optional)
 
@@ -94,19 +90,15 @@ Requirements: Node.js 24 or newer, npm, and Docker.
 ```sh
 npm ci
 npm --prefix web ci
-npm --prefix web run typecheck
-npm --prefix web test
 npm run build
-npm test
-npm run verify              # unified quality + isolated Compose smoke checks
-npm run verify:restore      # explicit synthetic backup/restore exercise (Docker)
-npm run verify:search:relevance # isolated synthetic search labels (Docker)
 ./localdevelopment
 ```
 
 `npm run build` compiles Vue 3 source into ignored `web/dist/` (disposable staging), then copies it to ignored `public/` (the Express runtime copy). `npm run build:web` only produces `web/dist/`; it does not update the Express-served frontend. Frontend behavior tests use Vitest; backend and contract tests use Mocha through `npm test`, which starts and removes a temporary MongoDB container and its anonymous data volumes. `./localdevelopment` starts a reusable development MongoDB container and the application.
 
-Recovery and search-quality checks are explicit entry points, separate from `npm run verify`. Both create their own temporary Docker resources and reject external database/volume arguments. See the [restore verification](docs/BACKUP_RESTORE.md#repeatable-synthetic-restore-verification) and [search sample](docs/SEARCH_BASELINE.md#synthetic-relevance-sample-m3-01) for scope and result semantics; a documented search miss is not a complete relevance pass.
+For a change, run the [relevant checks](CONTRIBUTING.md#validation). For the complete local gate, run `npm run verify` once: it checks generated API types, frontend types/tests/build, backend tests, and isolated Compose integration. There is no need to run those constituent commands again for the same candidate unless a failure or subsequent change warrants it.
+
+`npm run verify:restore` and `npm run verify:search:relevance` are separate, opt-in recovery and search-quality checks. Both create their own temporary Docker resources and reject external database/volume arguments. See the [restore verification](docs/BACKUP_RESTORE.md#repeatable-synthetic-restore-verification) and [search sample](docs/SEARCH_BASELINE.md#synthetic-relevance-sample-m3-01) for scope and result semantics; a documented search miss is not a complete relevance pass.
 
 `./deploy.sh` is a host-specific production command, not a development step: it builds `meemo:latest` from this repository and runs Compose in `/home/lin/meemo`. That production Compose configuration must select `meemo:latest`; the repository's Compose file instead builds `meemo:local`. This recreates containers as needed, not a zero-downtime hot restart. Follow the [release checklist](docs/RELEASE_CHECKLIST.md) for production authorization, backup, image verification, and rollback.
 
@@ -114,7 +106,7 @@ Before enabling revision-protected writes on an existing database, stop all Thin
 
 To run only the Node.js process, provide MongoDB separately and use `npm start`.
 
-Runtime tag lists are derived from each owner's `things.tags` arrays in real time, so add, edit/archive, delete, and import operate lock-free without cross-collection lease counters. The persisted `tags` collection is an offline maintenance projection, not a second tag CRUD API. `thingService.cleanupTags` repairs Thing tag arrays using compare-and-set updates, aggregates fresh tag usage from `things`, and atomically swaps the projection over `tags` via MongoDB's atomic `renameCollection`. For offline maintenance and pre-cutover readiness verification (`verify-production-readiness.js`), a durable MongoDB write freeze gate (`things.acquireWriteFreeze` / `things.requireWriteFreeze`) blocks Thing mutations and fails closed when unverified.
+See [Architecture](docs/ARCHITECTURE.md) for tag authority, concurrency, and offline maintenance boundaries.
 
 ## Repository and production directories
 
@@ -136,9 +128,9 @@ Build and test from the repository. Operate the deployed containers from the pro
 | `src/services/` | Promise-first authentication, things, attachments, sharing, settings, health, and import/export behavior |
 | `src/storage/` | Local filesystem attachment adapter |
 | `src/database/` | MongoDB persistence for things, tags, settings, and users; sessions use `connect-mongo` in `src/http/session.js` |
-| `src/users.js` | Account repository abstraction targeting MongoDB users and bcrypt password handling |
+| `src/users.js` | MongoDB account operations and bcrypt password handling |
 | `types/` | TypeScript domain definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`) |
-| `scripts/` | Build/verification entry points, offline migrations, read-only readiness verifiers, benchmark, and attachment GC |
+| `scripts/` | Build/verification entry points, offline migrations, retirement preflight, readiness verification, benchmark, and attachment GC |
 | `src/test/` | Backend and contract tests run by Mocha |
 | `web/` | Vue 3 + Vite + TypeScript application and Vitest behavior tests; route query owns note filters |
 | `docs/` | [Documentation index](docs/README.md), current contracts/runbooks, roadmaps, and review snapshots |

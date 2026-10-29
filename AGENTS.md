@@ -14,7 +14,7 @@ Meemo is a Node.js/Express notes application with a browser frontend, MongoDB pe
 - `src/services/`: application behavior for auth, things, attachments, sharing, settings, health, and import/export; `mcp-*.js` implements optional OAuth grants and note read/write tools.
 - `src/storage/`: persistent attachment filesystem access.
 - `src/database/`: MongoDB access for things, tags, settings, users, and ephemeral MCP authorization state.
-- `src/users.js`: account repository abstraction and bcrypt password handling.
+- `src/users.js`: MongoDB account operations and bcrypt password handling.
 - `types/`: domain TypeScript definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`).
 - `scripts/`: build/verification entry points, offline migrations, retirement preflight, business-readiness verifier, isolated synthetic restore/search checks, performance benchmark, and attachment GC.
 - `src/test/`: Mocha server and verification-script regressions; frontend behavior tests live under `web/src/`.

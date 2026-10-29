@@ -16,7 +16,7 @@
 ## Operations and validation
 
 - [Backup and restore](BACKUP_RESTORE.md): matched backups, explicit `verify:restore` synthetic recovery checks, and production rollback.
-- [Release checklist](RELEASE_CHECKLIST.md): authorization, migration, validation, RC publication, deployment, and rollback gates.
+- [Release checklist](RELEASE_CHECKLIST.md): validation, RC publication, authorized deployment and rollback; legacy migration gates apply only to old databases.
 - [Branch protection reference](BRANCH_PROTECTION.md): policy if protection is enabled; the single-maintainer workflow permits direct commits.
 - [Dependency security](DEPENDENCY_SECURITY.md): audit procedure and recorded findings; rerun the audit rather than assuming recorded results are current.
 - [Search baseline](SEARCH_BASELINE.md): performance measurements and the explicit `verify:search:relevance` synthetic corpus; labels approved by the maintainer (2026-10-22); known gaps are reported, not hidden.
@@ -44,7 +44,7 @@ Keep new plans in `roadmaps/` and review reports in `reviews/`. These documents 
 - `types/api.d.ts` and `types/index.d.ts` form the package's declared TypeScript entry point; generated HTTP types live separately in `types/generated/`.
 - `npm run build` produces staging output in `web/dist/` and the Express-served copy in `public/`. Both are ignored and reproducible; `npm run build:web` updates only the staging output.
 - Keep dependencies, account files, attachments, database files, backups, and migration evidence out of commits. Do not treat ignored local state as disposable temporary files. Clean only identified logs/captures/review scratch copies after preserving conclusions; do not blanket-delete ignored directories, shared `/tmp`, or local data.
-- Keep Vue behavior tests with `web/src/`; server tests own HTTP/static delivery, authentication, persistence and verification tools. Obsolete Vue source-string, duplicate bundle-presence, and completed frontend-retirement inventory assertions are not a second frontend test suite. HTTP/static/history coverage lives in `src/test/http-static-test.js`.
+- Keep Vue behavior tests with `web/src/`; server tests own HTTP/static delivery, authentication, persistence and verification tools. Build, typecheck and generated-type synchronization cover compilation; do not duplicate them with source-string or file-inventory assertions. HTTP/static/history coverage lives in `src/test/http-static-test.js`.
 - Remove code only after checking runtime, test, script, build, and declared-package callers. Prefer removing unused entry points over moving working modules for appearance.
 
 Update the relevant current document when behavior changes, and keep links in this index and the project README synchronized. Historical findings should remain clearly distinguishable from current contracts.

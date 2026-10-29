@@ -85,17 +85,20 @@ Treat this checksummed, read-only directory as the immutable rollback set. Do no
 
 `image-id.txt` records the running container's immutable local image ID. `meemo-image.tar` retains that exact image independently of registry availability, and `SHA256SUMS` binds it to the MongoDB and `/app/data` archives. Record configuration names separately, but never copy secret values into backup metadata.
 
-For a standalone backup outside a release freeze, restart Meemo only after `sha256sum -c "$BACKUP_DIR/SHA256SUMS"` passes. During release, keep the write freeze in force through final migration, deployment verification, and cutover.
+For a standalone backup outside a release freeze, restart Meemo only after `(cd "$BACKUP_DIR" && sha256sum -c SHA256SUMS)` passes. During release, keep the write freeze in force through final migration, deployment verification, and cutover.
 
 When legacy collection prefixes need explicit account ownership, keep a private JSON object mapping each prefix to an authoritative username and pass its path as `--owner-map PATH` to `migrate-data-to-v2.js` dry-run/apply/verify and `preflight-legacy-retirement.js`. The migration binds the raw-file SHA-256 in `schema-v2` state, so a missing or changed map fails replay and preflight. Multiple prefixes may map to one account only when duplicate Thing identities have identical canonical content, tag identities remain unique, and canonical settings values are identical. Identical Thing aliases collapse to one record; divergent Things and duplicate tags fail before legacy data is removed.
 
 ## Restore into a clean isolated stack
 
-Never test a restore against production volumes. The commands load the retained image, verify its immutable ID, give it an isolated tag, and generate a Compose override that removes `build`. Every Compose invocation uses that override and `--no-build`.
+Never test a restore against production volumes. The commands load the retained image, verify its immutable ID, give it an isolated tag, and generate a Compose override that removes `build`. Compose startup uses that override and `--no-build`. Keep generated configuration in a separate private working directory outside the read-only backup set; resolved configuration can contain secrets.
 
 ```bash
 set -euo pipefail
 BACKUP_DIR=/secure/path/meemo-YYYYMMDDTHHMMSSZ
+RESTORE_WORK_DIR=/secure/path/meemo-restore-YYYYMMDDTHHMMSSZ
+umask 077
+install -d -m 700 "$RESTORE_WORK_DIR"
 export COMPOSE_PROJECT_NAME=meemo-restore-check
 export MEEMO_PORT=3300
 export SESSION_SECRET=temporary-restore-check-only
@@ -113,13 +116,13 @@ restore_image="meemo:restore-$(basename "$BACKUP_DIR")"
 docker image tag "$expected_image_id" "$restore_image"
 test "$(docker image inspect --format '{{.Id}}' "$restore_image")" = "$expected_image_id"
 
-image_override="$BACKUP_DIR/restore-image.override.yml"
+image_override="$RESTORE_WORK_DIR/restore-image.override.yml"
 printf 'services:\n  meemo:\n    build: !reset null\n    image: %s\n' \
   "$restore_image" >"$image_override"
 compose=(docker compose -f "$BACKUP_DIR/docker-compose.yml" -f "$image_override")
 RESTORE_IMAGE="$restore_image" "${compose[@]}" config --format json \
-  >"$BACKUP_DIR/restore-compose.resolved.json"
-python3 - "$BACKUP_DIR/restore-compose.resolved.json" "$restore_image" <<'PY'
+  >"$RESTORE_WORK_DIR/restore-compose.resolved.json"
+python3 - "$RESTORE_WORK_DIR/restore-compose.resolved.json" "$restore_image" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -172,13 +175,14 @@ Verify with a non-production test account:
 5. Restart with `"${compose[@]}" restart`, repeat readiness and one representative read, and reassert the running container image ID.
 6. Record archive hashes, counts, expected/running image IDs, MongoDB version, operator, and UTC completion time.
 
-Remove the isolated stack only after recording evidence:
+Remove the isolated stack only after recording evidence. Reuse the working directory from the restore above:
 
 ```bash
 set -euo pipefail
 BACKUP_DIR=/secure/path/meemo-YYYYMMDDTHHMMSSZ
+RESTORE_WORK_DIR=/secure/path/meemo-restore-YYYYMMDDTHHMMSSZ
 export COMPOSE_PROJECT_NAME=meemo-restore-check
-image_override="$BACKUP_DIR/restore-image.override.yml"
+image_override="$RESTORE_WORK_DIR/restore-image.override.yml"
 compose=(docker compose -f "$BACKUP_DIR/docker-compose.yml" -f "$image_override")
 "${compose[@]}" down -v --remove-orphans
 ```
@@ -190,6 +194,9 @@ Obtain explicit production authorization, keep the write freeze active, bind the
 ```bash
 set -euo pipefail
 BACKUP_DIR=/secure/path/meemo-YYYYMMDDTHHMMSSZ
+ROLLBACK_WORK_DIR=/secure/path/meemo-rollback-YYYYMMDDTHHMMSSZ
+umask 077
+install -d -m 700 "$ROLLBACK_WORK_DIR"
 : "${COMPOSE_PROJECT_NAME:?set the existing production Compose project name}"
 : "${SESSION_SECRET:?load the previous session secret through the approved secret channel}"
 
@@ -205,13 +212,13 @@ rollback_image="meemo:rollback-$(basename "$BACKUP_DIR")"
 docker image tag "$expected_image_id" "$rollback_image"
 test "$(docker image inspect --format '{{.Id}}' "$rollback_image")" = "$expected_image_id"
 
-image_override="$BACKUP_DIR/rollback-image.override.yml"
+image_override="$ROLLBACK_WORK_DIR/rollback-image.override.yml"
 printf 'services:\n  meemo:\n    build: !reset null\n    image: %s\n' \
   "$rollback_image" >"$image_override"
 compose=(docker compose -f "$BACKUP_DIR/docker-compose.yml" -f "$image_override")
 ROLLBACK_IMAGE="$rollback_image" "${compose[@]}" config --format json \
-  >"$BACKUP_DIR/rollback-compose.resolved.json"
-python3 - "$BACKUP_DIR/rollback-compose.resolved.json" "$rollback_image" <<'PY'
+  >"$ROLLBACK_WORK_DIR/rollback-compose.resolved.json"
+python3 - "$ROLLBACK_WORK_DIR/rollback-compose.resolved.json" "$rollback_image" <<'PY'
 import json
 import sys
 from pathlib import Path

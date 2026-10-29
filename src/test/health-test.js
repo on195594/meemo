@@ -87,6 +87,8 @@ describe('Health & Runtime Contract', function () {
                     config.db = originalDb;
                     expect(err).to.be(null);
                     expect(res.status).to.be(503);
+                    expect(res.body.code).to.equal('service_unavailable');
+                    expect(res.body.message).to.contain('Database not connected');
                     done();
                 });
         });

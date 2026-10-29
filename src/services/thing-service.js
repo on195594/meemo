@@ -55,10 +55,6 @@ function extractTags(content, urls) {
     return env.tags;
 }
 
-function extractExternalContent(content, callback) {
-    return nodeify(ssrf.enrichUrls(extractURLs(content)), callback);
-}
-
 function faceliftSync(userId, thing) {
     if (!thing || !thing.content) return '';
     var data = thing.content;
@@ -348,11 +344,9 @@ module.exports = {
     getTags: getTags,
     extractURLs: extractURLs,
     extractTags: extractTags,
-    extractExternalContent: extractExternalContent,
     facelift: facelift,
     cleanupTags: cleanupTags,
     buildSearchFilter: search.buildSearchFilter,
-    escapeRegExp: escapeRegExp,
     TYPE_IMAGE: TYPE_IMAGE,
     TYPE_UNKNOWN: TYPE_UNKNOWN
 };

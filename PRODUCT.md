@@ -16,7 +16,7 @@ A responsive, self-hosted scratchpad and note-taking web application inspired by
 
 ## Positioning
 
-Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesystem attachments) and keeps accounts, notes, and attachments on the operator's own host. It combines Google Keep-style color organization and fast capture with Markdown, wikilinks, and full-text search. Optional assistant read access is a separate privacy decision: retrieved private note content may be sent to Google.
+Unlike cloud note services, Meemo is self-hosted (Docker, MongoDB, local filesystem attachments) and keeps accounts, notes, and attachments on the operator's own host. It combines Google Keep-style color organization and fast capture with Markdown, wikilinks, and full-text search. Optional assistant read and write access requires separate consent: retrieved private note content may be sent to Google, and authorized writes change notes with a visible assistant marker.
 
 ## Operating Context
 

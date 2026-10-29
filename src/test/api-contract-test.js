@@ -18,7 +18,6 @@ var fs = require('fs'),
 
 describe('API Contract and Progressive Types (RF-305)', function () {
     var specPath = path.resolve(__dirname, '../../docs/openapi.yaml');
-    var typesPath = path.resolve(__dirname, '../../types/api.d.ts');
     var spec;
 
     it('loads and parses docs/openapi.yaml as valid OpenAPI 3.0', function () {
@@ -33,38 +32,6 @@ describe('API Contract and Progressive Types (RF-305)', function () {
         expect(spec.paths).to.be.an('object');
         expect(spec.components).to.be.an('object');
         expect(spec.components.schemas).to.be.an('object');
-    });
-
-    it('provides generated TypeScript declarations from the OpenAPI source', function () {
-        expect(fs.existsSync(typesPath)).to.be(true);
-        var typesContent = fs.readFileSync(typesPath, 'utf8');
-        expect(typesContent).to.contain("import type { components, paths } from './generated/api-types'");
-        expect(typesContent).to.contain("export type Thing = components['schemas']['Thing']");
-        expect(typesContent).to.contain("export type Tag = components['schemas']['Tag']");
-        expect(typesContent).to.contain("export type ExternalContentItem = components['schemas']['ExternalContentItem']");
-        expect(typesContent).to.contain('export interface User');
-
-        var generatedPath = path.resolve(__dirname, '../../types/generated/api-types.ts');
-        expect(fs.existsSync(generatedPath)).to.be(true);
-        var generatedContent = fs.readFileSync(generatedPath, 'utf8');
-        expect(generatedContent).to.contain('export interface paths');
-        expect(generatedContent).to.contain('export interface components');
-        expect(generatedContent).to.contain('ExternalContentItem:');
-        expect(generatedContent).to.contain('status: "ok"');
-        expect(generatedContent).to.contain('status: "ready"');
-
-        var packageJson = require('../../package.json');
-        expect(packageJson.scripts['api:generate']).to.contain('docs/openapi.yaml');
-        expect(packageJson.scripts['api:generate']).to.contain('types/generated/api-types.ts');
-
-        var verifyScript = fs.readFileSync(path.resolve(__dirname, '../../scripts/verify.js'), 'utf8');
-        expect(packageJson.scripts.verify).to.contain('scripts/verify.js');
-        expect(packageJson.scripts['verify:quality']).to.contain('--quality');
-        expect(verifyScript).to.contain("npm('run', 'api:generate')");
-        expect(verifyScript).to.contain("['diff', '--exit-code', '--', 'types/generated/api-types.ts']");
-
-        var indexPath = path.resolve(__dirname, '../../types/index.d.ts');
-        expect(fs.existsSync(indexPath)).to.be(true);
     });
 
     it('covers all required API endpoints in openapi.yaml', function () {

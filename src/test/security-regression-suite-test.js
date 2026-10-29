@@ -13,7 +13,6 @@ var fs = require('fs'),
     tarStream = require('tar-stream'),
     config = require('../config.js'),
     users = require('../users.js'),
-    ssrf = require('../ssrf.js'),
     authService = require('../services/auth-service.js'),
     createApp = require('../../app.js').createApp;
 
@@ -269,21 +268,6 @@ describe('Core Security Regression Suite (RF-402 / Gate G3)', function () {
             .get('/api/files/' + userA.id + '/' + publicNoteId + '/' + privateFileId);
 
         expect([403, 404]).to.contain(bypassAttempt.status);
-    });
-
-    // 7. SSRF localhost/private/link-local/redirect 被拦截
-    it('scenario 7: blocks SSRF probes targeting localhost, private IPs, link-local metadata, and redirects', async function () {
-        expect((await ssrf.isSafeUrl('http://127.0.0.1')).safe).to.be(false);
-        expect((await ssrf.isSafeUrl('http://localhost')).safe).to.be(false);
-        expect((await ssrf.isSafeUrl('http://169.254.169.254/latest/meta-data')).safe).to.be(false);
-        expect((await ssrf.isSafeUrl('http://10.0.0.1/admin')).safe).to.be(false);
-        expect((await ssrf.isSafeUrl('http://192.168.1.1/setup')).safe).to.be(false);
-        expect((await ssrf.isSafeUrl('http://172.16.0.1/internal')).safe).to.be(false);
-        expect((await ssrf.isSafeUrl('http://[::1]')).safe).to.be(false);
-        expect((await ssrf.isSafeUrl('ftp://example.com/file')).safe).to.be(false);
-
-        var probeDirect = await ssrf.probeUrl('http://127.0.0.1:80');
-        expect(probeDirect.type).to.equal(ssrf.TYPE_UNKNOWN);
     });
 
     // 8. oversized upload/import 被拒绝
