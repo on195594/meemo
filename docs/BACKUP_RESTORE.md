@@ -1,8 +1,10 @@
 # Backup and Restore
 
-Use this runbook for Meemo v2 upgrades and rollback. MongoDB, `/app/data`, and the exact Meemo image artifact form one backup set: create, retain, checksum, and restore them together. Commands assume the repository's Docker Compose stack and no shell history containing credentials. They are operator instructions, not evidence that a backup or restore has run.
+Use this runbook for explicitly requested backups, data recovery, migrations, or MongoDB upgrades. Routine application deployment and image rollback use [deploy.sh](../deploy.sh) and do not require a fresh backup or restore rehearsal.
 
-Code review, pull-request approval, CI success, and release publication authorize code artifacts only. They never authorize a production write, migration, session purge, cutover, or retirement. Obtain and record separate production mutation authorization immediately before the write freeze and re-check that it covers the exact post-merge commit and immutable image digest being operated.
+Production MongoDB is independently deployed and shared with travel-cards. Scope every dump/restore to Meemo's database from the effective `MONGODB_URL`; do not assume its name is `meemo`. Never stop/recreate the shared MongoDB container, restore its entire data directory, or change travel-cards data as part of a Meemo operation. The repository's bundled MongoDB is for standalone use and isolated tests.
+
+Data restoration, migration, and credential/session invalidation need authorization for those operations. An application deployment request alone does not authorize them. A recovery set contains the matching Meemo database archive, attachments and previous image; keep it outside the source and production directories.
 
 ## Repeatable synthetic restore verification
 
@@ -45,218 +47,52 @@ The current synthetic restore fixture does not seed or validate MCP grants; its 
 
 ## Create a consistent backup
 
-Choose a private directory outside the repository. Stop all application writers before dumping either datastore; during a release freeze, do not restart them after this block.
+For an authorized backup, identify `MONGO_CONTAINER`, `MEEMO_DATABASE`, the Meemo container and attachment mount from the active deployment. Use a private directory outside the repository and operations directory. Keep credentials out of commands and output; authenticated MongoDB deployments need their approved database-tool credential configuration.
 
-```bash
-set -euo pipefail
-BACKUP_DIR=/secure/path/meemo-$(date -u +%Y%m%dT%H%M%SZ)
-install -d -m 700 "$BACKUP_DIR"
-container=$(docker compose ps -q meemo)
-test -n "$container"
-image_id=$(docker inspect --format '{{.Image}}' "$container")
-case "$image_id" in sha256:*) ;; *) printf 'unexpected image ID: %s\n' "$image_id" >&2; exit 1 ;; esac
-printf '%s\n' "$image_id" >"$BACKUP_DIR/image-id.txt"
-docker inspect --format '{{.Config.Image}}' "$container" >"$BACKUP_DIR/image-reference.txt"
-docker image inspect "$image_id" >"$BACKUP_DIR/image-inspect.json"
-docker image inspect --format '{{json .RepoDigests}}' "$image_id" \
-  >"$BACKUP_DIR/image-repo-digests.json"
-docker image inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$image_id" \
-  >"$BACKUP_DIR/image-repository-digest.txt"
-docker image save --output "$BACKUP_DIR/meemo-image.tar" "$image_id"
-install -m 600 docker-compose.yml "$BACKUP_DIR/docker-compose.yml"
+1. Record the database name, running Meemo image ID, MongoDB version and configuration reference. Retain the exact image with `docker image save` for disaster recovery; routine image rollback only needs the local previous image.
+2. Stop only Meemo and any separately identified writers to its database/attachments while creating the matched backup. Keep the shared MongoDB server running.
+3. Dump only the selected database:
 
-docker compose stop meemo
-docker compose exec -T mongodb mongodump --db meemo --archive \
-  >"$BACKUP_DIR/mongodb.archive"
-docker run --rm --volumes-from "$container" --entrypoint sh "$image_id" \
-  -c 'tar -C /app/data -czf - .' >"$BACKUP_DIR/meemo-data.tgz"
+   ```bash
+   : "${MONGO_CONTAINER:?identify the existing shared MongoDB container}"
+   : "${MEEMO_DATABASE:?read the database name from the active Meemo configuration}"
+   : "${BACKUP_DIR:?select a private backup directory}"
+   docker exec "$MONGO_CONTAINER" mongodump --db "$MEEMO_DATABASE" --archive \
+     >"$BACKUP_DIR/mongodb.archive"
+   printf '%s\n' "$MEEMO_DATABASE" >"$BACKUP_DIR/database-name.txt"
+   ```
 
-(
-  cd "$BACKUP_DIR"
-  sha256sum mongodb.archive meemo-data.tgz meemo-image.tar image-id.txt \
-    image-inspect.json image-repo-digests.json image-repository-digest.txt \
-    docker-compose.yml >SHA256SUMS
-)
-chmod 500 "$BACKUP_DIR"
-chmod 400 "$BACKUP_DIR"/*
-```
-
-Treat this checksummed, read-only directory as the immutable rollback set. Do not regenerate one member, amend `SHA256SUMS`, or reuse the directory for migration/readiness output; create a new set instead. Prefer storage-level immutability or approved write-once retention when available.
-
-`image-id.txt` records the running container's immutable local image ID. `meemo-image.tar` retains that exact image independently of registry availability, and `SHA256SUMS` binds it to the MongoDB and `/app/data` archives. Record configuration names separately, but never copy secret values into backup metadata.
-
-For a standalone backup outside a release freeze, restart Meemo only after `(cd "$BACKUP_DIR" && sha256sum -c SHA256SUMS)` passes. During release, keep the write freeze in force through final migration, deployment verification, and cutover.
-
-When legacy collection prefixes need explicit account ownership, keep a private JSON object mapping each prefix to an authoritative username and pass its path as `--owner-map PATH` to `migrate-data-to-v2.js` dry-run/apply/verify and `preflight-legacy-retirement.js`. The migration binds the raw-file SHA-256 in `schema-v2` state, so a missing or changed map fails replay and preflight. Multiple prefixes may map to one account only when duplicate Thing identities have identical canonical content, tag identities remain unique, and canonical settings values are identical. Identical Thing aliases collapse to one record; divergent Things and duplicate tags fail before legacy data is removed.
+4. Archive Meemo's attachment mount with ownership and permissions preserved. Do not copy the MongoDB data directory or unrelated application mounts.
+5. Checksum the database, attachments, retained image and metadata together. Keep the set read-only; store subsequent reports/configuration in a separate private work directory.
+6. For backup-only work, restart Meemo once the backup is complete. For a migration or recovery, keep its writers stopped until that operation's checks pass.
 
 ## Restore into a clean isolated stack
 
-Never test a restore against production volumes. The commands load the retained image, verify its immutable ID, give it an isolated tag, and generate a Compose override that removes `build`. Compose startup uses that override and `--no-build`. Keep generated configuration in a separate private working directory outside the read-only backup set; resolved configuration can contain secrets.
+A restore exercise is separate work. Create fresh MongoDB/application containers and attachment storage with no production mounts or shared MongoDB connection. Load the retained image and restore the selected Meemo database and attachments into these disposable resources. Disable MCP, workers and URL enrichment, and use a separate test session secret.
 
-```bash
-set -euo pipefail
-BACKUP_DIR=/secure/path/meemo-YYYYMMDDTHHMMSSZ
-RESTORE_WORK_DIR=/secure/path/meemo-restore-YYYYMMDDTHHMMSSZ
-umask 077
-install -d -m 700 "$RESTORE_WORK_DIR"
-export COMPOSE_PROJECT_NAME=meemo-restore-check
-export MEEMO_PORT=3300
-export SESSION_SECRET=temporary-restore-check-only
-
-(
-  cd "$BACKUP_DIR"
-  sha256sum -c SHA256SUMS
-)
-expected_image_id=$(<"$BACKUP_DIR/image-id.txt")
-case "$expected_image_id" in sha256:*) ;; *) printf 'invalid saved image ID\n' >&2; exit 1 ;; esac
-docker image load --input "$BACKUP_DIR/meemo-image.tar"
-loaded_image_id=$(docker image inspect --format '{{.Id}}' "$expected_image_id")
-test "$loaded_image_id" = "$expected_image_id"
-restore_image="meemo:restore-$(basename "$BACKUP_DIR")"
-docker image tag "$expected_image_id" "$restore_image"
-test "$(docker image inspect --format '{{.Id}}' "$restore_image")" = "$expected_image_id"
-
-image_override="$RESTORE_WORK_DIR/restore-image.override.yml"
-printf 'services:\n  meemo:\n    build: !reset null\n    image: %s\n' \
-  "$restore_image" >"$image_override"
-compose=(docker compose -f "$BACKUP_DIR/docker-compose.yml" -f "$image_override")
-RESTORE_IMAGE="$restore_image" "${compose[@]}" config --format json \
-  >"$RESTORE_WORK_DIR/restore-compose.resolved.json"
-python3 - "$RESTORE_WORK_DIR/restore-compose.resolved.json" "$restore_image" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-service = json.loads(Path(sys.argv[1]).read_text())["services"]["meemo"]
-assert service["image"] == sys.argv[2], service
-assert "build" not in service, service
-print("restore Compose configuration pins the retained image and has no build")
-PY
-
-"${compose[@]}" down -v --remove-orphans
-"${compose[@]}" up -d --no-build mongodb
-mongo_ready=false
-for _ in $(seq 1 120); do
-  if "${compose[@]}" exec -T mongodb mongosh --quiet \
-    --eval 'quit(db.adminCommand("ping").ok ? 0 : 2)'; then
-    mongo_ready=true
-    break
-  fi
-  sleep 1
-done
-test "$mongo_ready" = true
-"${compose[@]}" exec -T mongodb mongorestore --archive --drop \
-  <"$BACKUP_DIR/mongodb.archive"
-"${compose[@]}" run --rm --no-deps --no-build \
-  -v "$BACKUP_DIR:/backup:ro" --entrypoint sh meemo \
-  -c 'find /app/data -mindepth 1 -maxdepth 1 -exec rm -rf {} + && tar -C /app/data -xzf /backup/meemo-data.tgz'
-"${compose[@]}" up -d --no-build
-
-restore_container=$("${compose[@]}" ps -q meemo)
-test -n "$restore_container"
-test "$(docker inspect --format '{{.Image}}' "$restore_container")" = "$expected_image_id"
-app_ready=false
-for _ in $(seq 1 120); do
-  if curl --fail --silent http://127.0.0.1:3300/api/health/ready >/dev/null; then
-    app_ready=true
-    break
-  fi
-  sleep 1
-done
-test "$app_ready" = true
-```
-
-Verify with a non-production test account:
-
-1. Login and inspect representative Things, tags, and settings.
-2. Download and compare representative attachments.
-3. Verify public shares and Public Stream.
-4. Export the account and confirm expected record and attachment counts.
-5. Restart with `"${compose[@]}" restart`, repeat readiness and one representative read, and reassert the running container image ID.
-6. Record archive hashes, counts, expected/running image IDs, MongoDB version, operator, and UTC completion time.
-
-Remove the isolated stack only after recording evidence. Reuse the working directory from the restore above:
-
-```bash
-set -euo pipefail
-BACKUP_DIR=/secure/path/meemo-YYYYMMDDTHHMMSSZ
-RESTORE_WORK_DIR=/secure/path/meemo-restore-YYYYMMDDTHHMMSSZ
-export COMPOSE_PROJECT_NAME=meemo-restore-check
-image_override="$RESTORE_WORK_DIR/restore-image.override.yml"
-compose=(docker compose -f "$BACKUP_DIR/docker-compose.yml" -f "$image_override")
-"${compose[@]}" down -v --remove-orphans
-```
+Compare document/index fingerprints and attachment hashes with the backup, then verify login, representative notes/attachments, sharing, export and restart persistence. Keep credentials and note contents out of reports. Remove only the resources created for the exercise. A synthetic fixture pass is not proof that a real backup restores correctly.
 
 ## Production restore or rollback
 
-Obtain explicit production authorization, keep the write freeze active, bind the real Compose project name and previous non-secret configuration, and make the prior `SESSION_SECRET` available without placing it in shell history. This block verifies and loads the exact image before altering production data.
+For a failed application update without data changes, use image rollback only; do not restore data.
 
-```bash
-set -euo pipefail
-BACKUP_DIR=/secure/path/meemo-YYYYMMDDTHHMMSSZ
-ROLLBACK_WORK_DIR=/secure/path/meemo-rollback-YYYYMMDDTHHMMSSZ
-umask 077
-install -d -m 700 "$ROLLBACK_WORK_DIR"
-: "${COMPOSE_PROJECT_NAME:?set the existing production Compose project name}"
-: "${SESSION_SECRET:?load the previous session secret through the approved secret channel}"
+For an explicitly authorized **data restore**:
 
-(
-  cd "$BACKUP_DIR"
-  sha256sum -c SHA256SUMS
-)
-expected_image_id=$(<"$BACKUP_DIR/image-id.txt")
-case "$expected_image_id" in sha256:*) ;; *) printf 'invalid saved image ID\n' >&2; exit 1 ;; esac
-docker image load --input "$BACKUP_DIR/meemo-image.tar"
-test "$(docker image inspect --format '{{.Id}}' "$expected_image_id")" = "$expected_image_id"
-rollback_image="meemo:rollback-$(basename "$BACKUP_DIR")"
-docker image tag "$expected_image_id" "$rollback_image"
-test "$(docker image inspect --format '{{.Id}}' "$rollback_image")" = "$expected_image_id"
+1. Verify the matched backup checksums, retained image and exact database identity. Preserve the current Meemo data before overwriting it. Stop only Meemo and its other identified writers.
+2. Restore only the database recorded in the backup, restricted by namespace:
 
-image_override="$ROLLBACK_WORK_DIR/rollback-image.override.yml"
-printf 'services:\n  meemo:\n    build: !reset null\n    image: %s\n' \
-  "$rollback_image" >"$image_override"
-compose=(docker compose -f "$BACKUP_DIR/docker-compose.yml" -f "$image_override")
-ROLLBACK_IMAGE="$rollback_image" "${compose[@]}" config --format json \
-  >"$ROLLBACK_WORK_DIR/rollback-compose.resolved.json"
-python3 - "$ROLLBACK_WORK_DIR/rollback-compose.resolved.json" "$rollback_image" <<'PY'
-import json
-import sys
-from pathlib import Path
+   ```bash
+   : "${MONGO_CONTAINER:?identify the existing shared MongoDB container}"
+   : "${MEEMO_DATABASE:?identify the authorized Meemo database}"
+   : "${BACKUP_DIR:?select the verified backup set}"
+   test "$(cat "$BACKUP_DIR/database-name.txt")" = "$MEEMO_DATABASE" &&
+   docker exec -i "$MONGO_CONTAINER" mongorestore --archive \
+     --nsInclude "$MEEMO_DATABASE.*" --drop <"$BACKUP_DIR/mongodb.archive"
+   ```
 
-service = json.loads(Path(sys.argv[1]).read_text())["services"]["meemo"]
-assert service["image"] == sys.argv[2], service
-assert "build" not in service, service
-print("rollback Compose configuration pins the retained image and has no build")
-PY
-
-container=$("${compose[@]}" ps -q meemo)
-test -n "$container"
-"${compose[@]}" stop meemo
-"${compose[@]}" exec -T mongodb mongorestore --archive --drop \
-  <"$BACKUP_DIR/mongodb.archive"
-docker run --rm --volumes-from "$container" --entrypoint sh "$expected_image_id" \
-  -c 'find /app/data -mindepth 1 -maxdepth 1 -exec rm -rf {} + && tar -C /app/data -xzf -' \
-  <"$BACKUP_DIR/meemo-data.tgz"
-"${compose[@]}" up -d --no-build mongodb meemo
-
-rollback_container=$("${compose[@]}" ps -q meemo)
-test -n "$rollback_container"
-test "$(docker inspect --format '{{.Image}}' "$rollback_container")" = "$expected_image_id"
-app_ready=false
-for _ in $(seq 1 120); do
-  if curl --fail --silent "${APP_ORIGIN:?set the production application origin}/api/health/ready" \
-    >/dev/null; then
-    app_ready=true
-    break
-  fi
-  sleep 1
-done
-test "$app_ready" = true
-```
-
-Before reopening writes, verify login, representative Things/tags/settings, attachments, public shares, export, restart persistence, and the running image ID. Keep writes frozen if any check fails. Preserve logs and failed-deployment evidence, and do not retry a failed migration against production data until its cause is understood.
-
-A restore is not accepted until the isolated exercise succeeds. A backup that has not been restored with its retained image is unverified.
+3. Restore the matching attachments into Meemo's mount only. Keep the shared MongoDB instance and travel-cards untouched.
+4. Revoke restored browser sessions and handle [MCP authorization state](#optional-mcp-authorization-state) within the selected Meemo database before opening access.
+5. Start only Meemo with the retained image and previous configuration. Verify readiness, representative authenticated reads, attachments and the affected recovery behavior before accepting the restore. If checks fail, retain the evidence and diagnose before another attempt.
 
 ## Migration source selection
 

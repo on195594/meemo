@@ -35,7 +35,10 @@ Run the checks for the parts changed; unrelated checks are not a prerequisite fo
 | Server or scripts | `npm test` |
 | Frontend | `npm --prefix web run typecheck`, `npm --prefix web test`, `npm run build` |
 | API contract | `npm run api:generate`, include updated types, and run affected server/frontend checks |
-| Container or deployment | `docker build .`; Compose health/login when behavior spans services |
+| Dockerfile/container | `docker build .`; Compose health/login when behavior spans services |
+| Deployment orchestration only | `bash -n deploy.sh` and `npx --no-install mocha src/test/deploy-test.js`; no production restart |
 | Recovery/search verification tools | `npm test` plus the affected `npm run verify:restore` / `npm run verify:search:relevance` command |
 
 `npm run verify` runs the complete quality and isolated Compose gate. It already includes generation/type checks, frontend tests/build, and backend tests; do not rerun its individual steps for the same unchanged candidate. Recovery/search exercises remain separate and use synthetic data; their passes do not establish production recovery or search relevance.
+
+Routine host deployment uses the shorter [deployment flow](docs/RELEASE_CHECKLIST.md#routine-host-deployment), reuses relevant validation, and only updates Meemo. MongoDB is independently operated and shared with travel-cards.

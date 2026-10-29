@@ -1,108 +1,25 @@
-# Meemo Release Checklist
+# Deployment and releases
 
-Use this checklist for release candidates and production deployment. Apply the legacy migration section only to a legacy database; normal releases do not repeat that migration. Stop on any failed applicable check. This document lists required operations, not evidence that they have run.
+## Routine host deployment
 
-## Optional Gemini/MCP gate
+Production MongoDB is independently deployed and shared with travel-cards. Meemo uses its existing database and `/home/lin/meemo` Compose configuration. The repository Compose stack is a standalone development/test setup, not the production topology.
 
-- Keep MCP disabled unless its deployment/configuration is explicitly authorized. See [configuration and privacy](GEMINI_ASSISTANT.md).
-- Verify fixed HTTPS discovery/resource URLs, exact approved callbacks, Host/Origin handling, proxy query/header redaction, session cookies and consent/revocation UI.
-- Scopes and permissions gate:
-  - Enforce independent acceptance requirements for `notes.read` and `notes.write`.
-  - Confirm all eight documented tools (`search_notes`, `get_note`, `batch_get_notes`, `list_tags`, `create_note`, `update_note`, `delete_note`, `batch_delete_notes`) are registered. Read-only grants must reject writes with `insufficient_scope`; legacy grants without stored scopes must remain strictly read-only unless new consent is granted.
-  - Authorization lifetime: access remains valid indefinitely until explicitly revoked by the user, rather than expiring after 24 hours. Revocation at the user level must immediately reject subsequent read and write requests.
-- Editing and concurrency gate:
-  - Optimistic concurrency control: updates and deletions must enforce `expectedRevision`. Stale revisions and concurrent write races must fail with `revision_conflict`.
-  - Conflict recovery: when a write fails with `revision_conflict`, client/assistant recovery must re-read the latest note state via `get_note` and reconcile before attempting a retry.
-  - Partial updates: verify that updating partial fields (content, color, sticky, or archived) strictly preserves existing attachments and other unmentioned note attributes.
-  - Protection against accidental mutation: note deletion moves to trash (recoverable via Web UI, never permanent purge); public and shared notes must reject assistant updates and deletion with `not_allowed`.
-- Boundary and isolation gate:
-  - Cross-user access, revoked/expired tokens, and unauthenticated calls must fail.
-  - Enforce strict two-way isolation between browser sessions and MCP tokens: browser session cookies must not authenticate `/mcp`, and MCP Bearer tokens must not access browser REST endpoints or `/api/mcp` consent routes.
-  - Deployment authorization must explicitly cover the current write-capable implementation; historical phase-1 read-only authorization is insufficient.
-- Real Gemini client acceptance gate:
-  - Test real Meemo Gemini web/mobile clients across both read and write workflows: consent flow (read-only vs read-and-write disclosures), search/read/tags, create/update/trash, optimistic revision conflict handling, partial-field updates, legacy read-only scope enforcement, and user-level revocation.
-  - Verify `search_notes` with `include_content: true` returns full Markdown without follow-up reads, `batch_get_notes` reads up to 20 notes, and `batch_delete_notes` trashes multiple notes with one client confirmation. Check partial-failure summaries and the 128 KiB response limit.
-  - Record client/deployment versions and dates without private content. Initial maintainer manual acceptance passed (recorded 2026-10-22); repeat these checks when MCP tools, OAuth, scopes or deployment settings change. Local automated test passes do not replace them.
-- Recovery gate:
-  - Recovery must invalidate restored MCP authorization state before enabling access; disabling is rollback, not permanent grant revocation. The existing synthetic restore fixture does not yet test MCP state.
+1. Reuse the relevant successful checks for the code being deployed; rerun only checks affected by subsequent changes or failures. Documentation/test-only changes do not need an application rebuild or restart unless explicitly requested.
+2. From a clean, committed checkout, run `./deploy.sh` when deployment is authorized. Existing authorization for this deployment remains valid; do not ask again for each step.
+3. The script builds once while the old app keeps running, records the previous image ID, then runs `up -d --no-deps --no-build --wait --wait-timeout 60 meemo`. It verifies the running image ID and prints the deployed commit.
+4. If activation, health, or image verification fails, it restores the previous Meemo image, checks that it starts, and exits nonzero. Investigate the failure before retrying. Keep the previous image locally through the observation period.
 
-## Authorization boundary
+This is the complete default deployment flow. It does not restart MongoDB or travel-cards, change databases, acquire a database write freeze, dump data, save image archives, clone production, reset passwords, inspect existing login sessions, or run a restore rehearsal. Do not create a temporary deployment framework around the script.
 
-Pull-request approval, protected-branch status, CI success, and release/image publication approve an artifact; they do **not** authorize production mutation. Record separate, time-bounded production authorization covering the intended deployment/cutover and any migration, session revocation, or legacy retirement. Stop if authorization does not identify the exact release commit, immutable image digest, target environment, and rollback set.
+Do not repeat frontend builds outside the Docker build or wait for every hosted CI job during routine host deployment. Report known CI failures and investigate those relevant to the change; an unrelated CI failure is not a reason to rerun all local suites. Readiness verifies process/dependency availability, not every user workflow; run a focused user-flow check only when the change affects it.
 
-## Pre-release
+## Separate operations
 
-- [ ] The release commit is on `master` and the validation gate is green. If branch protection is enabled, it must also have arrived through the required pull-request checks; see [`BRANCH_PROTECTION.md`](BRANCH_PROTECTION.md).
-- [ ] Fetch the current `master`, record `git rev-parse master`, and prove the candidate was built and tested from that exact head; superseded PR-head evidence is not release evidence.
-- [ ] `npm ci`, `npm --prefix web ci`, generated API types, frontend typecheck/Vitest/build, and backend Mocha tests pass.
-- [ ] Treat delegated evidence as `INCOMPLETE`, never as release-ready proof, when it reports `max_iterations` or truncation, is schema-invalid, or omits the command exit status, exact commit SHA, named artifact, or artifact hash. Reject summaries that cannot be bound to those originals.
-- [ ] Compose smoke covers health, register/login, Thing CRUD, CAS conflict, trash/restore visibility, attachment, public share/stream, export, and import.
-- [ ] When changing recovery/search verification, run the separate `npm run verify:restore` / `npm run verify:search:relevance` checks and retain their exact commit/dirty-tree status and artifact/dataset hashes. These full runs are not included in `npm run verify`; synthetic recovery success is not production recovery evidence, and `PASS_WITH_KNOWN_GAPS` or pending-human search labels are not full relevance acceptance.
-- [ ] Docker builds pass for `linux/amd64` and `linux/arm64`.
-- [ ] No credentials, data exports, user files, or attachment data are in the commit.
-- [ ] Record the candidate immutable image digest, previous running image ID/digest, and configuration identifiers.
+- **Schema/data migrations, MongoDB upgrades, or destructive maintenance:** plan the exact target and backup/rollback procedure for that operation. Follow [Backup and restore](BACKUP_RESTORE.md); legacy migration source selection and readiness checks belong there.
+- **Data recovery:** restore only Meemo's explicitly identified database and attachments. Never restore the shared MongoDB data directory or operate on travel-cards as part of Meemo deployment.
+- **MCP/OAuth changes:** use the relevant [assistant acceptance checks](GEMINI_ASSISTANT.md). Repeat real-client checks when tools, scopes, OAuth, or related deployment settings change.
+- **Backup/recovery exercises:** run when requested or when recovery tooling changes, independently of routine deployment.
 
-## Backup checkpoint
+## Published RC releases
 
-Complete this once under the deployment write freeze, for either deployment path below. Keep the freeze in force through cutover so the rollback set remains matched to production.
-
-- [ ] Back up MongoDB and the complete Meemo data volume while all application writers are stopped.
-- [ ] Follow [`BACKUP_RESTORE.md`](BACKUP_RESTORE.md) to retain the exact previous image artifact and restore the matched data backup with that image into an isolated stack.
-- [ ] Checksum and make the matched MongoDB archive, `/app/data` archive, exact previous image, Compose file, and metadata read-only as one immutable rollback set; readiness output is stored elsewhere.
-- [ ] In the isolated stack, verify readiness, login, representative active and trashed Things, restore behavior, attachments, public shares, export, restart persistence, and the running image ID.
-
-## Standard deployment
-
-Use this path when accounts already use MongoDB and notes/settings use unified collections.
-
-1. Confirm production authorization, block external writes, stop the application and other writers, and record the UTC freeze start.
-2. Complete the [backup checkpoint](#backup-checkpoint).
-3. If this upgrade introduces revision-protected writes to a database with missing Thing revisions, run `scripts/migrate-thing-revisions.js` with `--dry-run`, `--apply`, and `--verify`, the exact `--mongo-url` and `--expect-database`. It only fills missing revisions and must stop on invalid values. Skip it when revisions are already populated.
-4. Deploy the immutable candidate digest with external traffic still blocked; read back the running image digest and effective non-secret configuration.
-5. Verify readiness, login, representative active/trashed notes, attachments, public sharing, export, and restart persistence. `/api/health/ready` alone is not business acceptance. For MCP changes, apply the optional gate above.
-6. Open traffic and writes only after the applicable assertions pass; record the freeze end and observation result. On failure, retain the freeze and follow rollback.
-
-## Legacy migration and deployment
-
-Use this path only when upgrading legacy file accounts or per-user collections. It includes migration-specific session revocation and readiness verification; it replaces the standard deployment path.
-
-- [ ] Inventory every legacy namespace and candidate backup; reject test, fixture, sample, and demo indicators.
-- [ ] Independently review the exact expected database name, namespace names, counts, canonical-EJSON fingerprints, and owner-map digest. Store them in a read-only expected-source artifact that the migration did not generate; bind `--dry-run`, `--apply`, and `--verify` to that database name and both write/readback modes to that same artifact.
-
-1. Bind the expected environment, database, users file, and account source explicitly; do not rely on migration defaults.
-2. Confirm the selected migration source matches the historical user-visible corpus. While normal service remains available, run the user migration in `dry-run` mode and retain its reviewed manifest. Run every v2 data-migration mode with the same explicit `--expect-database NAME`; the expected-source artifact must contain that exact database name. Run its `dry-run` with the exact `--users-file PATH --users-manifest PATH` pair so mapped owners bind to the planned canonical IDs before users are applied. If legacy collection prefixes do not identify their authoritative accounts, pass the same private `--owner-map PATH` JSON file (`prefix` to username) to data `dry-run`, `apply`, `verify`, and retirement preflight.
-3. Resolve every identity collision, unmatched owner, count mismatch, implausibly small source, and attachment-reference gap; do not deploy through a failed gate. Many-to-one mappings collapse duplicate Thing identities only when canonical content is identical, require tag identities to remain unique, and merge only canonically identical settings; divergent Things, duplicate tags, or conflicting settings fail closed.
-4. Establish the release write freeze **before either final user-migration or v2 data-migration apply**: block external write traffic, stop the Meemo application and every worker/scheduler that can write MongoDB or `/app/data`, verify no writer remains, and record the UTC freeze start.
-5. Keep that freeze in force for every following migration, verification, deployment, and cutover step. Do not admit user writes or run a catch-up migration during this release path.
-6. Complete the [backup checkpoint](#backup-checkpoint) under that freeze before changing production.
-7. With only the explicitly controlled migration process able to write, run final user-migration `apply` and `verify`, then v2 data-migration `apply` and `verify` with the same independently reviewed expected-source artifact; compare canonical users and per-owner things/tags/settings counts. Run `scripts/migrate-thing-revisions.js` in `--dry-run`, `--apply`, and `--verify` modes with the exact `--expect-database NAME`; it may only fill missing revisions and must stop on invalid values. Run tag reconstruction during this freeze; require its durable MongoDB gate to report a verified write freeze before staging or swapping tags, and keep the gate frozen through readiness.
-8. Run `scripts/preflight-legacy-retirement.js` and require `SAFE_TO_RETIRE` for the explicitly bound target. Its CLI output is redacted; keep any identity-level diagnostics only in a mode-0600 local evidence file outside the repository.
-9. Select MongoDB accounts in deployment configuration, deploy the immutable candidate digest while external writes remain blocked, and read back the effective non-secret configuration and running image digest.
-10. Revoke every pre-migration server session while the write freeze and production authorization remain active. Confirm the session collection is empty before authenticated verification.
-11. Run `scripts/verify-production-readiness.js` with the expected-source artifact and a mode-0600 file containing all database/readback credentials; pass no secrets as arguments. Require source-evidence binding, owner/schema/count invariants, session revocation, exact tags, attachment resolution, and authenticated protected readback. `/api/health/ready` alone is only process/dependency health.
-12. Under the same freeze, complete representative historical Thing, attachment, public-sharing, export, restart-persistence, and final migration-count checks without placing content or credentials in command output.
-13. Cut over by enabling external traffic and writes only after every final assertion passes; record the UTC freeze end. If any assertion fails, keep writes frozen and execute rollback.
-14. Keep the legacy account file, legacy collections, immutable rollback set, exact previous image artifact, and previous configuration read-only throughout the observation/rollback window.
-15. Remove compatibility data only after the observation window closes with no unresolved discrepancy and a separately authorized retirement operation.
-
-## Release workflow
-
-1. From the release commit on `master`, manually run **RC release** with the reviewed tag matching `vX.Y.Z-rcN`.
-2. The workflow reruns the full validation gate before any GitHub Release or image is published.
-3. It rejects a tag already present in Git or GHCR, then publishes only the exact immutable RC multi-architecture image tag with SBOM and provenance.
-4. After the image succeeds, it creates the GitHub prerelease. RC publication never moves `latest`, `2`, or `2.0`.
-5. Stable aliases are outside this RC-only workflow and require a separately reviewed stable-release path.
-
-## Rollback
-
-1. Keep the write freeze in force and retain diagnostic logs.
-2. Follow the production rollback procedure in [`BACKUP_RESTORE.md`](BACKUP_RESTORE.md): checksum, load, tag, and verify the retained exact previous image before changing production data.
-3. Restore MongoDB and the Meemo data volume as one matched backup set. Do not mix backup timestamps.
-4. Restore the previous configuration and user-source selection; keep credential values out of logs and release evidence.
-5. Start the stack with builds disabled, assert that the running image ID equals the retained image ID, and verify readiness, login, representative Things, attachments, public shares, export, and restart persistence.
-6. Reopen writes only after rollback verification passes. Otherwise keep the freeze in force and escalate.
-7. Keep the failed deployment and migration evidence isolated for diagnosis; do not retry against production data until the cause is known.
-
-## Release decision
-
-Release only when every applicable item above passes and the restored backup has been exercised. Immediately before mutation, re-read `master`, record its exact head, and reject evidence produced for any other commit or image. Record the release tag, exact release commit SHA, image digest, retained image-artifact SHA-256, immutable rollback-set digest, backup identifiers, validation results, freeze start/end, production authorization reference, observation-window result, observed branch-protection state, operator, and UTC completion time. Include redacted migration/preflight/business-verifier output when the legacy migration path applies.
+The manually dispatched **RC release** workflow is separate from host deployment. It requires a green full validation gate, builds both `linux/amd64` and `linux/arm64`, publishes an immutable `vX.Y.Z-rcN` candidate to GHCR with provenance/SBOM, and creates a GitHub prerelease. It does not move stable aliases or deploy the host. Do not dispatch it merely to update the running Meemo app.

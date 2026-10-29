@@ -100,13 +100,19 @@ For a change, run the [relevant checks](CONTRIBUTING.md#validation). For the com
 
 `npm run verify:restore` and `npm run verify:search:relevance` are separate, opt-in recovery and search-quality checks. Both create their own temporary Docker resources and reject external database/volume arguments. See the [restore verification](docs/BACKUP_RESTORE.md#repeatable-synthetic-restore-verification) and [search sample](docs/SEARCH_BASELINE.md#synthetic-relevance-sample-m3-01) for scope and result semantics; a documented search miss is not a complete relevance pass.
 
-`./deploy.sh` is a host-specific production command, not a development step: it builds `meemo:latest` from this repository and runs Compose in `/home/lin/meemo`. That production Compose configuration must select `meemo:latest`; the repository's Compose file instead builds `meemo:local`. This recreates containers as needed, not a zero-downtime hot restart. Follow the [release checklist](docs/RELEASE_CHECKLIST.md) for production authorization, backup, image verification, and rollback.
-
 Before enabling revision-protected writes on an existing database, stop all Thing writers and run `npm run migrate:thing-revisions -- --dry-run --mongo-url <url> --expect-database <name>`, then apply and verify with the same explicit database name. The migration only fills missing revisions with `1` and refuses invalid existing values.
 
 To run only the Node.js process, provide MongoDB separately and use `npm start`.
 
 See [Architecture](docs/ARCHITECTURE.md) for tag authority, concurrency, and offline maintenance boundaries.
+
+## Production deployment
+
+On the current host, MongoDB is independently deployed and shared with travel-cards. `/home/lin/meemo` contains the existing production Compose configuration, which uses `meemo:latest`; the repository Compose stack is a standalone setup.
+
+From a clean, committed checkout, run `./deploy.sh` when deployment is authorized. It builds once with the commit label, updates only Meemo with `--no-deps --no-build`, waits up to 60 seconds for health, and verifies the running image. Failure restores the previous image and returns nonzero. The old app stays online during the build; container replacement causes a short interruption.
+
+Reuse relevant test results. Routine updates do not run database backups, freezes, restore rehearsals or the RC publishing workflow. See [Deployment and releases](docs/RELEASE_CHECKLIST.md) for the short flow and separately scoped data operations.
 
 ## Repository and production directories
 

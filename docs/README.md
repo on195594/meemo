@@ -15,8 +15,8 @@
 
 ## Operations and validation
 
-- [Backup and restore](BACKUP_RESTORE.md): matched backups, explicit `verify:restore` synthetic recovery checks, and production rollback.
-- [Release checklist](RELEASE_CHECKLIST.md): validation, RC publication, authorized deployment and rollback; legacy migration gates apply only to old databases.
+- [Backup and restore](BACKUP_RESTORE.md): separately scoped Meemo database/attachment recovery on the shared MongoDB server, and explicit synthetic restore checks.
+- [Deployment and releases](RELEASE_CHECKLIST.md): routine Meemo-only updates and image rollback; migrations, recovery exercises and published RC releases are separate operations.
 - [Branch protection reference](BRANCH_PROTECTION.md): policy if protection is enabled; the single-maintainer workflow permits direct commits.
 - [Dependency security](DEPENDENCY_SECURITY.md): audit procedure and recorded findings; rerun the audit rather than assuming recorded results are current.
 - [Search baseline](SEARCH_BASELINE.md): performance measurements and the explicit `verify:search:relevance` synthetic corpus; labels approved by the maintainer (2026-10-22); known gaps are reported, not hidden.

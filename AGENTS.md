@@ -84,11 +84,19 @@ Run the narrowest checks that cover the change:
 - Frontend changes: `npm run build`, `npm --prefix web run typecheck`, and `npm --prefix web test`. Prefer behavior tests under `web/src/`; do not duplicate build/file-existence assertions in server tests.
 - API contract changes: `npm run api:generate` and verify `types/generated/api-types.ts` is in sync.
 - Server, authentication, persistence, import/export, or API changes: `npm test`.
-- Docker or deployment changes: `docker build .`; use the Compose health/login flow when behavior spans services.
+- Dockerfile/container changes: `docker build .`; use the Compose health/login flow when behavior spans services.
+- Deployment orchestration only: `bash -n deploy.sh` and `npx --no-install mocha src/test/deploy-test.js`. These command-stub tests do not contact Docker or production; do not redeploy solely to test the script.
 
 - Verification scripts: retain ownership, anonymous-volume cleanup, interruption, request-deadline, and image-archive regressions. Run the full `verify:restore` / `verify:search:relevance` commands separately when changing those tools; their complete runs are not part of `npm run verify`. Synthetic passes, even with maintainer-approved labels, are not production recovery or relevance acceptance.
 
 Add or update a focused test under `src/test/` for non-trivial server behavior. Do not add a new test framework.
+
+## Routine host deployment
+
+- MongoDB is independently deployed and shared with travel-cards. Deploy only the Meemo service using `/home/lin/meemo`; the repository Compose stack is for standalone use and isolated tests.
+- After authorization, use `./deploy.sh`: one build, Meemo-only recreation, bounded readiness/image checks, and previous-image rollback on failure. Reuse checks already passed for the same code.
+- Do not add full-suite reruns, CI waiting, database freezes/backups, production clones, password resets, session inspection, or restore rehearsals to an ordinary application update. Those belong to separately scoped migration/recovery work. Do not generate an ad hoc deployment framework.
+- Documentation/test-only changes do not require a rebuild or restart unless explicitly requested. See [Deployment and releases](docs/RELEASE_CHECKLIST.md).
 
 ## Documentation and releases
 
