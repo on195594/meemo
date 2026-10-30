@@ -30,11 +30,13 @@ var repository = null;
 function createRepositoryFromEnv() {
     var source = process.env.AUTH_USER_SOURCE || 'mongo';
     var isProduction = process.env.NODE_ENV === 'production';
-    if (isProduction && source !== 'mongo') {
-        throw new Error('FATAL: AUTH_USER_SOURCE must be mongo when NODE_ENV=production');
+    if (source !== 'mongo') {
+        if (isProduction) {
+            throw new Error('FATAL: AUTH_USER_SOURCE must be mongo when NODE_ENV=production');
+        }
+        throw new Error('Unsupported AUTH_USER_SOURCE: ' + source);
     }
-    if (source === 'mongo') return new MongoUserRepository();
-    throw new Error('Unsupported AUTH_USER_SOURCE: ' + source);
+    return new MongoUserRepository();
 }
 
 function getRepository() {

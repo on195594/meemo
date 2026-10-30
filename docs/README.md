@@ -40,7 +40,7 @@ Keep new plans in `roadmaps/` and review reports in `reviews/`. These documents 
 
 - Keep runtime source in `src/`, browser source in `web/src/`, tests beside frontend source or in `src/test/`, and automation in `scripts/`.
 - Root entry points (`app.js`, `runTests`, `localdevelopment`, `start.sh`, `deploy.sh`) are intentional. In particular, `start.sh` is the Docker command, not a discarded legacy script.
-- Retain offline migration and retirement tooling while backup/restore and release runbooks depend on it. Being unused by the HTTP server does not make a migration script dead code.
+- Retain offline migration and retirement tooling while backup/restore and release runbooks depend on it. Being unused by the HTTP server does not make a migration script dead code. However, offline migration meta-testing suites are pruned from `src/test/` to avoid over-testing completed migrations during routine test cycles.
 - `types/api.d.ts` and `types/index.d.ts` form the package's declared TypeScript entry point; generated HTTP types live separately in `types/generated/`.
 - `npm run build` produces staging output in `web/dist/` and the Express-served copy in `public/`. Both are ignored and reproducible; `npm run build:web` updates only the staging output.
 - Keep dependencies, account files, attachments, database files, backups, and migration evidence out of commits. Do not treat ignored local state as disposable temporary files. Clean only identified logs/captures/review scratch copies after preserving conclusions; do not blanket-delete ignored directories, shared `/tmp`, or local data.

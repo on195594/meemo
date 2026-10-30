@@ -17,13 +17,14 @@ const { docker, label, port, startMongo, waitFor, removeOwned } = isolation;
 
 const DATABASE = 'meemo_restore';
 
-function request(base) {
+function request(base, options) {
     const agent = supertest(base);
+    const timeouts = (options && options.timeout) || { response: 5000, deadline: 10000 };
     for (const method of ['get', 'post', 'put', 'delete']) {
         const original = agent[method];
         agent[method] = route => {
             isolation.signal()?.throwIfAborted();
-            return original(route).timeout({ response: 5000, deadline: 10000 });
+            return original(route).timeout(timeouts);
         };
     }
     return agent;

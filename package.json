@@ -47,7 +47,6 @@
     "mongodb": "^6.21.0",
     "multer": "^2.4.0",
     "rss": "^1.2.2",
-    "safetydance": "^2.4.0",
     "serve-static": "^1.15.0",
     "tar-fs": "^2.1.5",
     "twemoji": "^14.0.2",

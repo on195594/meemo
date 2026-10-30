@@ -39,7 +39,8 @@ function settingsFromOptions(options) {
     origins.forEach(function (origin) {
         if (new URL(origin).origin !== origin || !origin.startsWith('https://')) throw new Error('Invalid MCP allowed origin');
     });
-    return { enabled: true, bootstrapUntil: until, publicUrl: url.origin, host: url.host, redirectUris: redirectUris, allowedOrigins: [url.origin].concat(origins) };
+    var deadlineMs = Number(supplied.protocolDeadlineMs) || Number(process.env.MCP_PROTOCOL_DEADLINE_MS) || 15000;
+    return { enabled: true, bootstrapUntil: until, publicUrl: url.origin, host: url.host, redirectUris: redirectUris, allowedOrigins: [url.origin].concat(origins), protocolDeadlineMs: deadlineMs };
 }
 
 // shortcut: rate limits are per process; coordinate them before running multiple replicas.
@@ -77,7 +78,7 @@ function createMcp(options, logger) {
         }
         res.set('Cache-Control', 'no-store');
         res.set('Referrer-Policy', 'no-referrer');
-        var deadline = setTimeout(function () { res.destroy(); }, 15000);
+        var deadline = setTimeout(function () { res.destroy(); }, settings.protocolDeadlineMs);
         deadline.unref();
         res.once('close', function () { clearTimeout(deadline); });
         next();

@@ -94,8 +94,8 @@ describe('Isolated restore verification guards', function () {
             let cleanedUp = false;
             const started = Date.now();
             try {
-                await assert.rejects(() => restore.request(`http://127.0.0.1:${server.address().port}`).get('/stall').expect(200), /timeout/i);
-                assert(Date.now() - started < 12000);
+                await assert.rejects(() => restore.request(`http://127.0.0.1:${server.address().port}`, { timeout: { response: 100, deadline: 200 } }).get('/stall').expect(200), /timeout/i);
+                assert(Date.now() - started < 2000);
             } finally {
                 server.closeAllConnections();
                 await new Promise(resolve => server.close(resolve));

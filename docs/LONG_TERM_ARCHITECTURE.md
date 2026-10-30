@@ -1,13 +1,15 @@
 # Meemo 长期架构规范
 
-> 规范性（Normative）长期约束。制定于 2026-09-16，2026-10-23 精简（约束未变，删去重复图示与已完成任务；精简前全文见提交 `d25b511`）。
+> 规范性（Normative）长期约束。制定于 2026-09-16，2026-10-23 精简（约束未变，删去重复图示与已完成任务；精简前全文见提交 `d25b511`），2026-10-30 完成过度测试与死代码精简。
 > 当前实现以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准，HTTP 契约以 [openapi.yaml](openapi.yaml) 为准，工作流程以 [AGENTS.md](../AGENTS.md) 为准。
 
-## 当前状态（2026-10-23）
+## 当前状态（2026-10-30）
 
 - 模块化单体：Express + MongoDB + 文件系统附件，单进程；Vue 3 SPA。
-- 在线数据只读写统一集合（`things`、`settings`、`users`、`sessions`）；`things.tags` 是标签事实源，`tags` 集合是迁移投影。
+- 在线数据只读写统一集合（`things`、`settings`、`users`、`sessions`）；`things.tags` 是标签事实源，`tags` 集合是迁移投影与维修工件。
 - 账号只在 MongoDB；旧 file/fallback 用户源已从运行时删除，只保留离线迁移输入。
+- 移除了未引用的死依赖（如 `safetydance`）及历史多仓储切换空转分支。
+- 过度测试治理：清理历史离线迁移元测试（移除 2400+ 行非业务回归套件），修复人为 15 秒 hang 超时测试，单机测试套件耗时从 65s+ 缩减至 ~22s。
 - NoteColor 已有单一定义（`src/note-colors.js` ↔ `web/src/constants/noteColors.ts`）。
 - 可选 MCP（Gemini）读写工具已实现，默认关闭，2026-10-22 真实客户端验收通过；助手写入留下可见、可撤销的 `assistant` 标记（见 §12）。
 - 浏览器端：service worker 提供安装与离线只读（决策记录见 ARCHITECTURE.md「Offline shell」）；图片在浏览器上传前缩小，不保留原图。

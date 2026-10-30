@@ -794,9 +794,11 @@ describe('MCP read/write tools and OAuth isolation', function () {
     });
 
     it('closes a stalled body at the absolute protocol deadline', async function () {
+        var isolated = createApp({ sessionMemory: true, sessionSecret: 'synthetic-deadline', logger: logger.createLogger({ enabled: false }),
+            mcp: { enabled: true, publicUrl: origin, redirectUris: [callback], protocolDeadlineMs: 150 } });
         var http = require('http');
         var server = await new Promise(function (resolve) {
-            var listening = app.listen(0, '127.0.0.1', function () { resolve(listening); });
+            var listening = isolated.listen(0, '127.0.0.1', function () { resolve(listening); });
         });
         var started = Date.now();
         try {
@@ -804,13 +806,13 @@ describe('MCP read/write tools and OAuth isolation', function () {
                 var pending = http.request({ host: '127.0.0.1', port: server.address().port, path: '/mcp', method: 'POST', headers: {
                     Host: 'meemo.example', Authorization: 'Bearer ' + aliceToken, 'Content-Type': 'application/json', 'Content-Length': '1000'
                 } });
-                pending.setTimeout(18000, function () { pending.destroy(new Error('Server deadline did not close request')); });
+                pending.setTimeout(2000, function () { pending.destroy(new Error('Server deadline did not close request')); });
                 pending.on('error', resolve);
                 pending.on('response', function (response) { response.resume(); reject(new Error('Expected deadline socket close, not response')); });
                 pending.write('{');
             });
             assert.equal(error.code, 'ECONNRESET');
-            assert(Date.now() - started >= 14000 && Date.now() - started < 18000);
+            assert(Date.now() - started >= 100 && Date.now() - started < 2000);
         } finally {
             await new Promise(function (resolve) { server.close(resolve); });
         }
