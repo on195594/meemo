@@ -98,8 +98,6 @@ npm run build
 
 For a change, run the [relevant checks](CONTRIBUTING.md#validation). For the complete local gate, run `npm run verify` once: it checks generated API types, frontend types/tests/build, backend tests, and isolated Compose integration. There is no need to run those constituent commands again for the same candidate unless a failure or subsequent change warrants it.
 
-`npm run verify:restore` and `npm run verify:search:relevance` are separate, opt-in recovery and search-quality checks. Both create their own temporary Docker resources and reject external database/volume arguments. See the [restore verification](docs/BACKUP_RESTORE.md#repeatable-synthetic-restore-verification) and [search sample](docs/SEARCH_BASELINE.md#synthetic-relevance-sample-m3-01) for scope and result semantics; a documented search miss is not a complete relevance pass.
-
 Before enabling revision-protected writes on an existing database, stop all Thing writers and run `npm run migrate:thing-revisions -- --dry-run --mongo-url <url> --expect-database <name>`, then apply and verify with the same explicit database name. The migration only fills missing revisions with `1` and refuses invalid existing values.
 
 To run only the Node.js process, provide MongoDB separately and use `npm start`.
@@ -159,10 +157,8 @@ Do not commit generated `public/`, `web/dist/`, `node_modules/`, `web/node_modul
 - [Long-term architecture](docs/LONG_TERM_ARCHITECTURE.md)
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
-- [Master branch protection](docs/BRANCH_PROTECTION.md)
 - [Dependency security](docs/DEPENDENCY_SECURITY.md)
 - [Gemini assistant (MCP)](docs/GEMINI_ASSISTANT.md)
-- [Search baseline](docs/SEARCH_BASELINE.md)
 - [Security policy](SECURITY.md)
 
 ## License

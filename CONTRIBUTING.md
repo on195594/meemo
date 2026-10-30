@@ -17,7 +17,7 @@ See the [Development](README.md#development) section in `README.md` for environm
 
 ## Changes and pull requests
 
-For the single-maintainer repository, make focused commits directly on `master` after the relevant checks pass. External contributors should fork the repository, create a focused branch, and open a pull request describing the problem, solution, and checks run. If branch protection is re-enabled, follow [`docs/BRANCH_PROTECTION.md`](docs/BRANCH_PROTECTION.md) instead.
+For the single-maintainer repository, make focused commits directly on `master` after the relevant checks pass. External contributors should fork the repository, create a focused branch, and open a pull request describing the problem, solution, and checks run.
 
 1. Make one logically scoped change.
 2. Run the relevant [validation](#validation) and report any checks not completed.
@@ -37,8 +37,7 @@ Run the checks for the parts changed; unrelated checks are not a prerequisite fo
 | API contract | `npm run api:generate`, include updated types, and run affected server/frontend checks |
 | Dockerfile/container | `docker build .`; Compose health/login when behavior spans services |
 | Deployment orchestration only | `bash -n deploy.sh` and `npx --no-install mocha src/test/deploy-test.js`; no production restart |
-| Recovery/search verification tools | `npm test` plus the affected `npm run verify:restore` / `npm run verify:search:relevance` command |
 
-`npm run verify` runs the complete quality and isolated Compose gate. It already includes generation/type checks, frontend tests/build, and backend tests; do not rerun its individual steps for the same unchanged candidate. Recovery/search exercises remain separate and use synthetic data; their passes do not establish production recovery or search relevance.
+`npm run verify` runs the complete quality and isolated Compose gate. It already includes generation/type checks, frontend tests/build, and backend tests; do not rerun its individual steps for the same unchanged candidate.
 
 Routine host deployment uses the shorter [deployment flow](docs/RELEASE_CHECKLIST.md#routine-host-deployment), reuses relevant validation, and only updates Meemo. MongoDB is independently operated and shared with travel-cards.

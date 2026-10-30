@@ -1,112 +1,47 @@
 # AGENTS.md
 
-Instructions for coding agents working in this repository.
+Instructions for coding agents working in Meemo.
 
-## Project overview
+## Project Overview
 
-Meemo is a Node.js/Express notes application with a browser frontend, MongoDB persistence, filesystem attachments, username/password authentication, and Docker deployment support.
+Meemo is a lightweight Node.js/Express notes app with a Vue 3 frontend, MongoDB persistence, filesystem attachments, and Docker deployment.
 
-## Source map
+## Source Map
 
-- `app.js`: runtime composition root, MongoDB/index startup, worker startup, and HTTP server lifecycle.
-- `src/lifecycle.js`: worker management, MongoDB connection pool lifecycle, and graceful shutdown sequencing.
-- `src/http/`: injected Express factory, HTTP routing, input validation, authentication middleware, `connect-mongo` sessions, uploads, and error responses. `mcp.js` and `mcp-tools.js` own the optional, default-disabled MCP/OAuth HTTP boundary with scoped read/write tools.
-- `src/services/`: application behavior for auth, things, attachments, sharing, settings, health, and import/export; `mcp-*.js` implements optional OAuth grants and note read/write tools.
-- `src/storage/`: persistent attachment filesystem access.
-- `src/database/`: MongoDB access for things, tags, settings, users, and ephemeral MCP authorization state.
-- `src/users.js`: MongoDB account operations and bcrypt password handling.
-- `types/`: domain TypeScript definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`).
-- `scripts/`: build/verification entry points, isolated synthetic restore/search checks, performance benchmark, thing revision migration, and attachment GC.
-- `src/test/`: Mocha server and verification-script regressions; frontend behavior tests live under `web/src/`.
-- `web/`: modern Vue 3 + Vite + TypeScript browser application.
-- `public/`, `web/dist/`: generated frontend output; never edit or commit it.
-- `PRODUCT.md`: target users, product scope, and accessibility commitments.
-- `DESIGN.md`: Material Design 3 and Google Keep tokens, color palette, and layout specs.
-- `docs/README.md`: documentation index and directory maintenance rules.
-- `docs/ARCHITECTURE.md`: component boundaries, API contracts, and runtime flow.
-- `docs/GEMINI_ASSISTANT.md`: current optional MCP configuration, privacy, limits, revocation, recovery, and real-client acceptance record.
-- `docs/LONG_TERM_ARCHITECTURE.md`: normative long-term architectural constraints and complexity budget.
-- `docs/BACKUP_RESTORE.md`: production backup, disaster recovery, and verification runbooks.
-- `docs/BRANCH_PROTECTION.md`: reference master branch protection and check policies (disabled for single-maintainer development).
-- `docs/DEPENDENCY_SECURITY.md`: production dependency security audit and vulnerability remediation map.
-- `docs/RELEASE_CHECKLIST.md`: release candidate validation, deployment, and rollback checklist.
-- `docs/openapi.yaml`: authoritative OpenAPI 3.0 specification.
-- `docs/nginx-reverse-proxy.conf`: reference Nginx reverse proxy configuration for caching and compression offloading.
-- `Dockerfile`, `start.sh`, `docker-compose.yml`, `deploy.sh`: container packaging/startup and deployment; `deploy.sh` is host-specific and is not zero-downtime.
+- `app.js` & `src/lifecycle.js`: Process lifecycle, worker management, and HTTP/MongoDB startup.
+- `src/http/`: Express routing, input validation, auth middleware, and API handlers.
+- `src/services/`: Domain logic (notes, tags, attachments, sharing, auth, MCP tools).
+- `src/database/`: MongoDB persistence layer.
+- `src/storage/`: Filesystem attachments.
+- `src/users.js`: User accounts and bcrypt password handling.
+- `web/`: Modern Vue 3 + TypeScript frontend (`public/` and `web/dist/` are generated build output; do not hand-edit).
+- `src/test/` & `web/src/`: Backend and frontend test suites.
+- `docs/`: Reference specs (`openapi.yaml`), architecture, and runbooks (see `docs/README.md`).
 
-## Working rules
+## Core Rules
 
-1. Read the relevant route, logic, database, frontend, and test callers before changing behavior.
-2. Keep HTTP concerns in `src/http/`, shared behavior in `src/services/`, persistence in `src/database/`, and attachment filesystem access in `src/storage/`.
-3. Prefer the smallest root-cause change. Reuse existing code and dependencies; do not add speculative abstractions.
-4. Preserve CommonJS and use Promise-first `async`/`await`; add callback compatibility only when an existing script or test still requires it.
-5. Follow `.editorconfig` and nearby style. Use four-space JavaScript indentation and avoid unrelated formatting.
-6. Never weaken authentication, authorization, input validation, session handling, or error handling for convenience.
-7. Do not log or commit passwords, password hashes, session secrets, local account data, attachments, or imported notes.
-8. Preserve unrelated user changes. Do not delete ignored or untracked files unless explicitly asked.
-9. Single-maintainer workflow: As a personal project maintained by an individual, branch protection on `master` is removed to maximize efficiency. Direct commits and pushes to `master` are preferred after passing the narrowest validation checks, without requiring pull requests.
+1. **Investigate first**: Inspect relevant callers and tests before modifying code.
+2. **Layer separation**: Keep HTTP concerns in `src/http/`, business logic in `src/services/`, persistence in `src/database/`, files in `src/storage/`.
+3. **No over-engineering**: Make the smallest root-cause change. Reuse existing code; do not add speculative abstractions, unrequested scripts, or extra layers. Stop as soon as the task works.
+4. **Style**: Preserve CommonJS with Promise-first `async`/`await`. Follow `.editorconfig` (4-space JS indentation).
+5. **Security & State**: Never weaken auth or validation. Never commit secrets, hashes, or local data. Preserve unrelated user changes.
+6. **Single-maintainer workflow**: Direct commits and pushes to `master` with Conventional Commits (`feat:`, `fix:`, etc.) after targeted verification. No PRs required.
 
-## Generated and local-only files
+## Targeted Validation
 
-Do not commit or hand-edit:
+Run only the narrowest check relevant to your change:
 
-- `node_modules/`, `web/node_modules/`
-- `public/`, `web/dist/`
-- `.users.json`, `users.json`
-- `attachments/`, `storage/`, `data/`, `database/`
+- **Frontend single test**: `npx --prefix web vitest run web/src/path/to/file.spec.ts` (fast)
+- **Frontend types**: `npm --prefix web run typecheck`
+- **Frontend bundle** (only when bundling or preparing release): `npm run build`
+- **Backend / Database / API**: `npm test` (starts temporary MongoDB container)
+- **API Spec Sync**: `npm run api:generate` (when changing `docs/openapi.yaml`)
+- **Deploy Script Check**: `bash -n deploy.sh && npx --no-install mocha src/test/deploy-test.js`
 
-## Commands
+**Do not run heavy CI suites (`npm run verify` / Compose integration) unless explicitly requested** — they rebuild containers and are too heavy for a 2-vCPU host.
 
-```sh
-npm ci                         # install locked dependencies
-npm --prefix web ci            # install locked web dependencies
-npm run build                  # compile web/ into public/
-npm test                       # run tests using a temporary MongoDB container
-npm run verify                  # run the complete quality and isolated Compose checks
-npm run verify:restore          # opt-in synthetic recovery check; never targets production
-npm run verify:search:relevance # opt-in synthetic labeled queries; includes known gaps
-./localdevelopment             # run the app with a development MongoDB container
-npm start                      # run only Node; MongoDB must already be available
-npm run api:generate           # generate TypeScript types from docs/openapi.yaml
-npm --prefix web run typecheck # typecheck Vue 3 frontend
-npm --prefix web test          # run frontend behavior tests with Vitest
-docker compose up --build -d
-./deploy.sh                    # host-specific production deployment; requires authorization
-```
+## Deployment
 
-`npm test`, local development, and Compose require Docker. Do not replace the lockfile or upgrade dependencies unless dependency work is part of the request.
-
-## Validation
-
-Run the narrowest checks that cover the change:
-
-- Documentation or metadata only: `git diff --check` and verify relative Markdown links.
-- Frontend changes: `npm run build`, `npm --prefix web run typecheck`, and `npm --prefix web test`. Prefer behavior tests under `web/src/`; do not duplicate build/file-existence assertions in server tests.
-- API contract changes: `npm run api:generate` and verify `types/generated/api-types.ts` is in sync.
-- Server, authentication, persistence, import/export, or API changes: `npm test`.
-- Dockerfile/container changes: `docker build .`; use the Compose health/login flow when behavior spans services.
-- Deployment orchestration only: `bash -n deploy.sh` and `npx --no-install mocha src/test/deploy-test.js`. These command-stub tests do not contact Docker or production; do not redeploy solely to test the script.
-
-- Verification scripts: retain ownership, anonymous-volume cleanup, interruption, request-deadline, and image-archive regressions. Run the full `verify:restore` / `verify:search:relevance` commands separately when changing those tools; their complete runs are not part of `npm run verify`. Synthetic passes, even with maintainer-approved labels, are not production recovery or relevance acceptance.
-
-Add or update a focused test under `src/test/` for non-trivial server behavior. Do not add a new test framework.
-
-## Routine host deployment
-
-- MongoDB is independently deployed and shared with travel-cards. Deploy only the Meemo service using `/home/lin/meemo`; the repository Compose stack is for standalone use and isolated tests.
-- After authorization, use `./deploy.sh`: one build, Meemo-only recreation, bounded readiness/image checks, and previous-image rollback on failure. Reuse checks already passed for the same code.
-- Do not add full-suite reruns, CI waiting, database freezes/backups, production clones, password resets, session inspection, or restore rehearsals to an ordinary application update. Those belong to separately scoped migration/recovery work. Do not generate an ad hoc deployment framework.
-- Documentation/test-only changes do not require a rebuild or restart unless explicitly requested. See [Deployment and releases](docs/RELEASE_CHECKLIST.md).
-
-## Documentation and releases
-
-Update documentation with behavior changes:
-
-- `README.md`: setup, authentication, configuration, and deployment.
-- `docs/ARCHITECTURE.md`: boundaries, data flow, or endpoint groups.
-- `docs/BACKUP_RESTORE.md`: production backup, disaster recovery, and verification runbooks.
-- `docs/RELEASE_CHECKLIST.md`: release candidate validation, deployment, and rollback checklist.
-- `CONTRIBUTING.md`: contributor workflow and standards.
-- `SECURITY.md`: reporting or support policy.
-
-Use short imperative commit subjects. Conventional Commit prefixes such as `fix:`, `feat:`, `docs:`, `test:`, and `chore:` are preferred.
+- Host deployment requires explicit user authorization.
+- Use `./deploy.sh`: updates only the Meemo container (MongoDB is shared and deployed independently).
+- Docs or test-only changes do not require rebuilding or redeploying.

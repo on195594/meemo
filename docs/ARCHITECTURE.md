@@ -75,12 +75,10 @@ When changing an endpoint, update its route handler, the OpenAPI specification, 
 
 ## Maintenance and tooling
 
-Meemo maintains operations, garbage collection, benchmark, and verification tooling in `scripts/`:
+Meemo maintains operations, garbage collection, and verification tooling in `scripts/`:
 
 - `scripts/migrate-thing-revisions.js`: Backfills missing Thing revisions, refuses invalid values, and requires an exact target database name.
 - `scripts/gc-attachments.js`: Identifies and removes unreferenced orphan attachments from filesystem storage.
-- `scripts/benchmark-search.js`: Benchmarks search performance across regex, text index, and hashtag filtering.
-- `scripts/verify-restore.js`: Automated synthetic disaster recovery verifier.
 - `scripts/verify.js`: Comprehensive quality and integration verification orchestrator.
 
 The one-off v1-to-v2 legacy collection and file-user migration tooling (`migrate-data-to-v2.js`, `migrate-users-to-mongo.js`, `preflight-legacy-retirement.js`, `verify-production-readiness.js`, `owner-map.js`) has been retired following full production cutover to unified collections.
@@ -113,8 +111,6 @@ Meemo employs a multi-tiered performance strategy balancing database efficiency,
 - Frontend state and request behavior: Vitest via `npm --prefix web test`.
 - Type and production asset checks: `npm --prefix web run typecheck` and `npm run build`.
 - Runtime integration: isolated Docker Compose smoke tests covering health, authentication, and representative writes/reads.
-- Recovery: explicit `npm run verify:restore` builds and retains an image, backs up a synthetic database and attachment volume, then restores into fresh Docker resources. It checks documents/indexes, authenticated readback, session revocation, maintenance freeze, attachment/export bytes, sharing, CAS, restart persistence, and a separate-database sentinel; it validates the archive's image config digest rather than relying on a cached image. Both explicit verification entry points handle SIGINT/SIGTERM, bound subprocess/request waits, and clean up owned containers including anonymous MongoDB volumes. This is not production recovery authorization.
-- Search quality: explicit `npm run verify:search:relevance` reuses the benchmark's service path with labeled synthetic queries. `scripts/fixtures/search-relevance.json` is synthetic; its agent-authored labels were maintainer-approved on 2026-10-22 (see [search baseline](SEARCH_BASELINE.md)), which is still not production relevance acceptance.
 
 ## Note list rendering
 
@@ -129,4 +125,4 @@ The Dockerfile uses a multi-stage build (`web-builder` for `web/` and `builder` 
 
 Production MongoDB is independently deployed and shared with travel-cards. `deploy.sh` builds `meemo:latest` once with the commit label, then updates only `meemo` through the existing `/home/lin/meemo` configuration using `--no-deps --no-build --wait`. It checks health and image identity, and restores the previous local image if activation fails. Routine deployment does not operate on MongoDB or perform data backup/recovery. Container recreation causes a short interruption; see [Deployment and releases](RELEASE_CHECKLIST.md).
 
-CI validates pull requests and pushes to `master` without publishing images. The manually dispatched **RC release** workflow reruns validation from the current `master` head, publishes an immutable multi-platform RC image (`linux/amd64` and `linux/arm64`) to GHCR with OCI metadata, SBOM, and provenance, then creates a GitHub prerelease. It does not update stable image aliases or deploy production. See the [documentation index](README.md), [backup/restore runbook](BACKUP_RESTORE.md), [branch protection reference](BRANCH_PROTECTION.md), [dependency security audit](DEPENDENCY_SECURITY.md), and [release checklist](RELEASE_CHECKLIST.md).
+CI validates pull requests and pushes to `master` without publishing images. The manually dispatched **RC release** workflow reruns validation from the current `master` head, publishes an immutable multi-platform RC image (`linux/amd64` and `linux/arm64`) to GHCR with OCI metadata, SBOM, and provenance, then creates a GitHub prerelease. It does not update stable image aliases or deploy production. See the [documentation index](README.md), [backup/restore runbook](BACKUP_RESTORE.md), [dependency security audit](DEPENDENCY_SECURITY.md), and [release checklist](RELEASE_CHECKLIST.md).

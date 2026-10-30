@@ -13,8 +13,6 @@
     "api:generate": "openapi-typescript docs/openapi.yaml --default-non-nullable false -o types/generated/api-types.ts",
     "verify:quality": "node scripts/verify.js --quality",
     "verify:integration": "bash scripts/verify-integration.sh",
-    "verify:restore": "node scripts/verify-restore.js",
-    "verify:search:relevance": "node scripts/benchmark-search.js --relevance",
     "verify": "node scripts/verify.js",
     "migrate:thing-revisions": "node scripts/migrate-thing-revisions.js"
   },

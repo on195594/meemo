@@ -15,11 +15,9 @@
 
 ## Operations and validation
 
-- [Backup and restore](BACKUP_RESTORE.md): separately scoped Meemo database/attachment recovery on the shared MongoDB server, and explicit synthetic restore checks.
+- [Backup and restore](BACKUP_RESTORE.md): separately scoped Meemo database/attachment recovery on the shared MongoDB server.
 - [Deployment and releases](RELEASE_CHECKLIST.md): routine Meemo-only updates and image rollback; migrations, recovery exercises and published RC releases are separate operations.
-- [Branch protection reference](BRANCH_PROTECTION.md): policy if protection is enabled; the single-maintainer workflow permits direct commits.
 - [Dependency security](DEPENDENCY_SECURITY.md): audit procedure and recorded findings; rerun the audit rather than assuming recorded results are current.
-- [Search baseline](SEARCH_BASELINE.md): performance measurements and the explicit `verify:search:relevance` synthetic corpus; labels approved by the maintainer (2026-10-22); known gaps are reported, not hidden.
 - [Nginx reference](nginx-reverse-proxy.conf): reverse-proxy configuration template; adapt it before use.
 
 ## Plans and review snapshots
@@ -40,7 +38,7 @@ Keep new plans in `roadmaps/` and review reports in `reviews/`. These documents 
 
 - Keep runtime source in `src/`, browser source in `web/src/`, tests beside frontend source or in `src/test/`, and automation in `scripts/`.
 - Root entry points (`app.js`, `runTests`, `localdevelopment`, `start.sh`, `deploy.sh`) are intentional. In particular, `start.sh` is the Docker command, not a discarded legacy script.
-- One-off legacy v1-to-v2 migration and preflight tooling has been pruned after full production cutover to unified collections. Operational scripts (restore verification, attachment GC, revision backfill, benchmark, and build) remain active under `scripts/`.
+- One-off legacy v1-to-v2 migration and preflight tooling has been pruned after full production cutover to unified collections. Operational scripts (attachment GC, revision backfill, and build) remain active under `scripts/`.
 - `types/api.d.ts` and `types/index.d.ts` form the package's declared TypeScript entry point; generated HTTP types live separately in `types/generated/`.
 - `npm run build` produces staging output in `web/dist/` and the Express-served copy in `public/`. Both are ignored and reproducible; `npm run build:web` updates only the staging output.
 - Keep dependencies, account files, attachments, database files, backups, and migration evidence out of commits. Do not treat ignored local state as disposable temporary files. Clean only identified logs/captures/review scratch copies after preserving conclusions; do not blanket-delete ignored directories, shared `/tmp`, or local data.
