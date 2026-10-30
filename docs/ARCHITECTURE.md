@@ -15,7 +15,7 @@ Meemo is a small browser application served by Express and backed by MongoDB and
 9. `src/users.js` handles account operations and passwords through `MongoUserRepository`; legacy file/fallback repositories and the unused `UserRepository` compatibility alias have been removed.
 10. `npm run build` compiles `web/` with Vite into ignored `web/dist/`, then copies the output to ignored `public/`, serving as the modern Vue 3 Single Page Application with client-side routing, Material Design 3 tokens, 12-color note theming, and a Google Keep-inspired expanded note viewing/editing modal dialog.
 
-The runtime reads and writes only unified collections. `things` is the online single source of truth for tag identity and usage: `/api/tags` aggregates the owner-partitioned `things.tags` arrays in real time, while the persisted `tags` collection is a migration/readiness projection. Its repository exposes index/collection access and atomic replacement, not per-tag CRUD; projection test fixtures write documents directly. Ordinary Thing mutations (`add`, `put`, `del`) write directly and atomically to `things` without active-writer lease counters. For offline migration and release readiness verification (`verify-production-readiness.js`), a durable MongoDB write freeze gate (`things.acquireWriteFreeze` / `things.requireWriteFreeze`) blocks Thing mutations and fails closed when unverified. Tag reconstruction (`cleanupTags`) repairs Thing tag arrays using compare-and-set filters, aggregates fresh usage from `things`, and atomically swaps the replacement collection over `tags` via MongoDB's atomic `renameCollection`. Dynamic `<user>_*` collection discovery exists only in migration and read-only retirement tooling; it is not part of request handling.
+The runtime reads and writes only unified collections. `things` is the online single source of truth for tag identity and usage: `/api/tags` aggregates the owner-partitioned `things.tags` arrays in real time, while the persisted `tags` collection is a projection. Its repository exposes index/collection access and atomic replacement, not per-tag CRUD; projection test fixtures write documents directly. Ordinary Thing mutations (`add`, `put`, `del`) write directly and atomically to `things` without active-writer lease counters. Tag reconstruction (`cleanupTags`) repairs Thing tag arrays using compare-and-set filters, aggregates fresh usage from `things`, and atomically swaps the replacement collection over `tags` via MongoDB's atomic `renameCollection`. Dynamic `<user>_*` collection discovery is completely retired; it is not part of request handling.
 
 Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, persistence in `src/database/`, and attachment filesystem access in `src/storage/`. HTTP routes must call services instead of database or filesystem APIs directly.
 
@@ -73,20 +73,17 @@ The authoritative OpenAPI 3.0 specification is maintained in `docs/openapi.yaml`
 
 When changing an endpoint, update its route handler, the OpenAPI specification, and the corresponding browser client call under `web/src/api/client.ts`. Add or update a test under `src/test/` for non-trivial server behavior.
 
-## Migration and tooling
+## Maintenance and tooling
 
-Meemo keeps v1-to-v2 migration tools for upgrades and rollback evidence; they are historical tooling, not runtime architecture:
+Meemo maintains operations, garbage collection, benchmark, and verification tooling in `scripts/`:
 
-- `scripts/migrate-users-to-mongo.js`: Migrates legacy file-based accounts to MongoDB `users` with `--dry-run`, `--apply`, and `--verify`.
-- `scripts/migrate-data-to-v2.js`: Migrates dynamic legacy `<user>_*` collections into unified `things`, `tags`, and `settings` collections partitioned by `ownerId` with `--dry-run`, `--apply`, and `--verify`; every mode requires an exact expected database name, and apply/verify bind it into the independently reviewed source artifact.
-- `scripts/migrate-thing-revisions.js`: Backfills only missing Thing revisions, refuses invalid values, and requires an exact target database name.
-- `scripts/preflight-legacy-retirement.js`: Performs a read-only, fail-closed check of environment/database binding, user identity mapping, migration state, and legacy collection ownership before operators retire compatibility data.
-- `scripts/verify-production-readiness.js`: Verifies legacy migration readiness, source artifact binding, session revocation, tag integrity, attachment resolution, and authenticated readback. Login/logout modify sessions; this is not a read-only check or a routine deployment prerequisite.
+- `scripts/migrate-thing-revisions.js`: Backfills missing Thing revisions, refuses invalid values, and requires an exact target database name.
 - `scripts/gc-attachments.js`: Identifies and removes unreferenced orphan attachments from filesystem storage.
 - `scripts/benchmark-search.js`: Benchmarks search performance across regex, text index, and hashtag filtering.
-- `scripts/owner-map.js`: Shared utility for validating and resolving legacy owner-prefix mappings.
+- `scripts/verify-restore.js`: Automated synthetic disaster recovery verifier.
+- `scripts/verify.js`: Comprehensive quality and integration verification orchestrator.
 
-The request path must never query dynamic legacy collections. Removing source data, selecting MongoDB accounts, and ending the rollback window remain operator-controlled deployment actions.
+The one-off v1-to-v2 legacy collection and file-user migration tooling (`migrate-data-to-v2.js`, `migrate-users-to-mongo.js`, `preflight-legacy-retirement.js`, `verify-production-readiness.js`, `owner-map.js`) has been retired following full production cutover to unified collections.
 
 ## Performance and caching architecture
 

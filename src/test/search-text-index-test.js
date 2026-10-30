@@ -9,7 +9,6 @@ var expect = require('expect.js'),
     databaseThings = require('../database/things.js'),
     search = require('../services/search-service.js'),
     thingService = require('../services/thing-service.js'),
-    migrator = require('../../scripts/migrate-data-to-v2.js'),
     appModule = require('../../app.js');
 
 describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
@@ -330,31 +329,6 @@ describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
                 .expect(200);
             expect(res.body).to.have.property('things');
             expect(res.body.things.length).to.be.greaterThan(0);
-        });
-    });
-
-    describe('Migration plannedOwners resolution without existing Mongo user', function () {
-        it('resolves canonical owner from plannedOwners during dry-run when user not in Mongo', function (done) {
-            var planned = { newuser: '000000000000000000009999' };
-            migrator.resolveCanonicalOwner(db, 'newuser', function (err, canonicalId, username) {
-                expect(err).to.be(null);
-                expect(canonicalId).to.be('000000000000000000009999');
-                expect(username).to.be('newuser');
-                done();
-            }, 'test-phase', null, planned);
-        });
-
-        it('rejects when resolved user ID does not match plannedOwners manifest', async function () {
-            var wrongPlanned = { textsearchuser: '000000000000000000008888' };
-            await new Promise(function (resolve, reject) {
-                migrator.resolveCanonicalOwner(db, 'textsearchuser', function (err) {
-                    if (err) {
-                        expect(err.message).to.contain('manifest');
-                        return resolve();
-                    }
-                    reject(new Error('Expected manifest mismatch error'));
-                }, 'test-phase', null, wrongPlanned);
-            });
         });
     });
 });

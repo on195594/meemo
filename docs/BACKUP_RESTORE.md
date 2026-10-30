@@ -94,48 +94,8 @@ For an explicitly authorized **data restore**:
 4. Revoke restored browser sessions and handle [MCP authorization state](#optional-mcp-authorization-state) within the selected Meemo database before opening access.
 5. Start only Meemo with the retained image and previous configuration. Verify readiness, representative authenticated reads, attachments and the affected recovery behavior before accepting the restore. If checks fail, retain the evidence and diagnose before another attempt.
 
-## Migration source selection
+## Historical migration retirement
 
-Before migrating legacy collections, inventory every candidate namespace and backup. Classify test, fixture, and rehearsal collections separately; never select a source only because its schema validates.
+The application and production database operate entirely on unified collections (`things`, `users`, `settings`, `sessions`). The legacy file-based authentication and per-user dynamic collections have been fully cut over and retired. Historical one-off migration and preflight tooling (`migrate-data-to-v2.js`, `migrate-users-to-mongo.js`, `verify-production-readiness.js`, `preflight-legacy-retirement.js`, `owner-map.js`) has been pruned from `scripts/` as part of codebase simplification.
 
-1. Compare users, Things, tags, settings, time ranges, owner partitions, and representative content fingerprints across the live legacy database and pre-change backups.
-2. Independently create and review a private expected-source JSON artifact before selecting the migration input. It contains exactly `version`, `migration`, `database`, `ownerMapDigest`, and a sorted `namespaces` array; `database` is the explicitly selected MongoDB database name, and each namespace entry contains its exact `name`, migrated-document `count`, and SHA-256 `fingerprint` of canonical sorted EJSON. Settings facts cover `type: frontend`. Do not derive this authority artifact with the migration command.
-3. Make the reviewed artifact read-only. Run `--dry-run` only as a non-authoritative plan, compare its counts with the independent inventory, and reject test, fixture, sample, or demo namespaces:
-
-   ```bash
-   chmod 400 "$EXPECTED_SOURCE"
-   node scripts/migrate-data-to-v2.js --dry-run \
-     --mongo-url "$MONGODB_URL" --expect-database "$EXPECTED_DATABASE" \
-     --owner-map "$OWNER_MAP"
-   ```
-
-4. Under separate production mutation authorization and a verified application write freeze, consume that exact artifact for both operations:
-
-   ```bash
-   node scripts/migrate-data-to-v2.js --apply \
-     --mongo-url "$MONGODB_URL" --expect-database "$EXPECTED_DATABASE" \
-     --owner-map "$OWNER_MAP" --expected-source "$EXPECTED_SOURCE"
-   node scripts/migrate-data-to-v2.js --verify \
-     --mongo-url "$MONGODB_URL" --expect-database "$EXPECTED_DATABASE" \
-     --owner-map "$OWNER_MAP" --expected-source "$EXPECTED_SOURCE"
-   ```
-
-   Omit `--owner-map` only when no map is required. Every mode requires `--expect-database`; it must exactly match both MongoDB's connected database name and, for apply/verify, the expected-source `database`. Clearly non-production database names and namespace prefixes are rejected. The expected-source path must be a non-symlink, read-only regular file. In-memory objects, missing, writable, stale, database-divergent, namespace-divergent, owner-map-divergent, migration-state-divergent, or extra/operator-labelled fields fail closed before migration writes.
-5. Preserve the current production database, attachment state, Compose configuration, and exact prior image as the immutable hashed rollback set before replacing data.
-
-Standalone MongoDB cannot atomically update `things` and a materialized `tags` collection. Runtime tag reads therefore aggregate `things.tags` directly; ordinary add, edit/archive, delete, and import paths write directly to `things` without cross-collection counter writes or writer lease counters. For offline maintenance and cutover verification, establish a verified write freeze via `things.acquireWriteFreeze`; `verify-production-readiness.js` fails closed via `things.requireWriteFreeze` if the durable freeze gate in `system_maintenance` is not present. `thingService.cleanupTags` repairs derived Thing tag arrays using compare-and-set filters, aggregates fresh usage directly from `things`, and atomically renames a uniquely indexed staging collection over `tags`.
-
-Before cutover, ensure the legacy users file is also mode 0600, revoke pre-migration sessions, and provision a mode-0600 JSON credentials file containing exactly `mongoUrl`, `username`, `password`, and one representative `thingId`. Run the readiness verifier without secret-bearing arguments:
-
-```bash
-umask 077
-node scripts/verify-production-readiness.js \
-  --users-file "$USERS_FILE" --owner-map "$OWNER_MAP" \
-  --expected-source "$EXPECTED_SOURCE" \
-  --credentials-file "$READBACK_CREDENTIALS" --origin "$APP_ORIGIN" \
-  --attachment-dir "$ATTACHMENT_DIR" \
-  --expect-environment "$DEPLOYMENT_ENV" --expect-database "$EXPECTED_DATABASE" \
-  >"$READINESS_EVIDENCE" 2>&1
-```
-
-The verifier fails on source binding, owner/schema/count invariants, nonzero sessions, inexact tags, unresolved attachments, or authenticated protected readback. Output is only generic `READINESS PASS` with non-sensitive counts or `READINESS FAIL`; process health alone is not business readiness.
+Production recovery strictly follows the standard MongoDB dump/restore and attachment volume extraction runbook above, verified end-to-end via `npm run verify:restore`. Standalone MongoDB stores `things` as the authoritative single source of truth for tag identity and usage; `/api/tags` aggregates `things.tags` dynamically without requiring cross-collection coordination. Tag repair and projection refresh are managed online via `thingService.cleanupTags`.

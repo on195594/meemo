@@ -15,22 +15,14 @@ var MongoClient = require('mongodb').MongoClient;
 var config = require('../config.js');
 var users = require('../users.js');
 var MongoUserRepository = require('../database/users-mongo.js');
-var migrator = require('../../scripts/migrate-users-to-mongo.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
 
-describe('MongoDB User Repository and Migration (RF-202)', function () {
+describe('MongoDB User Repository (RF-202)', function () {
     var dbClient;
     var mongoRepo;
-    var testUsersFile = '/tmp/meemo-mongo-test-' + process.pid + '.json';
-    var testManifestFile = '/tmp/meemo-mongo-test-' + process.pid + '.manifest.json';
-    var prevUsersFile = process.env.USERS_FILE;
-    var prevAuthSource = process.env.AUTH_USER_SOURCE;
 
     before(async function () {
-        process.env.USERS_FILE = testUsersFile;
-        fs.rmSync(testUsersFile, { force: true });
-
         dbClient = await MongoClient.connect(config.databaseUrl);
         config.db = dbClient.db();
         mongoRepo = new MongoUserRepository(config.db);
@@ -38,16 +30,6 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
     });
 
     after(async function () {
-        if (prevUsersFile === undefined) delete process.env.USERS_FILE;
-        else process.env.USERS_FILE = prevUsersFile;
-
-        if (prevAuthSource === undefined) delete process.env.AUTH_USER_SOURCE;
-        else process.env.AUTH_USER_SOURCE = prevAuthSource;
-
-        users.initRepository('mongo');
-        fs.rmSync(testUsersFile, { force: true });
-        fs.rmSync(testManifestFile, { force: true });
-
         if (dbClient) {
             await config.db.collection('users').drop();
             await dbClient.close();
@@ -56,27 +38,7 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
 
     beforeEach(async function () {
         await config.db.collection('users').deleteMany({});
-        await config.db.collection('system_migrations').deleteOne({ _id: 'users-file-to-mongo' });
-        fs.rmSync(testUsersFile, { force: true });
-        fs.rmSync(testManifestFile, { force: true });
     });
-
-    function migrationOptions(usersFile) {
-        var failure;
-        var report;
-        var identity = {
-            usersFile: usersFile,
-            mongoUrl: config.databaseUrl,
-            manifestFile: testManifestFile
-        };
-        migrator.dryRun(identity, function (error, result) {
-            failure = error;
-            report = result;
-        });
-        if (failure) throw failure;
-        expect(report.manifest.manifestDigest).to.be.ok();
-        return identity;
-    }
 
     describe('MongoUserRepository CRUD & constraints', function () {
         it('creates user, enforces usernameNorm unique index, and retrieves user', function (done) {
@@ -159,171 +121,4 @@ describe('MongoDB User Repository and Migration (RF-202)', function () {
         });
     });
 
-    describe('Migration script (dry-run, apply, verify)', function () {
-        var sourceUsers = {
-            alice: {
-                username: 'alice',
-                displayName: 'Alice Liddell',
-                email: 'alice@example.com',
-                passwordHash: '$2b$10$e8w6Q01gZ2K5T1mU7A9h5u3Y9f5K3mZ7Q8'
-            },
-            bob: {
-                username: 'bob',
-                displayName: 'Bob Builder',
-                email: 'bob@example.com',
-                passwordHash: '$2b$10$p4r9W12hB3L6V2nV8B0j6v4Z0g6L4nZ8R9'
-            }
-        };
-
-        beforeEach(function () {
-            fs.writeFileSync(testUsersFile, JSON.stringify(sourceUsers, null, 4));
-        });
-
-
-        it('--dry-run inspects source file without writing to MongoDB', function (done) {
-            migrator.dryRun({
-                usersFile: testUsersFile,
-                mongoUrl: config.databaseUrl,
-                manifestFile: testManifestFile
-            }, function (err, report) {
-                if (err) return done(err);
-
-                expect(report.success).to.be(true);
-                expect(report.totalSourceUsers).to.equal(2);
-                expect(report.validUsersCount).to.equal(2);
-                expect(report.collisions.length).to.equal(0);
-
-                // Ensure nothing was written to MongoDB
-                mongoRepo.count(function (err, count) {
-                    if (err) return done(err);
-                    expect(count).to.equal(0);
-                    done();
-                });
-            });
-        });
-
-        it('--dry-run detects normalization collisions in source file', function (done) {
-            var collidedSource = {
-                alice: { username: 'alice', passwordHash: 'hash1' },
-                Alice: { username: 'Alice', passwordHash: 'hash2' }
-            };
-            var collideFile = '/tmp/meemo-collide-test-' + process.pid + '.json';
-            var collideManifest = collideFile + '.manifest.json';
-            fs.writeFileSync(collideFile, JSON.stringify(collidedSource, null, 4));
-
-            migrator.dryRun({
-                usersFile: collideFile,
-                mongoUrl: config.databaseUrl,
-                manifestFile: collideManifest
-            }, function (err) {
-                expect(err).to.be.ok();
-                expect(err.message).to.contain('Normalization collisions detected');
-                fs.rmSync(collideFile, { force: true });
-                fs.rmSync(collideManifest, { force: true });
-                done();
-            });
-        });
-
-        it('--apply migrates users idempotently and preserves password hashes verbatim', function (done) {
-            var options = migrationOptions(testUsersFile);
-
-            migrator.apply(options, function (err, stats) {
-                if (err) return done(err);
-
-                expect(stats.migrated).to.equal(2);
-                expect(stats.total).to.equal(2);
-
-                // Verify users in MongoDB
-                mongoRepo.getByUsername('alice', function (err, alice) {
-                    if (err) return done(err);
-                    expect(alice).to.be.ok();
-                    expect(alice.email).to.equal('alice@example.com');
-                    expect(alice.passwordHash).to.equal(sourceUsers.alice.passwordHash);
-
-                    // Idempotency check: apply again
-                    migrator.apply(options, function (err, stats2) {
-                        if (err) return done(err);
-                        expect(stats2.migrated).to.equal(0);
-                        expect(stats2.replayed).to.equal(true);
-
-                        mongoRepo.count(function (err, count) {
-                            if (err) return done(err);
-                            expect(count).to.equal(2); // No duplicate documents created!
-                            done();
-                        });
-                    });
-                });
-            });
-        });
-
-        it('--verify confirms 100% data fidelity between source and target', function (done) {
-            var options = migrationOptions(testUsersFile);
-
-            // First apply
-            migrator.apply(options, function (err) {
-                if (err) return done(err);
-
-                // Then verify
-                migrator.verify(options, function (err, result) {
-                    if (err) return done(err);
-
-                    expect(result.verified).to.equal(2);
-                    expect(result.total).to.equal(2);
-                    expect(result.mismatches.length).to.equal(0);
-                    done();
-                });
-            });
-        });
-    });
-
-    describe('End-to-end integration with AUTH_USER_SOURCE', function () {
-        it('authenticates migrated user via Express app when AUTH_USER_SOURCE=mongo', function (done) {
-            // Create user with known password directly in users.json
-            var bcrypt = require('bcrypt');
-            bcrypt.hash('Password123!', 10, function (err, hash) {
-                if (err) return done(err);
-
-                var source = {
-                    charlie: {
-                        username: 'charlie',
-                        displayName: 'Charlie Brown',
-                        email: 'charlie@example.com',
-                        passwordHash: hash
-                    }
-                };
-                fs.writeFileSync(testUsersFile, JSON.stringify(source, null, 4));
-
-                // Apply migration to Mongo
-                migrator.apply(migrationOptions(testUsersFile), function (err) {
-                    if (err) return done(err);
-
-                    // Switch AUTH_USER_SOURCE to mongo
-                    users.initRepository('mongo');
-
-                    var app = createApp({ sessionMemory: true });
-                    var agent = request.agent(app);
-
-                    // Login with Charlie's original password against MongoDB!
-                    agent
-                        .post('/api/login')
-                        .send({ username: 'charlie', password: 'Password123!' })
-                        .expect(200)
-                        .end(function (err) {
-                            if (err) return done(err);
-
-                            // Verify profile works
-                            agent
-                                .get('/api/profile')
-                                .expect(200)
-                                .end(function (err, res) {
-                                    if (err) return done(err);
-                                    expect(res.body.user.username).to.equal('charlie');
-                                    expect(res.body.user.displayName).to.equal('Charlie Brown');
-                                    done();
-                                });
-                        });
-                });
-            });
-        });
-    });
 });
