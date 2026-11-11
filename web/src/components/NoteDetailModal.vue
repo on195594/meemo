@@ -234,7 +234,7 @@ const props = withDefaults(
     highlightQuery?: string;
     duplicating?: boolean;
     onDuplicate?: (thing: Thing) => Promise<{ success: boolean; error?: string }>;
-    onSaveEdit?: (id: string, updates: Partial<Thing>) => Promise<{ success: boolean; thing?: Thing; error?: string }>;
+    onSaveEdit?: (id: string, updates: Partial<Thing>, snapshot?: Thing) => Promise<{ success: boolean; thing?: Thing; error?: string; retryable?: boolean }>;
     // Signed-in user ID; when set, unsaved edits are kept on this device.
     draftScope?: string;
   }>(),
@@ -279,7 +279,9 @@ const bodyDraft = ref('');
 const editDraft = computed(() => joinTitle(titleDraft.value, bodyDraft.value));
 // Field values as last loaded from the server; any difference from them is an unsaved edit.
 const baseline = reactive({ title: '', body: '' });
+const draftSnapshot = ref<Thing | null>({ ...currentNote.value });
 function setDraft(content: string) {
+  draftSnapshot.value = { ...currentNote.value };
   const parts = splitTitle(content);
   titleDraft.value = baseline.title = parts.title;
   bodyDraft.value = baseline.body = parts.body;
@@ -322,14 +324,19 @@ const hasUnsavedChanges = computed(() => {
 // Unsaved edits survive a closed tab or expired session on this device.
 const noteDraftKey = computed(() => (props.draftScope && currentNote.value._id ? `note:${props.draftScope}:${currentNote.value._id}` : null));
 const restoredDraft = ref(false);
-watch([editDraft, hasUnsavedChanges], () => {
+watch([editDraft, hasUnsavedChanges, draftSnapshot], () => {
   if (!props.open) return;
-  saveDraft(noteDraftKey.value, hasUnsavedChanges.value && editDraft.value.trim() ? { content: editDraft.value } : null);
+  saveDraft(noteDraftKey.value, hasUnsavedChanges.value && editDraft.value.trim() ? {
+    content: editDraft.value,
+    baseline: draftSnapshot.value ? {
+      content: draftSnapshot.value.content, revision: draftSnapshot.value.revision,
+    } : undefined,
+  } : null);
 });
 
 // Phones may discard a backgrounded tab, so save when the page is hidden instead of waiting for close.
 function handleVisibilityChange() {
-  if (document.visibilityState === 'hidden' && hasUnsavedChanges.value) saveContent();
+  if (document.visibilityState === 'hidden' && hasUnsavedChanges.value) saveContent(false);
 }
 
 const dateValue = computed(() => {
@@ -529,6 +536,8 @@ let activeModalTaskSaves = 0;
 }
 
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let autoSavePaused = false;
+let autoSaveRetryCount = 0;
 
 function clearAutoSaveTimer() {
   if (autoSaveTimer) {
@@ -537,26 +546,26 @@ function clearAutoSaveTimer() {
   }
 }
 
-function scheduleAutoSave() {
+function scheduleAutoSave(delay = 1000) {
   clearAutoSaveTimer();
-  if (!props.canEdit || props.busy || !props.open) return;
+  if (!props.canEdit || props.busy || !props.open || autoSavePaused) return;
   autoSaveTimer = setTimeout(() => {
     if (hasUnsavedChanges.value && !isSaving.value && !isClosing.value && props.open) {
-      saveContent();
+      saveContent(false);
     }
-  }, 1000);
+  }, delay);
 }
 
 function handleInputBlur() {
   clearAutoSaveTimer();
   if (hasUnsavedChanges.value && !isSaving.value && !isClosing.value && props.open) {
-    saveContent();
+    saveContent(false);
   }
 }
 
 function handleTextareaInput() {
   draftGeneration++;
-  actionError.value = null;
+  if (!autoSavePaused) actionError.value = null;
   autosize();
   scheduleAutoSave();
 }
@@ -573,9 +582,13 @@ function handleTextareaKeydown(e: KeyboardEvent) {
 
 let activeSavePromise: Promise<boolean> | null = null;
 
-async function saveContent(): Promise<boolean> {
-  if (!props.canEdit || props.busy || !currentNote.value) return false;
+async function saveContent(manual = true): Promise<boolean> {
+  if (!props.canEdit || props.busy || !currentNote.value || (!manual && autoSavePaused)) return false;
   if (activeSavePromise) return activeSavePromise;
+  if (manual) {
+    autoSavePaused = false;
+    autoSaveRetryCount = 0;
+  }
 
   const trimmed = editDraft.value.trim();
   if (!trimmed) {
@@ -584,6 +597,7 @@ async function saveContent(): Promise<boolean> {
   }
 
   if (trimmed === (currentNote.value.content || '')) {
+    draftSnapshot.value = { ...currentNote.value };
     baseline.title = titleDraft.value;
     baseline.body = bodyDraft.value;
     return true;
@@ -593,13 +607,16 @@ async function saveContent(): Promise<boolean> {
     isSaving.value = true;
     actionError.value = null;
     const saveGeneration = draftGeneration;
+    let retryDelay = 1000;
 
     try {
       if (props.onSaveEdit) {
-        const result = await props.onSaveEdit(currentNote.value._id, { content: trimmed });
+        const result = await props.onSaveEdit(currentNote.value._id, { content: trimmed }, draftSnapshot.value || undefined);
         if (result.success) {
+          autoSaveRetryCount = 0;
           if (result.thing) currentNote.value = { ...result.thing };
           else currentNote.value.content = trimmed;
+          draftSnapshot.value = { ...currentNote.value };
           if (saveGeneration === draftGeneration) {
             baseline.title = titleDraft.value;
             baseline.body = bodyDraft.value;
@@ -607,11 +624,14 @@ async function saveContent(): Promise<boolean> {
           return true;
         } else {
           actionError.value = result.error || 'Failed to save note';
+          autoSavePaused = !result.retryable || autoSaveRetryCount >= 3;
+          if (!autoSavePaused) retryDelay *= 2 ** autoSaveRetryCount++;
           return false;
         }
       } else {
         emit('update', currentNote.value._id, { content: trimmed });
         currentNote.value.content = trimmed;
+        draftSnapshot.value = { ...currentNote.value };
         if (saveGeneration === draftGeneration) {
           baseline.title = titleDraft.value;
           baseline.body = bodyDraft.value;
@@ -620,12 +640,13 @@ async function saveContent(): Promise<boolean> {
       }
     } catch (err: any) {
       actionError.value = err.message || 'Failed to save note';
+      autoSavePaused = true;
       return false;
     } finally {
       isSaving.value = false;
       activeSavePromise = null;
       if (hasUnsavedChanges.value && !isClosing.value && props.open) {
-        scheduleAutoSave();
+        scheduleAutoSave(retryDelay);
       }
     }
   })();
@@ -899,9 +920,22 @@ watch(
         currentNote.value = { ...props.thing };
         setDraft(props.thing.content || '');
         draftGeneration = 0;
-        const saved = props.canEdit ? loadDraft<{ content: string }>(noteDraftKey.value) : null;
-        restoredDraft.value = !!saved?.content && saved.content !== props.thing.content;
-        if (saved && restoredDraft.value) {
+        autoSavePaused = false;
+        autoSaveRetryCount = 0;
+        const saved = props.canEdit ? loadDraft<{
+          content?: unknown; baseline?: { content?: unknown; revision?: unknown };
+        }>(noteDraftKey.value) : null;
+        restoredDraft.value = typeof saved?.content === 'string' && !!saved.content && saved.content !== props.thing.content;
+        if (saved && restoredDraft.value && typeof saved.content === 'string') {
+          const base = saved.baseline;
+          if (base && typeof base.content === 'string' && typeof base.revision === 'number' &&
+              Number.isSafeInteger(base.revision) && base.revision >= 1) {
+            draftSnapshot.value = { ...currentNote.value, content: base.content, revision: base.revision };
+          } else {
+            // Keep legacy baselines unknown across persistence/reload until an explicit owner save.
+            draftSnapshot.value = null;
+            autoSavePaused = true;
+          }
           const parts = splitTitle(saved.content);
           titleDraft.value = parts.title;
           bodyDraft.value = parts.body;

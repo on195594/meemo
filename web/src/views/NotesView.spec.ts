@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App.vue';
 import type { Thing } from '../api/client';
 import { useAuth } from '../composables/useAuth';
+import { useNotes } from '../composables/useNotes';
 import NotesView from './NotesView.vue';
 
 const NOTE: Thing = {
@@ -102,6 +103,40 @@ describe('Keep-style notes workspace', () => {
     wrapper?.unmount();
     wrapper = undefined;
     vi.unstubAllGlobals();
+  });
+
+  it('keeps a dialog draft on its original revision after a list refresh', async () => {
+    const { state, fetchMock } = backend();
+    const respond = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === '/api/things/note-1') {
+        if (init?.method === 'PUT' && JSON.parse(String(init.body)).expectedRevision !== state.revision) {
+          return json({ code: 'revision_conflict', message: 'Changed elsewhere' }, 409);
+        }
+        if (!init?.method) return json({ thing: { ...NOTE, ...state } });
+      }
+      return respond(input, init);
+    });
+    wrapper = (await renderApp(fetchMock)).wrapper;
+    await wrapper.get('.note-card').trigger('click');
+    await settle();
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.value = 'local draft';
+    body.dispatchEvent(new Event('input'));
+    await settle();
+    state.content = 'remote edit';
+    state.revision = 2;
+    await useNotes().fetchNotes();
+    await settle();
+    body.dispatchEvent(new Event('blur'));
+    await settle();
+
+    const writes = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT');
+    expect(writes).toHaveLength(1);
+    expect(JSON.parse(String(writes[0][1]?.body))).toMatchObject({ content: 'local draft', expectedRevision: 1 });
+    expect(state.content).toBe('remote edit');
+    expect(body.value).toBe('local draft');
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('changed elsewhere');
   });
 
   it.each([true, false])('copies a dialog draft once, retains the original and recovers from failure (success=%s)', async (success) => {

@@ -16,6 +16,7 @@ const isDeleted = ref(false);
 
 const skip = ref(0);
 const limit = ref(15);
+let paginationInvalidated = false;
 let userGeneration = 0;
 let notesRequestGeneration = 0;
 let tagsRequestGeneration = 0;
@@ -26,6 +27,7 @@ type NoteMutationResult = {
   thing?: Thing;
   error?: string;
   code?: string;
+  retryable?: boolean;
 };
 
 export function resetNotesState(): void {
@@ -44,6 +46,7 @@ export function resetNotesState(): void {
   isArchived.value = false;
   isDeleted.value = false;
   skip.value = 0;
+  paginationInvalidated = false;
 }
 
 const activeFilter = computed(() => {
@@ -101,10 +104,26 @@ export function useNotes() {
     }
   }
 
+  function invalidatePagination(): void {
+    const restartReset = isLoading.value;
+    paginationInvalidated = true;
+    const requestGeneration = ++notesRequestGeneration;
+    hasMore.value = true;
+    isLoadingMore.value = false;
+    if (restartReset) {
+      // Keep the reset loading; coalesce mutations and yield to newer filters/session resets.
+      void Promise.resolve().then(() => {
+        if (requestGeneration === notesRequestGeneration) return fetchNotes(true);
+      });
+    }
+  }
+
   async function fetchNotes(reset = true): Promise<void> {
+    reset = reset || paginationInvalidated;
     const generation = userGeneration;
     const requestGeneration = reset ? ++notesRequestGeneration : notesRequestGeneration;
     if (reset) {
+      paginationInvalidated = false;
       skip.value = 0;
       hasMore.value = true;
       isLoading.value = true;
@@ -128,18 +147,18 @@ export function useNotes() {
       if (generation !== userGeneration || requestGeneration !== notesRequestGeneration) return;
 
       const fetchedThings = res.things || [];
-      if (reset) {
-        things.value = fetchedThings;
-      } else {
-        things.value = [...things.value, ...fetchedThings];
-      }
+      const merged = new Map((reset ? [] : things.value).map(thing => [thing._id, thing]));
+      for (const thing of fetchedThings) merged.set(thing._id, thing);
+      things.value = [...merged.values()];
 
+      // Offsets count server rows, not deduplicated client entries.
       skip.value += fetchedThings.length;
       if (fetchedThings.length < limit.value) {
         hasMore.value = false;
       }
     } catch (err: any) {
       if (generation !== userGeneration || requestGeneration !== notesRequestGeneration) return;
+      if (reset) paginationInvalidated = true;
       if (err.status !== 401) {
         error.value = err.message || 'Failed to load notes';
       }
@@ -217,7 +236,9 @@ export function useNotes() {
   ): Promise<NoteMutationResult> {
     const generation = userGeneration;
     return enqueueNoteMutation(id, generation, async () => {
-      const existing = things.value.find((t) => t._id === id) || (snapshot?._id === id ? snapshot : undefined);
+      const current = things.value.find((t) => t._id === id);
+      const editSnapshot = snapshot?._id === id ? snapshot : undefined;
+      const existing = updates.content !== undefined && editSnapshot ? editSnapshot : (current || editSnapshot);
       if (!existing) {
         return { success: false, error: 'Note is no longer available', code: 'not_found' };
       }
@@ -267,7 +288,11 @@ export function useNotes() {
           : err.code === 'revision_conflict'
             ? 'This note changed elsewhere. Your draft was kept; reload before retrying.'
             : (err.message || 'Failed to update note');
-        return { success: false, error, code: err.code };
+        return {
+          success: false, error, code: err.code,
+          retryable: err.code !== 'revision_conflict' &&
+            (err instanceof TypeError || (err.status >= 500 && err.status <= 599)),
+        };
       }
     }).catch((err: any) => ({
       success: false,
@@ -284,6 +309,7 @@ export function useNotes() {
       try {
         const res = await api.things.restore(id, existing.revision);
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+        invalidatePagination();
         things.value = things.value.filter((t) => t._id !== id);
         return { success: true, thing: res.thing };
       } catch (err: any) {
@@ -308,6 +334,7 @@ export function useNotes() {
       try {
         await api.things.delete(id, existing.revision);
         if (generation !== userGeneration) return { success: false, error: 'Session changed' };
+        invalidatePagination();
         things.value = things.value.filter((t) => t._id !== id);
         // Return the exact snapshot that was deleted so Undo can use its revision.
         return { success: true, thing: existing };
@@ -341,6 +368,8 @@ export function useNotes() {
 
   // Search matching belongs to the server; other views can place notes locally.
   function placeNoteInCurrentView(thing: Thing) {
+    // Local mutations can shift every later offset and supersede pending list reads.
+    invalidatePagination();
     if (thing.archived !== isArchived.value || isDeleted.value) {
       things.value = things.value.filter((t) => t._id !== thing._id);
       return;

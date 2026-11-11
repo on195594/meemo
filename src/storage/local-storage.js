@@ -2,7 +2,8 @@
 
 var config = require('../config.js'),
     fs = require('fs').promises,
-    path = require('path');
+    path = require('path'),
+    isSafePathSegment = require('../path-segment.js');
 
 function userDirectory(userId) {
     return path.join(config.attachmentDir, userId);
@@ -81,10 +82,6 @@ async function removeFile(file) {
 async function checkAccess() {
     await fs.mkdir(config.attachmentDir, { recursive: true });
     await fs.access(config.attachmentDir, require('fs').constants.R_OK | require('fs').constants.W_OK);
-}
-
-function isSafePathSegment(segment) {
-    return typeof segment === 'string' && segment && path.basename(segment) === segment && segment !== '.' && segment !== '..' && segment.indexOf('\0') === -1;
 }
 
 async function listAttachments() {

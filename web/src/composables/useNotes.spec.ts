@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
 
 const apiMock = vi.hoisted(() => ({
   list: vi.fn(),
@@ -49,6 +50,21 @@ describe('useNotes behavior', () => {
     apiMock.tags.mockResolvedValue({ tags: [] });
   });
 
+  it.each([
+    [new TypeError('Failed to fetch'), true],
+    [{ status: 503, message: 'Unavailable' }, true],
+    [{ status: 401, message: 'Unauthorized' }, false],
+    [{ status: 400, message: 'Invalid request' }, false],
+    [{ status: 409, code: 'revision_conflict', message: 'Conflict' }, false],
+  ])('marks only transient update errors as retryable (%j)', async (failure, retryable) => {
+    const store = useNotes();
+    store.things.value = [note('one')];
+    apiMock.update.mockRejectedValue(failure);
+    apiMock.get.mockRejectedValue(failure);
+    const result = await store.updateNote('one', { content: 'changed' });
+    expect(result).toMatchObject({ success: false, retryable });
+  });
+
   it('loads notes from the current route-owned filters', async () => {
     apiMock.list.mockResolvedValue({ things: [note('filtered')] });
     const store = useNotes();
@@ -62,6 +78,159 @@ describe('useNotes behavior', () => {
       limit: 15,
     });
     expect(store.things.value.map((thing) => thing._id)).toEqual(['filtered']);
+  });
+
+  it.each(['create', 'delete'] as const)('restarts pagination after a local %s without duplicate or missing notes', async (mutation) => {
+    const remote = Array.from({ length: 31 }, (_, i) => note(String(i)));
+    apiMock.list.mockImplementation(async ({ skip, limit }) => ({ things: remote.slice(skip, skip + limit) }));
+    const store = useNotes();
+    await store.fetchNotes();
+    if (mutation === 'create') {
+      const created = note('new', { modifiedAt: 2 });
+      remote.unshift(created);
+      apiMock.create.mockResolvedValue({ thing: created });
+      await store.createNote(created.content);
+    } else {
+      remote.splice(3, 1);
+      apiMock.delete.mockResolvedValue({});
+      await store.deleteNote('3');
+    }
+
+    await store.fetchMore();
+    expect(apiMock.list).toHaveBeenLastCalledWith(expect.objectContaining({ skip: 0 }));
+    for (let i = 0; i < 4 && store.hasMore.value; i++) await store.fetchMore();
+    expect(store.things.value.map(t => t._id)).toEqual(remote.map(t => t._id));
+  });
+
+  it('retries a failed pagination rebuild as a replacement, not an append', async () => {
+    const initial = Array.from({ length: 15 }, (_, i) => note(String(i)));
+    apiMock.list.mockResolvedValueOnce({ things: initial });
+    const store = useNotes();
+    await store.fetchNotes();
+    apiMock.create.mockResolvedValue({ thing: note('new', { modifiedAt: 2 }) });
+    await store.createNote('new');
+    apiMock.list.mockRejectedValueOnce(new TypeError('Offline'));
+    await store.fetchMore();
+    apiMock.list.mockResolvedValueOnce({ things: [note('server-only')] });
+    await store.fetchMore();
+    expect(store.things.value.map(t => t._id)).toEqual(['server-only']);
+    expect(apiMock.list).toHaveBeenLastCalledWith(expect.objectContaining({ skip: 0 }));
+  });
+
+  it('deduplicates overlapping pages but advances by the raw server page size', async () => {
+    const first = Array.from({ length: 15 }, (_, i) => note(String(i)));
+    const overlap = Array.from({ length: 15 }, (_, i) => note(String(i + 14)));
+    apiMock.list.mockResolvedValueOnce({ things: first }).mockResolvedValueOnce({ things: overlap }).mockResolvedValueOnce({ things: [] });
+    const store = useNotes();
+    await store.fetchNotes();
+    await store.fetchMore();
+    expect(store.things.value).toHaveLength(29);
+    expect(new Set(store.things.value.map(t => t._id)).size).toBe(29);
+    await store.fetchMore();
+    expect(apiMock.list).toHaveBeenLastCalledWith(expect.objectContaining({ skip: 30 }));
+  });
+
+  it('ignores a pending pagination response superseded by a local mutation', async () => {
+    const first = Array.from({ length: 15 }, (_, i) => note(String(i)));
+    const pending = deferred<{ things: Thing[] }>();
+    apiMock.list.mockResolvedValueOnce({ things: first }).mockReturnValueOnce(pending.promise);
+    const store = useNotes();
+    await store.fetchNotes();
+    const loading = store.fetchMore();
+    const created = note('new', { modifiedAt: 2 });
+    apiMock.create.mockResolvedValue({ thing: created });
+    await store.createNote(created.content);
+    pending.resolve({ things: [note('stale')] });
+    await loading;
+    expect(store.things.value.some(t => t._id === 'stale')).toBe(false);
+    expect(store.things.value[0]._id).toBe('new');
+    expect(store.isLoadingMore.value).toBe(false);
+  });
+
+  it.each(['create', 'update'] as const)('restarts an in-flight filter reset after a local %s', async (mutation) => {
+    const stale = deferred<{ things: Thing[] }>();
+    const replacement = deferred<{ things: Thing[] }>();
+    apiMock.list.mockResolvedValueOnce({ things: [note('old-a'), note('old-b')] })
+      .mockReturnValueOnce(stale.promise).mockReturnValueOnce(replacement.promise);
+    const store = useNotes();
+    await store.fetchNotes();
+    const filtering = store.setFilters({ search: '', tag: null, archived: true });
+    if (mutation === 'create') {
+      apiMock.create.mockResolvedValue({ thing: note('created') });
+      await store.createNote('created');
+    } else {
+      apiMock.update.mockResolvedValue({ thing: note('old-a', { content: 'edited', revision: 2 }) });
+      await store.updateNote('old-a', { content: 'edited' });
+    }
+    await flushPromises();
+    expect(apiMock.list).toHaveBeenCalledTimes(3);
+    expect(apiMock.list).toHaveBeenLastCalledWith(expect.objectContaining({ archived: true, skip: 0 }));
+    expect(store.isLoading.value).toBe(true);
+
+    stale.resolve({ things: [note('obsolete', { archived: true })] });
+    await filtering;
+    expect(store.things.value.some(t => t._id === 'obsolete')).toBe(false);
+    expect(store.isLoading.value).toBe(true);
+    replacement.resolve({ things: [note('new-filter', { archived: true })] });
+    await flushPromises();
+    expect(store.things.value.map(t => t._id)).toEqual(['new-filter']);
+    expect(store.isLoading.value).toBe(false);
+  });
+
+  it('coalesces reset replacements for mutations completing together', async () => {
+    const stale = deferred<{ things: Thing[] }>();
+    const replacement = deferred<{ things: Thing[] }>();
+    apiMock.list.mockReturnValueOnce(stale.promise).mockReturnValueOnce(replacement.promise);
+    apiMock.create.mockResolvedValueOnce({ thing: note('one') }).mockResolvedValueOnce({ thing: note('two') });
+    const store = useNotes();
+    const loading = store.fetchNotes();
+    await Promise.all([store.createNote('one'), store.createNote('two')]);
+    await flushPromises();
+    expect(apiMock.list).toHaveBeenCalledTimes(2);
+    stale.resolve({ things: [note('obsolete')] });
+    await loading;
+    expect(store.isLoading.value).toBe(true);
+    replacement.resolve({ things: [note('two'), note('one')] });
+    await flushPromises();
+    expect(store.things.value.map(t => t._id)).toEqual(['two', 'one']);
+    expect(store.isLoading.value).toBe(false);
+  });
+
+  it('cancels a queued reset replacement when the user state resets', async () => {
+    const stale = deferred<{ things: Thing[] }>();
+    apiMock.list.mockReturnValueOnce(stale.promise);
+    apiMock.create.mockResolvedValue({ thing: note('created') });
+    const store = useNotes();
+    const loading = store.fetchNotes();
+    const mutation = store.createNote('created');
+    await Promise.resolve();
+    store.reset();
+    await mutation;
+    await flushPromises();
+    expect(apiMock.list).toHaveBeenCalledTimes(1);
+    stale.resolve({ things: [note('obsolete')] });
+    await loading;
+    expect(store.things.value).toEqual([]);
+    expect(store.isLoading.value).toBe(false);
+  });
+
+  it('lets a newer filter request supersede a queued reset replacement', async () => {
+    const stale = deferred<{ things: Thing[] }>();
+    apiMock.list.mockReturnValueOnce(stale.promise).mockResolvedValueOnce({ things: [note('latest')] });
+    apiMock.create.mockResolvedValue({ thing: note('created') });
+    const store = useNotes();
+    const loading = store.fetchNotes();
+    const mutation = store.createNote('created');
+    await Promise.resolve();
+    await store.setFilters({ search: 'latest', tag: null, archived: false });
+    await mutation;
+    stale.resolve({ things: [note('obsolete')] });
+    await loading;
+    await flushPromises();
+    expect(apiMock.list).toHaveBeenCalledTimes(2);
+    expect(apiMock.list).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'latest', skip: 0 }));
+    expect(store.things.value.map(t => t._id)).toEqual(['latest']);
+    expect(store.isLoading.value).toBe(false);
   });
 
   it('resets all user-scoped note state', async () => {
@@ -260,6 +429,35 @@ describe('useNotes behavior', () => {
     }));
   });
 
+  it('keeps the content edit snapshot revision even after the list refreshes', async () => {
+    const base = note('one');
+    const latest = note('one', { content: 'remote edit', revision: 2 });
+    const store = useNotes();
+    store.things.value = [latest];
+    apiMock.update.mockRejectedValue({ code: 'revision_conflict' });
+    apiMock.get.mockResolvedValue({ thing: latest });
+
+    const result = await store.updateNote('one', { content: 'local draft' }, base);
+
+    expect(apiMock.update).toHaveBeenCalledTimes(1);
+    expect(apiMock.update).toHaveBeenCalledWith('one', expect.objectContaining({
+      content: 'local draft', expectedRevision: 1,
+    }));
+    expect(result).toMatchObject({ success: false, code: 'revision_conflict', retryable: false });
+    expect(store.things.value[0]).toEqual(latest);
+  });
+
+  it('uses the latest list revision for metadata-only writes, not a stale snapshot', async () => {
+    const store = useNotes();
+    const latest = note('one', { content: 'remote edit', revision: 2 });
+    store.things.value = [latest];
+    apiMock.update.mockResolvedValue({ thing: { ...latest, sticky: true, revision: 3 } });
+    await store.updateNote('one', { sticky: true }, note('one'));
+    expect(apiMock.update).toHaveBeenCalledWith('one', expect.objectContaining({
+      content: 'remote edit', sticky: true, expectedRevision: 2,
+    }));
+  });
+
   it('keeps a draft and reports an explicit conflict on stale writes', async () => {
     apiMock.list.mockResolvedValue({ things: [note('one')] });
     apiMock.update.mockRejectedValue({ code: 'revision_conflict', message: 'stale revision' });
@@ -272,6 +470,7 @@ describe('useNotes behavior', () => {
     expect(result).toEqual({
       success: false,
       code: 'revision_conflict',
+      retryable: false,
       error: 'This note changed elsewhere. Your draft was kept; reload before retrying.',
     });
     expect(store.things.value[0].content).toBe('note one');
@@ -307,6 +506,7 @@ describe('useNotes behavior', () => {
     expect(result).toEqual({
       success: false,
       code: 'revision_conflict',
+      retryable: false,
       error: 'Gemini just edited this note. Your draft was kept; review the change, then save again.',
     });
     expect(apiMock.update).toHaveBeenCalledTimes(1);

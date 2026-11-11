@@ -14,7 +14,8 @@ var expect = require('expect.js'),
     attachments = require('../services/attachment-service.js'),
     gcCli = require('../../scripts/gc-attachments.js');
 
-function fakeDb(collections, failure) {
+function fakeDb(collections, failure, stats) {
+    stats = stats || { scans: 0, arrays: 0, closed: 0, probes: [] };
     return {
         listCollections: function () {
             return {
@@ -27,12 +28,29 @@ function fakeDb(collections, failure) {
         collection: function (name) {
             return {
                 find: function () {
+                    stats.scans++;
                     return {
                         toArray: function () {
+                            stats.arrays++;
                             if (failure === name) return Promise.reject(new Error('database scan failed'));
                             return Promise.resolve(collections[name] || []);
-                        }
+                        },
+                        [Symbol.asyncIterator]: async function* () {
+                            if (failure === name) throw new Error('database scan failed');
+                            yield* collections[name] || [];
+                        },
+                        close: async function () { stats.closed++; }
                     };
+                },
+                findOne: async function (query) {
+                    stats.probes.push({ collection: name, query: query });
+                    if (failure === 'lookup') throw new Error('reference lookup failed');
+                    var identifier = query.$or[0]['attachments.identifier'];
+                    return (collections[name] || []).find(function (document) {
+                        return (document.attachments || []).some(function (attachment) {
+                            return attachment === identifier || attachment && attachment.identifier === identifier;
+                        });
+                    }) || null;
                 }
             };
         }
@@ -115,6 +133,56 @@ describe('Attachment orphan GC (RF-711)', function () {
         expect(fs.existsSync(otherUserSameName)).to.be(true);
     });
 
+    it('streams the initial reference scan and only probes candidate keys before removal', async function () {
+        var stats = { scans: 0, arrays: 0, closed: 0, probes: [] };
+        config.db = fakeDb({ things: [{ ownerId: 'alice-id', attachments: [{ identifier: 'live.bin' }] }] }, null, stats);
+        var live = writeFile(tempDir, 'alice-id', 'live.bin', old);
+        writeFile(tempDir, 'alice-id', 'orphan-1.bin', old);
+        writeFile(tempDir, 'alice-id', 'orphan-2.bin', old);
+
+        var result = await attachments.garbageCollect({ apply: true, now: now });
+
+        expect(result.deleted).to.equal(2);
+        expect(stats.arrays).to.equal(0);
+        expect(stats.scans).to.equal(1);
+        expect(stats.closed).to.equal(1);
+        expect(stats.probes.map(function (probe) { return probe.query; })).to.eql([
+            { $or: [{ 'attachments.identifier': 'orphan-1.bin' }, { attachments: 'orphan-1.bin' }] },
+            { $or: [{ 'attachments.identifier': 'orphan-2.bin' }, { attachments: 'orphan-2.bin' }] }
+        ]);
+        expect(fs.existsSync(live)).to.be(true);
+    });
+
+    it('fails closed when a deletion-time reference lookup fails', async function () {
+        config.db = fakeDb({ things: [] }, 'lookup');
+        var orphan = writeFile(tempDir, 'alice-id', 'orphan.bin', old);
+        var error;
+        try {
+            await attachments.garbageCollect({ apply: true, now: now });
+        } catch (caught) { error = caught; }
+        expect(error).to.be.ok();
+        expect(error.message).to.equal('reference lookup failed');
+        expect(fs.existsSync(orphan)).to.be(true);
+    });
+
+    it('closes the reference cursor and deletes nothing if streamed data is unsafe', async function () {
+        var stats = { scans: 0, arrays: 0, closed: 0, probes: [] };
+        config.db = fakeDb({ things: [
+            { ownerId: 'alice-id', attachments: [{ identifier: 'safe.bin' }] },
+            { ownerId: 'alice-id', attachments: [{ identifier: 'bad\0key' }] }
+        ] }, null, stats);
+        var orphan = writeFile(tempDir, 'alice-id', 'orphan.bin', old);
+        var error;
+        try {
+            await attachments.garbageCollect({ apply: true, now: now });
+        } catch (caught) { error = caught; }
+        expect(error).to.be.ok();
+        expect(error.message).to.contain('Unsafe attachment identifier');
+        expect(stats.closed).to.equal(1);
+        expect(stats.probes).to.have.length(0);
+        expect(fs.existsSync(orphan)).to.be(true);
+    });
+
     it('protects references when user aliases are omitted by the repository', async function () {
         users.setRepository({ list: function () { return Promise.resolve([]); } });
         config.db = fakeDb({
@@ -147,6 +215,25 @@ describe('Attachment orphan GC (RF-711)', function () {
         expect(result.eligibleForDeletion).to.equal(1);
         expect(result.deleted).to.equal(0);
         expect(fs.existsSync(referenced)).to.be(true);
+    });
+
+    ['object', 'legacy string'].forEach(function (descriptorType) {
+        it('protects a late ' + descriptorType + ' reference in a newly discovered legacy collection', async function () {
+            var collections = { things: [] };
+            config.db = fakeDb(collections);
+            var referenced = writeFile(tempDir, 'alice-id', 'late-reference.bin', old);
+            require('../storage/local-storage.js').listAttachments = async function () {
+                var files = await originalListAttachments();
+                collections.bob_things = [{ attachments: [descriptorType === 'object' ?
+                    { identifier: 'late-reference.bin' } : 'late-reference.bin'] }];
+                return files;
+            };
+
+            var result = await attachments.garbageCollect({ apply: true, now: now });
+
+            expect(result.deleted).to.equal(0);
+            expect(fs.existsSync(referenced)).to.be(true);
+        });
     });
 
     it('fails closed on database scan errors without deleting files', async function () {

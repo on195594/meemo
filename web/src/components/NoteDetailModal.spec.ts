@@ -86,9 +86,80 @@ describe('NoteDetailModal', () => {
     await flushPromises();
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
 
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'typed before the tab closed' });
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'typed before the tab closed' }, expect.objectContaining({ _id: 'note-1' }));
     expect(localStorage.getItem('meemo_draft:note:draft-user:note-1')).toBeNull();
     second.unmount();
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['invalid revision', { content: 'old server content', revision: 0 }],
+    ['invalid content', { content: 7, revision: 1 }],
+  ])('keeps legacy drafts untrusted across edits and reloads (%s baseline)', async (_label, baseline) => {
+    vi.useFakeTimers();
+    const key = 'meemo_draft:note:legacy-review:note-1';
+    localStorage.setItem(key, JSON.stringify({ content: 'legacy draft', baseline }));
+    const onSaveEdit = vi.fn();
+    const props = { open: true, thing: note({ content: 'newer remote content', revision: 2 }), draftScope: 'legacy-review', onSaveEdit };
+    const first = mount(NoteDetailModal, { props });
+    await flushPromises();
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.value = 'updated legacy draft';
+    body.dispatchEvent(new Event('input'));
+    body.dispatchEvent(new Event('blur'));
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(onSaveEdit).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(key)!)).toEqual({ content: 'updated legacy draft' });
+    first.unmount();
+    document.body.innerHTML = '';
+
+    const second = mount(NoteDetailModal, { props });
+    await flushPromises();
+    const restored = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    expect(restored.value).toBe('updated legacy draft');
+    restored.dispatchEvent(new Event('blur'));
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(onSaveEdit).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(key)!)).toEqual({ content: 'updated legacy draft' });
+    second.unmount();
+    localStorage.removeItem(key);
+    vi.useRealTimers();
+  });
+
+  it('establishes a legacy draft baseline only after a successful explicit save', async () => {
+    vi.useFakeTimers();
+    const key = 'meemo_draft:note:legacy-confirm:note-1';
+    localStorage.setItem(key, JSON.stringify({ content: 'legacy draft' }));
+    const onSaveEdit = vi.fn()
+      .mockResolvedValueOnce({ success: true, thing: note({ content: 'legacy draft', revision: 3 }) })
+      .mockResolvedValueOnce({ success: true, thing: note({ content: 'next edit', revision: 4 }) });
+    const wrapper = mount(NoteDetailModal, { props: {
+      open: true, thing: note({ content: 'remote edit', revision: 2 }), draftScope: 'legacy-confirm', onSaveEdit,
+    } });
+    await flushPromises();
+    const body = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    body.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }));
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenNthCalledWith(1, 'note-1', { content: 'legacy draft' }, undefined);
+    expect(localStorage.getItem(key)).toBeNull();
+
+    body.value = 'next edit';
+    body.dispatchEvent(new Event('input'));
+    await flushPromises();
+    expect(JSON.parse(localStorage.getItem(key)!)).toMatchObject({
+      content: 'next edit', baseline: { content: 'legacy draft', revision: 3 },
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenNthCalledWith(2, 'note-1', { content: 'next edit' }, expect.objectContaining({
+      content: 'legacy draft', revision: 3,
+    }));
+    wrapper.unmount();
+    localStorage.removeItem(key);
+    vi.useRealTimers();
   });
 
   it('does not render modal dialog when closed', () => {
@@ -114,7 +185,7 @@ describe('NoteDetailModal', () => {
       textarea.dispatchEvent(new Event('input'));
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }));
       await flushPromises();
-      expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: content + '\nComplete tail edit' });
+      expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: content + '\nComplete tail edit' }, expect.objectContaining({ _id: 'note-1' }));
     } finally {
       wrapper.unmount();
     }
@@ -163,7 +234,7 @@ describe('NoteDetailModal', () => {
     (document.querySelector('.done-btn') as HTMLButtonElement).click();
     await flushPromises();
 
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: '# Trip 2\n\nDay 1' });
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: '# Trip 2\n\nDay 1' }, expect.objectContaining({ _id: 'note-1' }));
     wrapper.unmount();
   });
 
@@ -179,7 +250,7 @@ describe('NoteDetailModal', () => {
     body.dispatchEvent(new Event('input'));
     (document.querySelector('.done-btn') as HTMLButtonElement).click();
     await flushPromises();
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: '# Code\n\n        const answer = 42;' });
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: '# Code\n\n        const answer = 42;' }, expect.objectContaining({ _id: 'note-1' }));
     wrapper.unmount();
   });
 
@@ -226,6 +297,88 @@ describe('NoteDetailModal', () => {
     vi.useRealTimers();
   });
 
+  it('passes the original edit baseline when refreshed props arrive during editing', async () => {
+    const original = note();
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: false, error: 'Conflict' });
+    const wrapper = mount(NoteDetailModal, { props: { open: true, thing: original, onSaveEdit } });
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'local draft';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+    await wrapper.setProps({ thing: note({ content: 'remote edit', revision: 2 }) });
+    textarea.dispatchEvent(new Event('blur'));
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'local draft' }, original);
+    expect(textarea.value).toBe('local draft');
+    wrapper.unmount();
+  });
+
+  it('restores the saved draft baseline rather than adopting a newer server revision', async () => {
+    const original = note();
+    const first = mount(NoteDetailModal, { props: { open: true, thing: original, draftScope: 'baseline-user' } });
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'persisted draft';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+    first.unmount();
+    document.body.innerHTML = '';
+
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: false, error: 'Conflict' });
+    const second = mount(NoteDetailModal, { props: { open: true, thing: note({ content: 'remote edit', revision: 2 }), draftScope: 'baseline-user', onSaveEdit } });
+    (document.querySelector('.modal-textarea') as HTMLTextAreaElement).dispatchEvent(new Event('blur'));
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'persisted draft' }, expect.objectContaining({
+      content: original.content, revision: original.revision,
+    }));
+    second.unmount();
+    localStorage.removeItem('meemo_draft:note:baseline-user:note-1');
+  });
+
+  it('pauses automatic saves after a conflict until the owner explicitly retries', async () => {
+    vi.useFakeTimers();
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: false, code: 'revision_conflict', error: 'Reload before retrying' });
+    const wrapper = mount(NoteDetailModal, { props: { open: true, thing: note(), onSaveEdit } });
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'local draft';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(30000);
+    textarea.dispatchEvent(new Event('blur'));
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenCalledTimes(1);
+    expect(textarea.value).toBe('local draft');
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('Reload before retrying');
+
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }));
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('bounds transient automatic save retries and backs off between attempts', async () => {
+    vi.useFakeTimers();
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: false, error: 'Network unavailable', retryable: true });
+    const wrapper = mount(NoteDetailModal, { props: { open: true, thing: note(), onSaveEdit } });
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'local draft';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onSaveEdit).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onSaveEdit).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onSaveEdit).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(onSaveEdit).toHaveBeenCalledTimes(4);
+    expect(textarea.value).toBe('local draft');
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it('saves new input after an overlapping auto-save completes', async () => {
     vi.useFakeTimers();
     let finish!: (v: any) => void;
@@ -253,9 +406,43 @@ describe('NoteDetailModal', () => {
     await flushPromises();
 
     expect(onSaveEdit).toHaveBeenCalledTimes(2);
-    expect(onSaveEdit).toHaveBeenLastCalledWith('note-1', { content: 'second' });
+    expect(onSaveEdit).toHaveBeenLastCalledWith('note-1', { content: 'second' }, expect.objectContaining({ _id: 'note-1' }));
 
     wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('persists the acknowledged revision while newer text remains unsaved', async () => {
+    vi.useFakeTimers();
+    let finish!: (value: any) => void;
+    const first = mount(NoteDetailModal, { props: {
+      open: true, thing: note(), draftScope: 'overlap-baseline',
+      onSaveEdit: vi.fn(() => new Promise<{ success: boolean; thing?: Thing }>(resolve => { finish = resolve; })),
+    } });
+    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
+    textarea.value = 'first edit';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1000);
+    textarea.value = 'newer edit';
+    textarea.dispatchEvent(new Event('input'));
+    await flushPromises();
+    finish({ success: true, thing: note({ content: 'first edit', revision: 2 }) });
+    await flushPromises();
+    first.unmount();
+    document.body.innerHTML = '';
+
+    const onSaveEdit = vi.fn().mockResolvedValue({ success: false, error: 'Offline' });
+    const second = mount(NoteDetailModal, { props: {
+      open: true, thing: note({ content: 'first edit', revision: 2 }), draftScope: 'overlap-baseline', onSaveEdit,
+    } });
+    (document.querySelector('.modal-textarea') as HTMLTextAreaElement).dispatchEvent(new Event('blur'));
+    await flushPromises();
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'newer edit' }, expect.objectContaining({
+      content: 'first edit', revision: 2,
+    }));
+    second.unmount();
+    localStorage.removeItem('meemo_draft:note:overlap-baseline:note-1');
     vi.useRealTimers();
   });
 
@@ -301,7 +488,7 @@ describe('NoteDetailModal', () => {
 
     textarea.dispatchEvent(new Event('blur'));
     await flushPromises();
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Blurred auto save' });
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Blurred auto save' }, expect.objectContaining({ _id: 'note-1' }));
 
     wrapper.unmount();
   });
@@ -326,7 +513,7 @@ describe('NoteDetailModal', () => {
     closeBtn.click();
     await flushPromises();
 
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Updated note content' });
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Updated note content' }, expect.objectContaining({ _id: 'note-1' }));
     expect(wrapper.emitted('close')).toHaveLength(1);
 
     wrapper.unmount();
@@ -365,7 +552,7 @@ describe('NoteDetailModal', () => {
     onSaveEdit.mockResolvedValueOnce({ success: true, thing: note({ content: 'Newer B', revision: 3 }) });
     (document.querySelector('.done-btn') as HTMLButtonElement).click();
     await flushPromises();
-    expect(onSaveEdit).toHaveBeenLastCalledWith('note-1', { content: 'Newer B' });
+    expect(onSaveEdit).toHaveBeenLastCalledWith('note-1', { content: 'Newer B' }, expect.objectContaining({ _id: 'note-1' }));
     expect(wrapper.emitted('close')).toHaveLength(1);
     wrapper.unmount();
   });
@@ -382,7 +569,7 @@ describe('NoteDetailModal', () => {
     (document.querySelector(`[aria-label="${action}"]`) as HTMLButtonElement).click();
     await flushPromises();
 
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Draft before action' });
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Draft before action' }, expect.objectContaining({ _id: 'note-1' }));
     expect(wrapper.emitted('delete')).toBeUndefined();
     expect(wrapper.emitted('toggleArchive')).toBeUndefined();
     expect(textarea.value).toBe('Draft before action');
@@ -430,7 +617,7 @@ describe('NoteDetailModal', () => {
     overlay.click();
     await flushPromises();
 
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Backdrop save content' });
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Backdrop save content' }, expect.objectContaining({ _id: 'note-1' }));
     expect(wrapper.emitted('close')).toHaveLength(1);
 
     wrapper.unmount();
@@ -454,7 +641,7 @@ describe('NoteDetailModal', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     await flushPromises();
 
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Escape save content' });
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Escape save content' }, expect.objectContaining({ _id: 'note-1' }));
     expect(wrapper.emitted('close')).toHaveLength(1);
 
     wrapper.unmount();
@@ -478,7 +665,7 @@ describe('NoteDetailModal', () => {
     textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
     await flushPromises();
 
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Ctrl+S saved content' });
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Ctrl+S saved content' }, expect.objectContaining({ _id: 'note-1' }));
     expect(wrapper.emitted('close')).toBeUndefined();
 
     wrapper.unmount();
@@ -503,7 +690,7 @@ describe('NoteDetailModal', () => {
     closeBtn.click();
     await flushPromises();
 
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Failing save content' });
+    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Failing save content' }, expect.objectContaining({ _id: 'note-1' }));
     // Modal stays open when save fails
     expect(wrapper.emitted('close')).toBeUndefined();
 

@@ -515,8 +515,8 @@ const activeModalNote = computed<Thing | null>(() => {
   return things.value.find((t) => t._id === activeModalNoteId.value) || fallbackModalNote.value;
 });
 
-async function saveModalNote(id: string, updates: Partial<Thing>) {
-  const result = await updateNote(id, updates, activeModalNote.value || undefined);
+async function saveModalNote(id: string, updates: Partial<Thing>, snapshot?: Thing) {
+  const result = await updateNote(id, updates, snapshot || activeModalNote.value || undefined);
   if (result.success && result.thing) fallbackModalNote.value = result.thing;
   return result;
 }

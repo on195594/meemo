@@ -1,6 +1,6 @@
 'use strict';
 
-var path = require('path'),
+var isSafePathSegment = require('../../path-segment.js'),
     z = require('zod').z,
     HttpError = require('../responses.js').HttpError;
 
@@ -27,9 +27,7 @@ var objectId = z.string().refine(function (value) {
     return /^[0-9a-f]{24}$/i.test(value);
 }, 'invalid id');
 
-var safePathSegment = z.string().min(1).refine(function (value) {
-    return path.basename(value) === value && value !== '.' && value !== '..';
-}, 'invalid path segment');
+var safePathSegment = z.string().min(1).refine(isSafePathSegment, 'invalid path segment');
 
 var queryBoolean = z.preprocess(function (value) {
     if (value === true || value === 'true' || value === '1') return true;

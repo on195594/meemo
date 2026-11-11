@@ -6,6 +6,7 @@ var assert = require('assert'),
     os = require('os'),
     path = require('path'),
     nodeify = require('../promise.js'),
+    isSafePathSegment = require('../path-segment.js'),
     noteColors = require('../note-colors.js'),
     storage = require('../storage/local-storage.js'),
     tar = require('tar-fs'),
@@ -15,10 +16,6 @@ var assert = require('assert'),
 var MAX_ARCHIVE_ENTRIES = 1000;
 var MAX_ARCHIVE_ENTRY_SIZE = 25 * 1024 * 1024;
 var MAX_ARCHIVE_TOTAL_SIZE = 100 * 1024 * 1024;
-
-function isSafePathSegment(segment) {
-    return typeof segment === 'string' && segment && path.basename(segment) === segment && segment !== '.' && segment !== '..';
-}
 
 function validateThingsData(data) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) return 'Archive data must be an object';

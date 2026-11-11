@@ -5,6 +5,7 @@ var crypto = require('crypto'),
     ObjectId = require('mongodb').ObjectId,
     path = require('path'),
     nodeify = require('../promise.js'),
+    isSafePathSegment = require('../path-segment.js'),
     storage = require('../storage/local-storage.js'),
     things = require('./thing-service.js'),
     users = require('../users.js'),
@@ -95,42 +96,57 @@ function authorize(rawUserId, thingId, identifier, session, callback) {
     return nodeify(promise, callback);
 }
 
-function isSafePathSegment(segment) {
-    return typeof segment === 'string' && segment && path.basename(segment) === segment && segment !== '.' && segment !== '..' && segment.indexOf('\0') === -1;
-}
-
 function addReference(references, root, identifier) {
     if (!isSafePathSegment(root)) throw new Error('Unsafe attachment root in database: ' + root);
     if (!isSafePathSegment(identifier)) throw new Error('Unsafe attachment identifier in database: ' + identifier);
     references.add(identifier);
 }
 
-async function scanReferences() {
+async function referenceCollectionNames() {
     if (!config.db) throw new Error('MongoDB database is not connected');
-
     var collectionInfos = await config.db.listCollections({}, { nameOnly: true }).toArray();
-    var collectionNames = (collectionInfos || []).map(function (collection) { return collection.name; }).filter(function (name) {
+    return (collectionInfos || []).map(function (collection) { return collection.name; }).filter(function (name) {
         return name === 'things' || name.slice(-7) === '_things';
     }).sort();
+}
+
+async function scanReferences() {
+    var collectionNames = await referenceCollectionNames();
     // Identifiers are UUID storage keys. Treat a reference in any user root as
     // globally live so incomplete stable-ID/username mappings cannot cause loss.
     var references = new Set();
     for (var collectionName of collectionNames) {
         var legacyRoot = collectionName === 'things' ? null : collectionName.slice(0, -7);
-        var documents = await config.db.collection(collectionName).find({}, { projection: { ownerId: 1, attachments: 1 } }).toArray();
-        for (var document of documents) {
-            if (document.attachments === undefined || document.attachments === null) continue;
-            if (!Array.isArray(document.attachments)) throw new Error('Invalid attachments in database collection: ' + collectionName);
-            if (!document.attachments.length) continue;
-            var root = legacyRoot || (document.ownerId === undefined || document.ownerId === null ? '' : String(document.ownerId));
-            if (!root) throw new Error('Missing attachment owner in database collection: ' + collectionName);
-            document.attachments.forEach(function (attachment) {
-                var identifier = typeof attachment === 'string' ? attachment : attachment && attachment.identifier;
-                addReference(references, root, identifier);
-            });
+        var cursor = config.db.collection(collectionName).find({}, { projection: { ownerId: 1, attachments: 1 } });
+        try {
+            for await (var document of cursor) {
+                if (document.attachments === undefined || document.attachments === null) continue;
+                if (!Array.isArray(document.attachments)) throw new Error('Invalid attachments in database collection: ' + collectionName);
+                if (!document.attachments.length) continue;
+                var root = legacyRoot || (document.ownerId === undefined || document.ownerId === null ? '' : String(document.ownerId));
+                if (!root) throw new Error('Missing attachment owner in database collection: ' + collectionName);
+                document.attachments.forEach(function (attachment) {
+                    var identifier = typeof attachment === 'string' ? attachment : attachment && attachment.identifier;
+                    addReference(references, root, identifier);
+                });
+            }
+        } finally {
+            await cursor.close();
         }
     }
     return references;
+}
+
+/** Check one candidate across all owner roots, including legacy string descriptors; DB failures abort GC. */
+async function hasReference(identifier) {
+    var collectionNames = await referenceCollectionNames();
+    for (var collectionName of collectionNames) {
+        var reference = await config.db.collection(collectionName).findOne({
+            $or: [{ 'attachments.identifier': identifier }, { attachments: identifier }]
+        }, { projection: { _id: 1 } });
+        if (reference) return true;
+    }
+    return false;
 }
 
 function garbageCollect(options, callback) {
@@ -155,10 +171,9 @@ function garbageCollect(options, callback) {
         var deleted = 0;
         if (apply) {
             for (var file of eligible) {
-                // Close the normal scan/delete race: a reference created while
-                // candidates were enumerated protects the file before removal.
-                var currentReferences = await scanReferences();
-                if (currentReferences.has(file.identifier)) continue;
+                // Recheck references created since enumeration without loading every document again.
+                // This check and removal, as before, are not atomic with concurrent note writes.
+                if (await hasReference(file.identifier)) continue;
                 await storage.removeFile(file.path);
                 deleted += 1;
             }
