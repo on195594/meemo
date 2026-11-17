@@ -14,7 +14,8 @@ var express = require('express'),
     auth = require('./middleware/auth.js'),
     authService = require('../services/mcp-auth-service.js'),
     createCaptureStore = require('../storage/mcp-bootstrap.js'),
-    createServer = require('./mcp-tools.js');
+    createServer = require('./mcp-tools.js'),
+    OAuthClientMetadataSchema = require('@modelcontextprotocol/sdk/shared/auth.js').OAuthClientMetadataSchema;
 
 function settingsFromOptions(options) {
     var supplied = options.mcp || {};
@@ -124,10 +125,39 @@ function createMcp(options, logger) {
         return { protocol: protocol, browser: browser };
     }
     var provider = authService.createProvider(settings);
+    var registrationReasons = new Map([
+        ['Redirect URI is not allowed', 'redirect_uri_not_allowed'],
+        ['Only authorization_code is supported', 'unsupported_grant_types'],
+        ['Only code responses are supported', 'unsupported_response_types'],
+        ['Unsupported client authentication', 'unsupported_client_authentication'],
+        ['Client capacity reached', 'client_capacity_reached']
+    ]);
     protocol.use('/oauth/register', function (req, res, next) {
+        if (req.method !== 'POST') return next();
+        var sendJson = res.json;
+        res.json = function (body) {
+            if (res.statusCode >= 400 && body && typeof body.error === 'string') {
+                var metadata = req.body || {};
+                var uris = Array.isArray(metadata.redirect_uris) ? metadata.redirect_uris : null;
+                var method = metadata.token_endpoint_auth_method;
+                // Log only known field names and enum values, never descriptions or submitted URLs.
+                logger.write({
+                    level: res.statusCode >= 500 ? 'error' : 'warn', event: 'mcp_registration_rejected', requestId: req.id,
+                    errorCode: body.error,
+                    reason: registrationReasons.get(body.error_description) || (body.error === 'invalid_client_metadata' ? 'metadata_validation_failed' : body.error),
+                    metadataFields: Object.keys(OAuthClientMetadataSchema.shape).filter(function (key) { return Object.hasOwn(metadata, key); }),
+                    authMethod: method === undefined ? 'unspecified' : ['none', 'client_secret_post', 'client_secret_basic', 'client_secret_jwt', 'private_key_jwt', 'tls_client_auth', 'self_signed_tls_client_auth'].includes(method) ? method : 'other',
+                    grantTypes: Array.isArray(metadata.grant_types) ? metadata.grant_types.slice(0, 10).map(function (grant) {
+                        return ['authorization_code', 'refresh_token', 'client_credentials', 'password', 'implicit'].includes(grant) ? grant : 'other';
+                    }) : null,
+                    redirectUriCount: uris ? uris.length : null,
+                    unapprovedRedirectUriCount: uris ? uris.filter(function (uri) { return !settings.redirectUris.includes(uri); }).length : null
+                });
+            }
+            return sendJson.call(this, body);
+        };
         // The SDK validates standard metadata; the provider stores only fields it uses.
-        if (req.method === 'POST' && (!req.body ||
-            (req.body.client_name && (typeof req.body.client_name !== 'string' || req.body.client_name.length > 100)))) {
+        if (!req.body || (req.body.client_name && (typeof req.body.client_name !== 'string' || req.body.client_name.length > 100))) {
             return res.status(400).json({ error: 'invalid_client_metadata' });
         }
         next();

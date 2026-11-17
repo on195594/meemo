@@ -144,6 +144,38 @@ describe('MCP read/write tools and OAuth isolation', function () {
         });
     });
 
+    it('logs registration rejection reasons without credentials or callback URLs', async function () {
+        var secret = 'synthetic-registration-private-value';
+        var cases = [
+            [{ redirect_uris: [callback, 'https://client.example/' + secret] }, 'redirect_uri_not_allowed'],
+            [{ grant_types: ['authorization_code', 'refresh_token'] }, 'unsupported_grant_types'],
+            [{ token_endpoint_auth_method: 'client_secret_basic' }, 'unsupported_client_authentication'],
+            [{ client_uri: 'javascript:' + secret }, 'metadata_validation_failed'],
+            [{ scope: secret }, 'invalid_scope'],
+            [{ client_name: secret.repeat(4) }, 'metadata_validation_failed']
+        ];
+        for (var item of cases) {
+            var response = await protocol(app, 'post', '/oauth/register').send(Object.assign({
+                redirect_uris: [callback], token_endpoint_auth_method: 'none', client_name: secret,
+                client_secret: secret, token: secret, [secret]: secret
+            }, item[0])).expect(400);
+            var entries = logs.map(function (line) { return JSON.parse(line); }).filter(function (entry) {
+                return entry.event === 'mcp_registration_rejected' && entry.requestId === response.headers['x-request-id'];
+            });
+            assert.equal(entries.length, 1);
+            assert.equal(entries[0].reason, item[1]);
+            assert.equal(entries[0].errorCode, response.body.error);
+            assert.equal(entries[0].redirectUriCount, item[0].redirect_uris ? 2 : 1);
+            assert.equal(entries[0].unapprovedRedirectUriCount, item[0].redirect_uris ? 1 : 0);
+            assert.equal(entries[0].authMethod, item[0].token_endpoint_auth_method || 'none');
+            assert.deepEqual(entries[0].grantTypes, item[0].grant_types || null);
+            assert(entries[0].metadataFields.includes('redirect_uris'));
+            var diagnostic = JSON.stringify(entries[0]);
+            assert(!diagnostic.includes(secret));
+            assert(!diagnostic.includes(callback));
+        }
+    });
+
     it('registers bounded clients, stores only credential hashes and supports confidential clients', async function () {
         await protocol(app, 'post', '/oauth/register').send({ redirect_uris: ['https://attacker.example/callback'] }).expect(400);
         await protocol(app, 'post', '/oauth/register').send({ redirect_uris: [callback], client_uri: 'javascript:alert(1)' }).expect(400);
