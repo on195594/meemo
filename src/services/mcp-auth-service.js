@@ -26,6 +26,7 @@ async function getActiveUser(userId) {
 }
 
 function createProvider(settings, logger) {
+    logger = logger || { write: function () {} };
     var repository = createRepository();
     var resource = settings.publicUrl + '/mcp';
 
@@ -65,7 +66,7 @@ function createProvider(settings, logger) {
                     }
                     clientScope = metadata.scope;
                 }
-                var method = metadata.token_endpoint_auth_method || 'client_secret_post';
+                var method = metadata.token_endpoint_auth_method === undefined ? 'client_secret_post' : metadata.token_endpoint_auth_method;
                 if (!['none', 'client_secret_post'].includes(method)) throw new errors.InvalidClientMetadataError('Unsupported client authentication');
                 if (await repository.count('clients', {}) >= 500) throw new errors.TooManyRequestsError('Client capacity reached');
                 var info = {

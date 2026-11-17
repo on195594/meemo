@@ -332,6 +332,8 @@ export interface paths {
                         response_types?: "code"[];
                         /** @description Requested scopes (notes.read, notes.write) */
                         scope?: string;
+                    } & {
+                        [key: string]: unknown;
                     };
                 };
             };
@@ -354,6 +356,13 @@ export interface paths {
                 };
                 /** @description MCP disabled */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Registration body exceeds 16 KiB */
+                413: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -1316,7 +1325,7 @@ export interface paths {
         };
         /**
          * Export user data archive
-         * @description Generates and streams a tar archive containing notes, tags, settings, and attachments.
+         * @description Generates and streams a tar archive containing notes and attachments.
          */
         get: {
             parameters: {
@@ -1845,8 +1854,8 @@ export interface components {
             username: string;
             /** @description Requested scopes (e.g. notes.read notes.write) */
             scope: string;
-            /** @enum {integer} */
-            expiresIn: 86400;
+            /** @description Grant lifetime in seconds; large value for indefinite lifetime */
+            expiresIn: number;
             csrfToken: string;
         };
         ErrorResponse: {
@@ -1923,7 +1932,7 @@ export interface components {
             ownerId: string;
             /** @example Hello */
             content: string;
-            /** @example Hello <a href="/tags/meeting">#meeting</a> with @bob */
+            /** @example Hello [#meeting](#search?#meeting) with @bob */
             richContent: string;
             /**
              * @description Unix timestamp in milliseconds

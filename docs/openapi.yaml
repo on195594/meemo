@@ -68,7 +68,7 @@ components:
         clientName: { type: string }
         username: { type: string }
         scope: { type: string, description: 'Requested scopes (e.g. notes.read notes.write)' }
-        expiresIn: { type: integer, enum: [86400] }
+        expiresIn: { type: integer, description: 'Grant lifetime in seconds; large value for indefinite lifetime' }
         csrfToken: { type: string }
     ErrorResponse:
       type: object
@@ -225,7 +225,7 @@ components:
           example: Hello #meeting with @bob
         richContent:
           type: string
-          example: Hello <a href="/tags/meeting">#meeting</a> with @bob
+          example: Hello [#meeting](#search?#meeting) with @bob
         createdAt:
           type: integer
           description: Unix timestamp in milliseconds
@@ -796,10 +796,10 @@ paths:
           application/json:
             schema:
               type: object
-              additionalProperties: false
+              additionalProperties: true
               required: [redirect_uris]
               properties:
-                redirect_uris: { type: array, minItems: 1, maxItems: 5, items: { type: string, format: uri } }
+                redirect_uris: { type: array, minItems: 1, maxItems: 10, items: { type: string, format: uri } }
                 client_name: { type: string, maxLength: 100 }
                 token_endpoint_auth_method: { type: string, enum: [none, client_secret_post], default: client_secret_post }
                 grant_types: { type: array, items: { type: string, enum: [authorization_code] } }
@@ -813,6 +813,7 @@ paths:
               schema: { type: object }
         '400': { description: Invalid metadata or callback }
         '404': { description: MCP disabled }
+        '413': { description: Registration body exceeds 16 KiB }
         '429': { description: Rate or registration capacity reached }
   /oauth/authorize:
     get:
@@ -971,7 +972,7 @@ paths:
             Set-Cookie:
               schema:
                 type: string
-                example: connect.sid=s%3A...; Path=/; HttpOnly; SameSite=Lax
+                example: connect.sid=s%3A...; Path=/; HttpOnly; SameSite=Strict
           content:
             application/json:
               schema:
@@ -1377,7 +1378,7 @@ paths:
     get:
       tags: [transfer]
       summary: Export user data archive
-      description: Generates and streams a tar archive containing notes, tags, settings, and attachments.
+      description: Generates and streams a tar archive containing notes and attachments.
       security:
         - sessionCookie: []
       responses:

@@ -160,6 +160,7 @@ describe('MCP read/write tools and OAuth isolation', function () {
             [{ redirect_uris: [callback, 'https://client.example/' + secret] }, 'redirect_uri_not_allowed'],
             [{ grant_types: ['authorization_code', 'refresh_token'] }, 'unsupported_grant_types'],
             [{ token_endpoint_auth_method: 'client_secret_basic' }, 'unsupported_client_authentication'],
+            [{ token_endpoint_auth_method: '' }, 'unsupported_client_authentication'],
             [{ client_uri: 'javascript:' + secret }, 'metadata_validation_failed'],
             [{ scope: secret }, 'invalid_scope'],
             [{ client_name: secret.repeat(4) }, 'metadata_validation_failed']
@@ -177,7 +178,7 @@ describe('MCP read/write tools and OAuth isolation', function () {
             assert.equal(entries[0].errorCode, response.body.error);
             assert.equal(entries[0].redirectUriCount, item[0].redirect_uris ? 2 : 1);
             assert.equal(entries[0].unapprovedRedirectUriCount, item[0].redirect_uris ? 1 : 0);
-            assert.equal(entries[0].authMethod, item[0].token_endpoint_auth_method || 'none');
+            assert.equal(entries[0].authMethod, item[0].token_endpoint_auth_method === '' ? 'other' : (item[0].token_endpoint_auth_method || 'none'));
             assert.deepEqual(entries[0].grantTypes, item[0].grant_types || null);
             assert(entries[0].metadataFields.includes('redirect_uris'));
             var diagnostic = JSON.stringify(entries[0]);
@@ -285,7 +286,7 @@ describe('MCP read/write tools and OAuth isolation', function () {
     });
 
     it('rejects oversized OAuth transport and invalid state encoding before persistence', async function () {
-        var { app, client } = await stateHarness();
+        var { app, client, logs } = await stateHarness();
         var params = {
             client_id: client.client_id, redirect_uri: callback, response_type: 'code', resource: resource,
             code_challenge: challenge(crypto.randomBytes(32).toString('base64url')), code_challenge_method: 'S256'
@@ -297,11 +298,18 @@ describe('MCP read/write tools and OAuth isolation', function () {
         await request(server).get('/oauth/authorize').set('Host', 'meemo.example').query(oversized).expect(414);
         await protocol(app, 'post', '/oauth/authorize').type('form').send(oversized).expect(413);
         for (var length of [5300, 6000]) {
+            var inflatedState = '~'.repeat(length);
             var inflatedError = await protocol(app, 'get', '/oauth/authorize').query(Object.assign({}, params, {
-                state: '~'.repeat(length), scope: 'unsupported'
+                state: inflatedState, scope: 'unsupported'
             })).expect(400);
             assert.equal(inflatedError.body.error, 'invalid_request');
             assert(!inflatedError.headers.location);
+            var rejectAudit = logs.map(function (line) { return JSON.parse(line); }).find(function (entry) {
+                return entry.event === 'mcp_oauth_redirect_rejected' && entry.requestId === inflatedError.headers['x-request-id'];
+            });
+            assert(rejectAudit);
+            assert(rejectAudit.redirectUrlBytes > length * 3);
+            assert(!JSON.stringify(rejectAudit).includes(inflatedState));
         }
         var invalid = await protocol(app, 'post', '/oauth/authorize').send(Object.assign({}, params, { state: '\ud800' })).expect(302);
         var redirect = new URL(invalid.headers.location);

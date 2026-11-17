@@ -64,6 +64,7 @@ function protocolError(error, req, res, next) {
 }
 
 function createMcp(options, logger) {
+    logger = logger || { write: function () {} };
     var settings = settingsFromOptions(options);
     var protocol = express.Router();
     var browser = express.Router();
