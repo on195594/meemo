@@ -125,8 +125,8 @@ function createMcp(options, logger) {
     }
     var provider = authService.createProvider(settings);
     protocol.use('/oauth/register', function (req, res, next) {
-        var keys = ['redirect_uris', 'client_name', 'token_endpoint_auth_method', 'grant_types', 'response_types', 'scope'];
-        if (req.method === 'POST' && (!req.body || Object.keys(req.body).some(function (key) { return !keys.includes(key); }) ||
+        // The SDK validates standard metadata; the provider stores only fields it uses.
+        if (req.method === 'POST' && (!req.body ||
             (req.body.client_name && (typeof req.body.client_name !== 'string' || req.body.client_name.length > 100)))) {
             return res.status(400).json({ error: 'invalid_client_metadata' });
         }

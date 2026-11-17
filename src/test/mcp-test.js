@@ -131,9 +131,22 @@ describe('MCP read/write tools and OAuth isolation', function () {
         await protocol(isolated, 'post', '/oauth/register').send({ redirect_uris: uris.concat(['https://attacker.example/callback']) }).expect(400);
     });
 
+    it('accepts standard registration metadata without storing unused fields', async function () {
+        var response = await protocol(app, 'post', '/oauth/register').send({
+            redirect_uris: [callback], token_endpoint_auth_method: 'none', client_name: 'Synthetic Gemini',
+            client_uri: 'https://gemini.google.com', logo_uri: 'https://example.com/logo.png',
+            contacts: ['support@example.com'], software_id: 'synthetic-gemini', custom_metadata: 'ignored'
+        }).expect(201);
+        var stored = await db.collection('mcp_clients').findOne({ _id: response.body.client_id });
+        ['client_uri', 'logo_uri', 'contacts', 'software_id', 'custom_metadata'].forEach(function (key) {
+            assert(!Object.hasOwn(response.body, key));
+            assert(!Object.hasOwn(stored.info, key));
+        });
+    });
+
     it('registers bounded clients, stores only credential hashes and supports confidential clients', async function () {
         await protocol(app, 'post', '/oauth/register').send({ redirect_uris: ['https://attacker.example/callback'] }).expect(400);
-        await protocol(app, 'post', '/oauth/register').send({ redirect_uris: [callback], client_uri: 'http://127.0.0.1' }).expect(400);
+        await protocol(app, 'post', '/oauth/register').send({ redirect_uris: [callback], client_uri: 'javascript:alert(1)' }).expect(400);
         await protocol(app, 'post', '/oauth/register').send({ redirect_uris: [callback], scope: 'notes.update' }).expect(400);
         var confidential = await register(app, 'client_secret_post');
         assert(confidential.client_secret);
