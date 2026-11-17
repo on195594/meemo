@@ -18,11 +18,11 @@ class FakeXHR {
   statusText = 'Unauthorized';
   responseText = JSON.stringify(errorBody);
   withCredentials = false;
-  upload = {};
+  upload: { onprogress?: (event: ProgressEvent) => void } = {};
   onload?: () => void;
   onerror?: () => void;
   open = vi.fn();
-  send = vi.fn();
+  send = vi.fn<(body: FormData) => void>();
   constructor() { FakeXHR.latest = this; }
 }
 
@@ -137,5 +137,61 @@ describe('API unauthorized generation', () => {
       { path: '/api/login', method: 'POST', credentials: 'same-origin', contentType: 'application/json', body: JSON.stringify({ username: 'alice', password: 'password' }) },
       { path: '/api/logout', method: 'POST', credentials: 'same-origin', contentType: 'application/json', body: undefined },
     ]);
+  });
+});
+
+
+describe.each(['upload', 'import'] as const)('XHR %s transport', (transport) => {
+  let api: typeof Api;
+  let handler: ReturnType<typeof vi.fn<UnauthorizedHandler>>;
+  const path = transport === 'upload' ? '/api/files' : '/api/import';
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.stubGlobal('XMLHttpRequest', FakeXHR);
+    const client = await import('./client');
+    api = client.api;
+    handler = vi.fn();
+    client.onUnauthorized(handler);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+  function request(file: File, progress?: (percent: number) => void) {
+    return transport === 'upload' ? api.files.upload(file, progress) : api.transfer.importArchive(file, progress);
+  }
+
+  it('posts multipart data with credentials, reports computable progress and parses 200 JSON', async () => {
+    const file = new File(['payload'], 'archive.tar');
+    const progress = vi.fn();
+    const pending = request(file, progress);
+    const xhr = FakeXHR.latest;
+    expect(xhr.open).toHaveBeenCalledExactlyOnceWith('POST', path);
+    expect(xhr.withCredentials).toBe(true);
+    expect(xhr.send.mock.calls[0][0].get('file')).toBe(file);
+    xhr.upload.onprogress!(new ProgressEvent('progress', { lengthComputable: false, loaded: 1, total: 3 }));
+    expect(progress).not.toHaveBeenCalled();
+    xhr.upload.onprogress!(new ProgressEvent('progress', { lengthComputable: true, loaded: 1, total: 3 }));
+    xhr.upload.onprogress!(new ProgressEvent('progress', { lengthComputable: true, loaded: 3, total: 3 }));
+    expect(progress.mock.calls).toEqual([[33], [100]]);
+    const body = transport === 'upload' ? { identifier: 'file-1', fileName: 'archive.tar' } : { total: 3, imported: 2, failed: 1 };
+    xhr.status = 200;
+    xhr.responseText = JSON.stringify(body);
+    xhr.onload!();
+    await expect(pending).resolves.toEqual(body);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it.each(['parse_error', 'unauthorized', 'network_error'])('rejects %s with the appropriate notification', async (failure) => {
+    const pending = request(new File(['payload'], 'archive.tar'));
+    const xhr = FakeXHR.latest;
+    const expected = failure === 'unauthorized' ? { status: 401, ...errorBody }
+      : { status: failure === 'parse_error' ? 200 : 0, code: failure };
+    const rejection = expect(pending).rejects.toMatchObject({ name: 'ApiError', ...expected });
+    if (failure === 'network_error') xhr.onerror!();
+    else {
+      if (failure === 'parse_error') { xhr.status = 200; xhr.responseText = '{'; }
+      xhr.onload!();
+    }
+    await rejection;
+    if (failure === 'unauthorized') expect(handler).toHaveBeenCalledExactlyOnceWith(path, expect.objectContaining(expected));
+    else expect(handler).not.toHaveBeenCalled();
   });
 });

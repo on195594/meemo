@@ -32,7 +32,6 @@ describe('Tag integrity', function () {
     });
 
     beforeEach(async function () {
-        await db.collection('system_maintenance').deleteMany({});
         await Promise.all([
             db.collection('things').deleteMany({}),
             db.collection('tags').deleteMany({})
@@ -40,15 +39,10 @@ describe('Tag integrity', function () {
         things.resetCache();
     });
 
-    afterEach(async function () {
-        await db.collection('system_maintenance').deleteMany({});
-    });
-
     after(async function () {
         await Promise.all([
             db.collection('things').deleteMany({}),
-            db.collection('tags').deleteMany({}),
-            db.collection('system_maintenance').deleteMany({})
+            db.collection('tags').deleteMany({})
         ]);
         await client.close();
     });
@@ -184,34 +178,6 @@ describe('Tag integrity', function () {
             { name: 'before', usage: 1 },
             { name: 'during', usage: 1 }
         ]);
-    });
-
-    it('enforces maintenance write freeze when active and fails closed when unverified', async function () {
-        var verifyError;
-        try {
-            await things.requireWriteFreeze(db);
-        } catch (error) {
-            verifyError = error;
-        }
-        expect(verifyError).to.be.ok();
-        expect(verifyError.message).to.contain('verified Thing write freeze is required');
-
-        await things.acquireWriteFreeze();
-        await things.requireWriteFreeze(db);
-
-        var writeError;
-        try {
-            await things.insertFull('owner-a', '#blocked', [], [], [], 1, 1);
-        } catch (error) {
-            writeError = error;
-        }
-        expect(writeError).to.be.ok();
-        expect(writeError.message).to.contain('writes are frozen for maintenance');
-
-        await things.releaseWriteFreeze();
-
-        var allowed = await things.insertFull('owner-a', '#allowed', ['allowed'], [], [], 1, 1);
-        expect(allowed).to.be.ok();
     });
 
     it('linearizes put and del operations atomically and throws not found on absent deletion', async function () {

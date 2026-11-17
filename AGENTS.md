@@ -31,7 +31,7 @@ Meemo is a lightweight Node.js/Express notes app with a Vue 3 frontend, MongoDB 
 
 Run only the narrowest check relevant to your change:
 
-- **Frontend single test**: `npx --prefix web vitest run web/src/path/to/file.spec.ts` (fast)
+- **Frontend single test**: `npm --prefix web test -- src/path/to/file.spec.ts` (fast)
 - **Frontend types**: `npm --prefix web run typecheck`
 - **Frontend bundle** (only when bundling or preparing release): `npm run build`
 - **Backend / Database / API**: `npm test` (starts temporary MongoDB container)

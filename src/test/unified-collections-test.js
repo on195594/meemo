@@ -5,6 +5,7 @@
 /* global before:false */
 /* global after:false */
 
+var assert = require('assert');
 var expect = require('expect.js');
 var MongoClient = require('mongodb').MongoClient;
 var ObjectId = require('mongodb').ObjectId;
@@ -126,38 +127,21 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
             expect(putError.code).to.equal('ERR_INVALID_NOTE_COLOR');
         });
 
-        it('queries things filtered by ownerId using the runtime search filter', function (done) {
-            things.getAll(testUserId, thingService.buildSearchFilter('Unified'), 0, 10, function (err, list) {
-                if (err) return done(err);
-                expect(list).to.be.an(Array);
-                expect(list.length).to.equal(1);
-                expect(list[0]._id).to.equal(createdThingId);
-
-                // Ensure another owner cannot see this note
-                things.getAll('other-owner', {}, 0, 10, function (err, otherList) {
-                    if (err) return done(err);
-                    expect(otherList.length).to.equal(0);
-                    done();
-                });
-            });
+        it('queries things filtered by ownerId using the runtime search filter', async function () {
+            var list = await things.getAll(testUserId, thingService.buildSearchFilter('Unified'), 0, 10);
+            expect(list).to.be.an(Array);
+            expect(list.length).to.equal(1);
+            expect(list[0]._id).to.equal(createdThingId);
+            var otherList = await things.getAll('other-owner', {}, 0, 10);
+            expect(otherList.length).to.equal(0);
         });
 
-        it('updates and deletes note in unified collection', function (done) {
-            things.put(testUserId, createdThingId, 'Updated unified content', ['unified'], [], [], false, false, false, false, 'sage', 1, function (err, updated) {
-                if (err) return done(err);
-                expect(updated.content).to.equal('Updated unified content');
-                expect(updated.color).to.equal('sage');
-
-                things.del(testUserId, createdThingId, updated.revision, function (err) {
-                    if (err) return done(err);
-
-                    things.get(testUserId, createdThingId, function (err) {
-                        expect(err).to.be.ok();
-                        expect(err.message).to.equal('not found');
-                        done();
-                    });
-                });
-            });
+        it('updates and deletes note in unified collection', async function () {
+            var updated = await things.put(testUserId, createdThingId, 'Updated unified content', ['unified'], [], [], false, false, false, false, 'sage', 1);
+            expect(updated.content).to.equal('Updated unified content');
+            expect(updated.color).to.equal('sage');
+            await things.del(testUserId, createdThingId, updated.revision);
+            await assert.rejects(things.get(testUserId, createdThingId), { message: 'not found' });
         });
 
         it('persists settings in unified settings collection', async function () {

@@ -7,7 +7,7 @@
 
 - 模块化单体：Express + MongoDB + 文件系统附件，单进程；Vue 3 SPA。
 - 在线数据只读写统一集合（`things`、`settings`、`users`、`sessions`）；`things.tags` 是标签事实源，`tags` 集合是迁移投影与维修工件。
-- 账号只在 MongoDB；旧 file/fallback 用户源已从运行时删除，只保留离线迁移输入。
+- 账号只在 MongoDB；旧 file/fallback 用户源及离线迁移脚本已删除。
 - 移除了未引用的死依赖（如 `safetydance`）及历史多仓储切换空转分支。
 - 过度测试治理：清理历史离线迁移元测试（移除 2400+ 行非业务回归套件），修复人为 15 秒 hang 超时测试，单机测试套件耗时从 65s+ 缩减至 ~22s。
 - NoteColor 已有单一定义（`src/note-colors.js` ↔ `web/src/constants/noteColors.ts`）。
@@ -132,7 +132,7 @@ Webhook、Agent、CLI、移动端等外部工具优先通过 HTTP API（或同�
 - 每引入新的运行进程、数据库、消息中间件、持久化系统、状态框架、UI 框架、构建系统或服务，都是一次 **Architecture Cost Event**，必须写清：问题、现有架构为何无法解决、新组件、失败模式、备份影响、安全影响、回滚、移除路径。说不清就不引入。
 - 只有出现实际证据才进入重大架构评估：Scale（数据库/文件存储形成真实瓶颈、单实例资源持续触顶）、Reliability（单进程故障域无法满足真实 SLA）、Operations（备份恢复时间不可接受）、Product（多实例或大规模异步任务成为必须、语义检索被证明是核心体验）、Team（多团队需要独立发布）。“业界都这么做”不是证据。
 - 涉及新数据库、新运行服务、新持久化系统、API 破坏性变更、认证模型变更、附件后端变更、主要前端状态框架、AI/向量基础设施、备份模型变更时，写一页以内的架构决策：Decision / Problem / Alternatives / Why / Operational Impact / Rollback。
-- **未决**：迁移完全结束后，重新评估 `tags` 投影集合（目前仍被 `cleanupTags` 与就绪检查使用）是否还有必要，无必要即删除。
+- **未决**：迁移完全结束后，重新评估 `tags` 投影集合（目前仍被 `cleanupTags` 使用）是否还有必要，无必要即删除。
 
 ## 18. 变更检查清单
 

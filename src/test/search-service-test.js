@@ -56,4 +56,20 @@ describe('Search query policy', function () {
             ]
         });
     });
+
+    it('returns null for empty, whitespace, or non-string filter inputs', function () {
+        expect(search.buildSearchFilter('')).to.be(null);
+        expect(search.buildSearchFilter('   ')).to.be(null);
+        expect(search.buildSearchFilter(null)).to.be(null);
+        expect(search.buildSearchFilter(undefined)).to.be(null);
+    });
+
+    it('escapes regex metacharacters safely in search terms', function () {
+        var filter = search.buildSearchFilter('c++ (v2.0) [test]?');
+        var termFilters = filter.$and;
+        expect(termFilters.length).to.equal(3);
+        expect(termFilters[0].$or[0].content.$regex).to.equal('c\\+\\+');
+        expect(termFilters[1].$or[0].content.$regex).to.equal('\\(v2\\.0\\)');
+        expect(termFilters[2].$or[0].content.$regex).to.equal('\\[test\\]\\?');
+    });
 });

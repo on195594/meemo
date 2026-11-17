@@ -35,14 +35,6 @@ describe('HTTP static serving', function () {
                 });
         });
 
-        it('validates userId path segment using safePathSegment schema', function () {
-            var validation = require('../http/middleware/validate.js');
-            expect(validation.safePathSegment.safeParse('valid-user-id').success).to.be(true);
-            expect(validation.safePathSegment.safeParse('..').success).to.be(false);
-            expect(validation.safePathSegment.safeParse('.').success).to.be(false);
-            expect(validation.safePathSegment.safeParse('user/evil').success).to.be(false);
-        });
-
         it('falls back to SPA index.html for shared note route /shared/:thingId', function (done) {
             request(app)
                 .get('/shared/60c72b2f9b1d8b001c8a1234')

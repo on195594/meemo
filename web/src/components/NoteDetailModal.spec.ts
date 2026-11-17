@@ -493,7 +493,7 @@ describe('NoteDetailModal', () => {
     wrapper.unmount();
   });
 
-  it('auto-saves modified draft and closes when Close button is clicked', async () => {
+  it.each(['Close', 'backdrop', 'Escape'])('auto-saves modified draft and closes on %s', async (action) => {
     const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
     const wrapper = mount(NoteDetailModal, {
       props: {
@@ -508,9 +508,8 @@ describe('NoteDetailModal', () => {
     textarea.dispatchEvent(new Event('input'));
     await flushPromises();
 
-    const closeBtn = document.querySelector('.done-btn') as HTMLButtonElement;
-    expect(closeBtn).not.toBeNull();
-    closeBtn.click();
+    if (action === 'Escape') window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    else (document.querySelector(action === 'Close' ? '.done-btn' : '.note-modal-overlay') as HTMLElement).click();
     await flushPromises();
 
     expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Updated note content' }, expect.objectContaining({ _id: 'note-1' }));
@@ -593,55 +592,6 @@ describe('NoteDetailModal', () => {
     await flushPromises();
 
     expect(onSaveEdit).not.toHaveBeenCalled();
-    expect(wrapper.emitted('close')).toHaveLength(1);
-
-    wrapper.unmount();
-  });
-
-  it('auto-saves and closes when backdrop is clicked', async () => {
-    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
-    const wrapper = mount(NoteDetailModal, {
-      props: {
-        open: true,
-        thing: note(),
-        onSaveEdit,
-      },
-    });
-
-    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
-    textarea.value = 'Backdrop save content';
-    textarea.dispatchEvent(new Event('input'));
-    await flushPromises();
-
-    const overlay = document.querySelector('.note-modal-overlay') as HTMLElement;
-    overlay.click();
-    await flushPromises();
-
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Backdrop save content' }, expect.objectContaining({ _id: 'note-1' }));
-    expect(wrapper.emitted('close')).toHaveLength(1);
-
-    wrapper.unmount();
-  });
-
-  it('auto-saves and closes on Escape key press', async () => {
-    const onSaveEdit = vi.fn().mockResolvedValue({ success: true });
-    const wrapper = mount(NoteDetailModal, {
-      props: {
-        open: true,
-        thing: note(),
-        onSaveEdit,
-      },
-    });
-
-    const textarea = document.querySelector('.modal-textarea') as HTMLTextAreaElement;
-    textarea.value = 'Escape save content';
-    textarea.dispatchEvent(new Event('input'));
-    await flushPromises();
-
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    await flushPromises();
-
-    expect(onSaveEdit).toHaveBeenCalledWith('note-1', { content: 'Escape save content' }, expect.objectContaining({ _id: 'note-1' }));
     expect(wrapper.emitted('close')).toHaveLength(1);
 
     wrapper.unmount();

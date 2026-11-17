@@ -6,7 +6,6 @@
 var EventEmitter = require('events'),
     expect = require('expect.js'),
     health = require('../services/health-service.js'),
-    lifecycle = require('../lifecycle.js'),
     logger = require('../http/middleware/logger.js'),
     gcCli = require('../../scripts/gc-attachments.js');
 
@@ -35,23 +34,6 @@ describe('Runtime observability', function () {
         expect(stats.memory.heapUsedBytes).to.be.a('number');
         expect(stats.memory.heapTotalBytes).to.be.a('number');
         expect(stats.memory.externalBytes).to.be.a('number');
-    });
-
-    it('logs worker completion and failure at the worker owner', async function () {
-        var logs = [];
-        var workerManager = new lifecycle.WorkerManager({ logger: { write: function (entry) { logs.push(entry); } } });
-        workerManager.register('success', function () {});
-        workerManager.register('failure', function () { throw new Error('failed'); });
-
-        await workerManager.runOnce('success');
-        await workerManager.runOnce('failure').catch(function () {});
-
-        expect(logs[0].event).to.equal('worker_completed');
-        expect(logs[0].worker).to.equal('success');
-        expect(logs[0].durationMs).to.be.a('number');
-        expect(logs[1].event).to.equal('worker_failed');
-        expect(logs[1].worker).to.equal('failure');
-        expect(logs[1].error.code).to.equal('worker_error');
     });
 
     it('structures attachment GC completion and failure records', function () {

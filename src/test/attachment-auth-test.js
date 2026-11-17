@@ -17,6 +17,8 @@ var createApp = appModule.createApp;
 
 describe('Attachment Authorization (RF-104)', function () {
     var app;
+    var dbClient;
+    var previousDb;
     var prevAttachmentDir = config.attachmentDir;
     var testAttachmentDir = '/tmp/meemo-attachment-storage-' + process.pid;
 
@@ -32,87 +34,64 @@ describe('Attachment Authorization (RF-104)', function () {
     var aliceOrphanFile = 'alice_orphan_data.txt';
     var bobPrivateFile = 'bob_secret_notes.txt';
 
-    before(function (done) {
+    before(async function () {
+        previousDb = config.db;
         config.attachmentDir = testAttachmentDir;
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
 
-        config._clearDatabase(function (err) {
-            if (err) return done(err);
+        await config._clearDatabase();
+        dbClient = await require('mongodb').MongoClient.connect(config.databaseUrl);
+        config.db = dbClient.db();
+        app = createApp({ sessionMemory: true });
 
-            require('mongodb').MongoClient.connect(config.databaseUrl).then(function (client) {
-                config.db = client.db();
-                app = createApp({ sessionMemory: true });
+        // Create accounts for alice and bob
+        await users.create('alice', 'alice@example.com', 'Alice', 'Password123!');
+        await users.create('bob', 'bob@example.com', 'Bob', 'Password123!');
 
-                // Create accounts for alice and bob
-                users.create('alice', 'alice@example.com', 'Alice', 'Password123!', function (err) {
-                    if (err) return done(err);
+        // Create storage folders and files
+        var aliceDir = path.join(testAttachmentDir, 'alice');
+        var bobDir = path.join(testAttachmentDir, 'bob');
+        fs.mkdirSync(aliceDir, { recursive: true });
+        fs.mkdirSync(bobDir, { recursive: true });
 
-                    users.create('bob', 'bob@example.com', 'Bob', 'Password123!', function (err) {
-                        if (err) return done(err);
+        fs.writeFileSync(path.join(aliceDir, alicePrivateFile), 'Alice Private Secret');
+        fs.writeFileSync(path.join(aliceDir, alicePublicFile), 'Alice Public Content');
+        fs.writeFileSync(path.join(aliceDir, aliceOrphanFile), 'Alice Orphan Unlinked');
+        fs.writeFileSync(path.join(bobDir, bobPrivateFile), 'Bob Private Secret');
 
-                        // Create storage folders and files
-                        var aliceDir = path.join(testAttachmentDir, 'alice');
-                        var bobDir = path.join(testAttachmentDir, 'bob');
-                        fs.mkdirSync(aliceDir, { recursive: true });
-                        fs.mkdirSync(bobDir, { recursive: true });
+        // Create notes for Alice: one private, one public
+        var privAttach = [{ identifier: alicePrivateFile, fileName: 'secret.txt', type: 'unknown' }];
+        var thing1 = await logic.add('alice', 'Alice private note', privAttach);
+        alicePrivateThingId = thing1._id.toString();
 
-                        fs.writeFileSync(path.join(aliceDir, alicePrivateFile), 'Alice Private Secret');
-                        fs.writeFileSync(path.join(aliceDir, alicePublicFile), 'Alice Public Content');
-                        fs.writeFileSync(path.join(aliceDir, aliceOrphanFile), 'Alice Orphan Unlinked');
-                        fs.writeFileSync(path.join(bobDir, bobPrivateFile), 'Bob Private Secret');
+        var pubAttach = [{ identifier: alicePublicFile, fileName: 'banner.txt', type: 'unknown' }];
+        var thing2 = await logic.add('alice', 'Alice public note', pubAttach);
+        var t2Id = thing2._id.toString();
+        // Make it public
+        await logic.put('alice', t2Id, 'Alice public note', pubAttach, true, false, false, false, undefined, thing2.revision);
+        alicePublicThingId = t2Id;
 
-                        // Create notes for Alice: one private, one public
-                        var privAttach = [{ identifier: alicePrivateFile, fileName: 'secret.txt', type: 'unknown' }];
-                        logic.add('alice', 'Alice private note', privAttach, function (err, thing1) {
-                            if (err) return done(err);
-                            alicePrivateThingId = thing1._id.toString();
+        // Create private note for Bob
+        var bobAttach = [{ identifier: bobPrivateFile, fileName: 'bob.txt', type: 'unknown' }];
+        var thing3 = await logic.add('bob', 'Bob private note', bobAttach);
+        bobPrivateThingId = thing3._id.toString();
 
-                            var pubAttach = [{ identifier: alicePublicFile, fileName: 'banner.txt', type: 'unknown' }];
-                            logic.add('alice', 'Alice public note', pubAttach, function (err, thing2) {
-                                if (err) return done(err);
-                                var t2Id = thing2._id.toString();
-                                // Make it public
-                                logic.put('alice', t2Id, 'Alice public note', pubAttach, true, false, false, false, undefined, thing2.revision, function (err, updated) {
-                                    if (err) return done(err);
-                                    alicePublicThingId = t2Id;
-
-                                    // Create private note for Bob
-                                    var bobAttach = [{ identifier: bobPrivateFile, fileName: 'bob.txt', type: 'unknown' }];
-                                    logic.add('bob', 'Bob private note', bobAttach, function (err, thing3) {
-                                        if (err) return done(err);
-                                        bobPrivateThingId = thing3._id.toString();
-
-                                        // Set up authenticated agents
-                                        aliceAgent = request.agent(app);
-                                        bobAgent = request.agent(app);
-
-                                        aliceAgent
-                                            .post('/api/login')
-                                            .send({ username: 'alice', password: 'Password123!' })
-                                            .expect(200)
-                                            .end(function (err) {
-                                                if (err) return done(err);
-
-                                                bobAgent
-                                                    .post('/api/login')
-                                                    .send({ username: 'bob', password: 'Password123!' })
-                                                    .expect(200)
-                                                    .end(done);
-                                            });
-                                    });
-                                });
-                            });
-                        });
-                    });
-                });
-            }, done);
-        });
+        // Set up authenticated agents
+        aliceAgent = request.agent(app);
+        bobAgent = request.agent(app);
+        await aliceAgent.post('/api/login').send({ username: 'alice', password: 'Password123!' }).expect(200);
+        await bobAgent.post('/api/login').send({ username: 'bob', password: 'Password123!' }).expect(200);
     });
 
-    after(function (done) {
-        config.attachmentDir = prevAttachmentDir;
-        fs.rmSync(testAttachmentDir, { recursive: true, force: true });
-        config._clearDatabase(done);
+    after(async function () {
+        try {
+            config.attachmentDir = prevAttachmentDir;
+            fs.rmSync(testAttachmentDir, { recursive: true, force: true });
+            await config._clearDatabase();
+        } finally {
+            config.db = previousDb;
+            if (dbClient) await dbClient.close();
+        }
     });
 
     describe('Private attachment access control', function () {
@@ -154,6 +133,43 @@ describe('Attachment Authorization (RF-104)', function () {
                     expect(err).to.be(null);
                     done();
                 });
+        });
+    });
+
+    describe('Attachment download responses', function () {
+        it('serves non-image attachments with an attachment filename', async function () {
+            var response = await aliceAgent
+                .get('/api/files/alice/' + alicePrivateThingId + '/' + alicePrivateFile).expect(200);
+            expect(response.headers['content-disposition']).to.equal('attachment; filename="secret.txt"');
+        });
+
+        it('encodes spaces and special characters in download filenames', async function () {
+            var fileName = 'report 100% #1.txt';
+            var note = await logic.add('alice', 'Encoded download', [{
+                identifier: alicePrivateFile, fileName: fileName, type: 'unknown'
+            }]);
+            var response = await aliceAgent
+                .get('/api/files/alice/' + note._id + '/' + alicePrivateFile).expect(200);
+            expect(response.headers['content-disposition'])
+                .to.equal('attachment; filename="report%20100%25%20%231.txt"');
+        });
+
+        it('returns a clean 404 when an attached file disappears from disk', async function () {
+            var identifier = 'missing-on-disk.txt';
+            var filePath = path.join(testAttachmentDir, 'alice', identifier);
+            fs.writeFileSync(filePath, 'Temporary attachment');
+            var attachment = { identifier: identifier, fileName: 'missing.txt', type: 'unknown' };
+            var note = await logic.add('alice', 'Missing file', [attachment]);
+            var url = '/api/files/alice/' + note._id + '/' + identifier;
+            await aliceAgent.get(url).expect(200);
+            fs.unlinkSync(filePath);
+
+            var response = await aliceAgent.get(url).expect(404);
+            expect(response.body).to.eql({
+                status: 'Not Found', code: 'not_found', message: 'file not found'
+            });
+            expect(response.text).not.to.contain(testAttachmentDir);
+            expect((await logic.get('alice', note._id)).attachments).to.eql([attachment]);
         });
     });
 

@@ -4,12 +4,12 @@ Meemo is a small browser application served by Express and backed by MongoDB and
 
 ## Runtime flow
 
-1. `app.js` provides the `startServer` runtime entry point, managed by `src/lifecycle.js` (`WorkerManager`, `DatabaseManager`, `ShutdownManager`).
+1. `app.js` provides the `startServer` runtime entry point, managed by `src/lifecycle.js` (`DatabaseManager`, `ShutdownManager`).
 2. `src/http/app.js` provides the injected `createApp` Express application factory; `src/http/session.js` and `src/http/uploads.js` own session and upload middleware.
 3. `src/http/router.js` composes domain route modules under `src/http/routes/`; Zod schemas validate body, query, and path input before handlers run.
 4. `src/http/responses.js` maps failures to stable API error codes without returning internal stack traces or filesystem paths.
 5. `src/services/` implements authentication, notes, attachments, sharing, settings, health, and import/export behavior without depending on Express.
-6. Runtime, HTTP, services, storage, user repositories, and primary database modules use Promise-first `async`/`await`; callback adapters remain only for legacy scripts and tests during migration.
+6. Runtime, HTTP, services, storage, user repositories, and database modules use Promise-first `async`/`await` without `nodeify` callback adapters (only OS signal attachment in tests retains a completion hook).
 7. `src/database/` reads and writes MongoDB collections (unified collections `things`, `tags`, and `settings` partitioned by `ownerId`, plus `users` and `sessions`).
 8. `src/storage/local-storage.js` owns persistent attachment filesystem access.
 9. `src/users.js` handles account operations and passwords through `MongoUserRepository`; legacy file/fallback repositories and the unused `UserRepository` compatibility alias have been removed.
@@ -25,7 +25,7 @@ Keep HTTP concerns in `src/http/`, application behavior in `src/services/`, pers
 | --- | --- |
 | Notes, settings, sessions | MongoDB (unified collections: `things`, `settings`, `sessions`; `things.tags` is the single source of truth for tags; `tags` collection is a historical projection) |
 | Attachments | `ATTACHMENT_DIR` partitioned by stable `userId` |
-| Accounts | MongoDB `users` collection (accounts are stored solely in MongoDB; legacy user files are read-only inputs for offline migration tools only) |
+| Accounts | MongoDB `users` collection (accounts are stored solely in MongoDB) |
 
 Interactive login uses username/password authentication. Passwords are stored as bcrypt hashes, and successful login creates a server-side session backed by MongoDB with a stable user ID. Optional MCP clients use separately consented, resource-bound OAuth tokens; these cannot authenticate ordinary REST endpoints.
 
@@ -92,7 +92,7 @@ Meemo employs a multi-tiered performance strategy balancing database efficiency,
    - Default note list feed: `{ ownerId: 1, deletedAt: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }` covers the active/trash state, owner/archive filters, and stable compound sorting.
    - Tag-filtered feed: `{ ownerId: 1, deletedAt: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }` enables owner/deletion/tag lookups with stable sorting.
    - Full-text search: `{ ownerId: 1, content: 'text', tags: 'text' }` (`owner_text_content_tags`, weighted `{ tags: 10, content: 5 }`) provides owner-isolated text searches with English Porter stemming and TF-IDF relevance scoring.
-   - Secondary indexes (e.g. `publicId` and `modifiedAt`) are initialized concurrently using `Promise.all` at startup.
+   - Compound `ownerId`-prefixed indexes covering `modifiedAt`, `sticky`, `archived`, and `tags` are initialized concurrently using `Promise.all` at startup.
 
 2. **Backend Fast-Path Parsing**:
    Note parsing in `src/services/thing-service.js` avoids unnecessary Markdown-it abstract syntax tree parsing when notes lack candidate URL schemes (`URL_FEATURE_PATTERN`) or hashtags (leading `#` boundary check). Plaintext notes without URLs or tags bypass heavy regex passes and link extractions. Writes extract URLs once and reuse them for tag parsing and SSRF-protected enrichment. Creation renders the document returned by the repository without reading it back again.

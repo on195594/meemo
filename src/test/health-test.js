@@ -13,22 +13,24 @@ var expect = require('expect.js'),
 
 describe('Health & Runtime Contract', function () {
     var app;
+    var dbClient;
+    var previousDb;
 
-    before(function (done) {
-        config._clearDatabase(function (err) {
-            if (err) return done(err);
-
-            // Connect config.db for tests
-            require('mongodb').MongoClient.connect(config.databaseUrl).then(function (client) {
-                config.db = client.db();
-                app = createApp({ sessionMemory: true });
-                done();
-            }, done);
-        });
+    before(async function () {
+        previousDb = config.db;
+        await config._clearDatabase();
+        dbClient = await require('mongodb').MongoClient.connect(config.databaseUrl);
+        config.db = dbClient.db();
+        app = createApp({ sessionMemory: true });
     });
 
-    after(function (done) {
-        config._clearDatabase(done);
+    after(async function () {
+        try {
+            await config._clearDatabase();
+        } finally {
+            config.db = previousDb;
+            if (dbClient) await dbClient.close();
+        }
     });
 
     describe('createApp', function () {

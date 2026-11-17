@@ -10,6 +10,7 @@
 var expect = require('expect.js');
 var http = require('http');
 var EventEmitter = require('events').EventEmitter;
+var MongoClient = require('mongodb').MongoClient;
 var ssrf = require('../ssrf.js');
 var logic = require('../services/thing-service.js');
 var config = require('../config.js');
@@ -111,87 +112,46 @@ describe('SSRF Protection', function () {
     });
 
     describe('isSafeUrl', function () {
-        it('rejects non-http/https protocols', function (done) {
-            ssrf.isSafeUrl('ftp://example.com/file', function (err, safe) {
-                expect(safe).to.be(false);
-                ssrf.isSafeUrl('file:///etc/passwd', function (err, safe) {
-                    expect(safe).to.be(false);
-                    ssrf.isSafeUrl('javascript:alert(1)', function (err, safe) {
-                        expect(safe).to.be(false);
-                        done();
-                    });
-                });
-            });
+        it('rejects non-http/https protocols', async function () {
+            expect((await ssrf.isSafeUrl('ftp://example.com/file')).safe).to.be(false);
+            expect((await ssrf.isSafeUrl('file:///etc/passwd')).safe).to.be(false);
+            expect((await ssrf.isSafeUrl('javascript:alert(1)')).safe).to.be(false);
         });
 
-        it('rejects localhost and reserved local hostnames', function (done) {
-            ssrf.isSafeUrl('http://localhost:3000/api', function (err, safe) {
-                expect(safe).to.be(false);
-                ssrf.isSafeUrl('http://sub.localhost/foo', function (err, safe) {
-                    expect(safe).to.be(false);
-                    ssrf.isSafeUrl('http://myhost.local/', function (err, safe) {
-                        expect(safe).to.be(false);
-                        ssrf.isSafeUrl('http://internal.lan/secret', function (err, safe) {
-                            expect(safe).to.be(false);
-                            done();
-                        });
-                    });
-                });
-            });
+        it('rejects localhost and reserved local hostnames', async function () {
+            expect((await ssrf.isSafeUrl('http://localhost:3000/api')).safe).to.be(false);
+            expect((await ssrf.isSafeUrl('http://sub.localhost/foo')).safe).to.be(false);
+            expect((await ssrf.isSafeUrl('http://myhost.local/')).safe).to.be(false);
+            expect((await ssrf.isSafeUrl('http://internal.lan/secret')).safe).to.be(false);
         });
 
-        it('rejects loopback and link-local IP URLs', function (done) {
-            ssrf.isSafeUrl('http://127.0.0.1:8080', function (err, safe) {
-                expect(safe).to.be(false);
-                ssrf.isSafeUrl('http://169.254.169.254/latest/meta-data', function (err, safe) {
-                    expect(safe).to.be(false);
-                    done();
-                });
-            });
+        it('rejects loopback and link-local IP URLs', async function () {
+            expect((await ssrf.isSafeUrl('http://127.0.0.1:8080')).safe).to.be(false);
+            expect((await ssrf.isSafeUrl('http://169.254.169.254/latest/meta-data')).safe).to.be(false);
         });
 
-        it('rejects RFC1918 private IP URLs', function (done) {
-            ssrf.isSafeUrl('http://10.0.0.1/admin', function (err, safe) {
-                expect(safe).to.be(false);
-                ssrf.isSafeUrl('http://172.16.0.1/', function (err, safe) {
-                    expect(safe).to.be(false);
-                    ssrf.isSafeUrl('http://192.168.1.1/router', function (err, safe) {
-                        expect(safe).to.be(false);
-                        done();
-                    });
-                });
-            });
+        it('rejects RFC1918 private IP URLs', async function () {
+            expect((await ssrf.isSafeUrl('http://10.0.0.1/admin')).safe).to.be(false);
+            expect((await ssrf.isSafeUrl('http://172.16.0.1/')).safe).to.be(false);
+            expect((await ssrf.isSafeUrl('http://192.168.1.1/router')).safe).to.be(false);
         });
 
-        it('rejects IPv6 loopback and private URLs', function (done) {
-            ssrf.isSafeUrl('http://[::1]:8080', function (err, safe) {
-                expect(safe).to.be(false);
-                ssrf.isSafeUrl('http://[fe80::1]/', function (err, safe) {
-                    expect(safe).to.be(false);
-                    ssrf.isSafeUrl('http://[fc00::1]/', function (err, safe) {
-                        expect(safe).to.be(false);
-                        done();
-                    });
-                });
-            });
+        it('rejects IPv6 loopback and private URLs', async function () {
+            expect((await ssrf.isSafeUrl('http://[::1]:8080')).safe).to.be(false);
+            expect((await ssrf.isSafeUrl('http://[fe80::1]/')).safe).to.be(false);
+            expect((await ssrf.isSafeUrl('http://[fc00::1]/')).safe).to.be(false);
         });
 
-        it('rejects malformed URLs', function (done) {
-            ssrf.isSafeUrl('not a url', function (err, safe) {
-                expect(safe).to.be(false);
-                done();
-            });
+        it('rejects malformed URLs', async function () {
+            expect((await ssrf.isSafeUrl('not a url')).safe).to.be(false);
         });
     });
 
     describe('probeUrl and redirects', function () {
-        it('blocks direct probe to loopback address', function (done) {
-            ssrf.probeUrl('http://127.0.0.1/image.png', function (err, result) {
-                expect(err).to.be(null);
-                expect(result.type).to.equal(ssrf.TYPE_UNKNOWN);
-                expect(result.url).to.equal('http://127.0.0.1/image.png');
-                done();
-            });
+        it('blocks direct probe to loopback address', async function () {
+            var result = await ssrf.probeUrl('http://127.0.0.1/image.png');
+            expect(result.type).to.equal(ssrf.TYPE_UNKNOWN);
+            expect(result.url).to.equal('http://127.0.0.1/image.png');
         });
 
         it('blocks redirects from a public URL to loopback and metadata addresses', async function () {
@@ -220,26 +180,32 @@ describe('SSRF Protection', function () {
     });
 
     describe('Enrichment policy and note integration', function () {
-        before(function (done) {
-            config._clearDatabase(done);
+        var dbClient;
+        var previousDb;
+
+        before(async function () {
+            previousDb = config.db;
+            await config._clearDatabase();
+            dbClient = await MongoClient.connect(config.databaseUrl);
+            config.db = dbClient.db();
         });
 
-        after(function (done) {
-            config._clearDatabase(done);
+        after(async function () {
+            config.db = previousDb;
+            if (dbClient) {
+                await dbClient.close();
+            }
+            await config._clearDatabase();
         });
 
-        it('defaults to URL enrichment disabled when URL_ENRICHMENT_ENABLED is not set', function (done) {
+        it('defaults to URL enrichment disabled when URL_ENRICHMENT_ENABLED is not set', async function () {
             delete process.env.URL_ENRICHMENT_ENABLED;
             expect(ssrf.isEnrichmentEnabled()).to.be(false);
-
             var note = 'Check out http://127.0.0.1/secret and http://example.com/test.png';
-            ssrf.enrichUrls(logic.extractURLs(note), function (err, result) {
-                expect(err).to.be(null);
-                expect(result.length).to.equal(2);
-                expect(result[0].type).to.equal(ssrf.TYPE_UNKNOWN);
-                expect(result[1].type).to.equal(ssrf.TYPE_UNKNOWN);
-                done();
-            });
+            var result = await ssrf.enrichUrls(logic.extractURLs(note));
+            expect(result.length).to.equal(2);
+            expect(result[0].type).to.equal(ssrf.TYPE_UNKNOWN);
+            expect(result[1].type).to.equal(ssrf.TYPE_UNKNOWN);
         });
 
         it('probes only the first five URLs by default when enrichment is enabled', async function () {
@@ -264,21 +230,18 @@ describe('SSRF Protection', function () {
             }
         });
 
-        it('saves notes cleanly with private URLs without failing or hanging', function (done) {
+        it('saves notes cleanly with private URLs without failing or hanging', async function () {
             process.env.URL_ENRICHMENT_ENABLED = 'false';
             var userId = 'test-user-ssrf';
             var content = 'Note with internal links: http://127.0.0.1:8080, http://169.254.169.254/meta #security';
 
-            logic.add(userId, content, [], function (err, note) {
-                expect(err).to.be(null);
-                expect(note).to.be.ok();
-                expect(note.content).to.equal(content);
-                expect(note.tags).to.eql(['security']);
-                expect(note.externalContent.length).to.equal(2);
-                expect(note.externalContent[0].type).to.equal(ssrf.TYPE_UNKNOWN);
-                expect(note.externalContent[1].type).to.equal(ssrf.TYPE_UNKNOWN);
-                done();
-            });
+            var note = await logic.add(userId, content, []);
+            expect(note).to.be.ok();
+            expect(note.content).to.equal(content);
+            expect(note.tags).to.eql(['security']);
+            expect(note.externalContent.length).to.equal(2);
+            expect(note.externalContent[0].type).to.equal(ssrf.TYPE_UNKNOWN);
+            expect(note.externalContent[1].type).to.equal(ssrf.TYPE_UNKNOWN);
         });
     });
 });

@@ -105,6 +105,77 @@ describe('Keep-style notes workspace', () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    ['pin', 'Toggle pin for selected notes', { sticky: true }, 'Pinned 2 notes'],
+    ['archive', 'Archive selected notes', { archived: true }, 'Archived 2 notes'],
+    ['color', 'Change color for selected notes', { color: 'coral' }, 'Updated color for 2 notes'],
+    ['delete', 'Delete selected notes', {}, 'Moved 2 notes to Trash'],
+  ] as const)('applies batch %s only to selected notes and clears selection', async (action, label, updates, message) => {
+    const { fetchMock } = backend();
+    const respond = fetchMock.getMockImplementation()!;
+    const notes = [NOTE, { ...NOTE, _id: 'note-2', content: 'Second note' }, { ...NOTE, _id: 'note-3', content: 'Unselected note' }];
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith('/api/things?')) return json({ things: notes });
+      const target = notes.find(note => path === `/api/things/${note._id}`);
+      if (target && init?.method === 'PUT') {
+        const { expectedRevision, ...changes } = JSON.parse(String(init.body));
+        return json({ thing: { ...target, ...changes, revision: expectedRevision + 1 } });
+      }
+      if (target && init?.method === 'DELETE') return json({});
+      return respond(input, init);
+    });
+    wrapper = (await renderApp(fetchMock)).wrapper;
+    expect(wrapper.find('.batch-action-bar').exists()).toBe(false);
+    const selectors = wrapper.findAll('[aria-label="Select note"]');
+    await selectors[0].trigger('click');
+    await selectors[1].trigger('click');
+    expect(wrapper.get('.batch-count').text()).toBe('2 selected');
+    fetchMock.mockClear();
+    await wrapper.get(`.batch-action-bar [aria-label="${label}"]`).trigger('click');
+    if (action === 'color') await wrapper.get('.batch-color-palette [aria-label="Coral"]').trigger('click');
+    await settle();
+    const mutations = fetchMock.mock.calls.filter(([, init]) => init?.method === (action === 'delete' ? 'DELETE' : 'PUT'));
+    expect(mutations.map(([path]) => path).sort()).toEqual(['/api/things/note-1', '/api/things/note-2']);
+    for (const [, init] of mutations) {
+      expect(JSON.parse(String(init?.body))).toEqual(expect.objectContaining({ ...updates, expectedRevision: 1 }));
+    }
+    expect(wrapper.find('.batch-action-bar').exists()).toBe(false);
+    expect(wrapper.text()).toContain(message);
+    expect(wrapper.text()).toContain('Unselected note');
+    if (action === 'archive' || action === 'delete') expect(wrapper.findAll('.note-card')).toHaveLength(1);
+    else {
+      const changed = useNotes().things.value.filter(note => note._id !== 'note-3');
+      expect(changed).toHaveLength(2);
+      for (const note of changed) expect(note).toMatchObject(updates);
+      expect(useNotes().things.value.find(note => note._id === 'note-3')).toMatchObject({ sticky: false, archived: false });
+    }
+  });
+
+  it('closes the batch color palette on Escape without clearing note selection', async () => {
+    const { fetchMock } = backend();
+    const respond = fetchMock.getMockImplementation()!;
+    const notes = [NOTE, { ...NOTE, _id: 'note-2', content: 'Second note' }];
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input).startsWith('/api/things?')) return json({ things: notes });
+      return respond(input, init);
+    });
+    wrapper = (await renderApp(fetchMock)).wrapper;
+    const selectors = wrapper.findAll('[aria-label="Select note"]');
+    await selectors[0].trigger('click');
+    await selectors[1].trigger('click');
+    await wrapper.get('.batch-action-bar [aria-label="Change color for selected notes"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.batch-color-palette').exists()).toBe(true);
+    await wrapper.get('.batch-swatch').trigger('keydown', { key: 'Escape' });
+    await flushPromises();
+    expect(wrapper.find('.batch-color-palette').exists()).toBe(false);
+    expect(wrapper.get('.batch-count').text()).toBe('2 selected');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flushPromises();
+    expect(wrapper.find('.batch-action-bar').exists()).toBe(false);
+  });
+
   it('keeps a dialog draft on its original revision after a list refresh', async () => {
     const { state, fetchMock } = backend();
     const respond = fetchMock.getMockImplementation()!;

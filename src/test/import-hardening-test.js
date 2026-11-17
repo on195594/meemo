@@ -39,10 +39,13 @@ function importEntries(userId, entries) {
             if (error) return reject(error);
             var archivePath = '/tmp/meemo-import-case-' + process.pid + '-' + (++archiveSequence) + '.tar';
             fs.writeFileSync(archivePath, tarBuffer);
-            logic.importArchive(userId, archivePath, function (importError, result) {
+            logic.importArchive(userId, archivePath).then(function (result) {
                 fs.rmSync(archivePath, { force: true });
-                resolve({ error: importError, result: result });
-            });
+                resolve({ error: null, result: result });
+            }, function (error) {
+                fs.rmSync(archivePath, { force: true });
+                resolve({ error: error, result: undefined });
+            }).catch(reject);
         });
     });
 }
@@ -89,7 +92,7 @@ describe('Import Safety and Consistency (RF-106)', function () {
         config.attachmentDir = prevAttachmentDir;
 
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
-        config._clearDatabase(done);
+        config._clearDatabase().then(function () { done(); }, done);
     });
 
     describe('Schema validation (validateThingsData)', function () {
@@ -462,9 +465,12 @@ describe('Import Safety and Consistency (RF-106)', function () {
                     return originalCopyAttachment(userId, sourcePath, identifier);
                 };
 
-                logic.importArchive(testUserId, archivePath, function (err) {
+                logic.importArchive(testUserId, archivePath).finally(function () {
                     storage.copyAttachment = originalCopyAttachment;
                     fs.rmSync(archivePath, { force: true });
+                }).then(function () {
+                    throw new Error('Expected operation to reject');
+                }, function (err) {
                     try {
                         expect(err).to.be.ok();
                         expect(err.code).to.equal('EEXIST');
@@ -475,12 +481,11 @@ describe('Import Safety and Consistency (RF-106)', function () {
                         return done(assertionError);
                     }
 
-                    things.getAll(testUserId, {}, 0, 10, function (err, result) {
-                        if (err) return done(err);
+                    things.getAll(testUserId, {}, 0, 10).then(function (result) {
                         expect(result.length).to.equal(0);
                         done();
-                    });
-                });
+                    }).catch(done);
+                }).catch(done);
             });
         });
 
@@ -489,10 +494,10 @@ describe('Import Safety and Consistency (RF-106)', function () {
             things.get = function () { return Promise.reject(new Error('forced post-insert read failure')); };
             var outcome;
             try {
-                outcome = await new Promise(function (resolve) {
-                    logic.importData(testUserId, { things: [{ content: 'post-read failure' }] }, function (error, result) {
-                        resolve({ error: error, result: result });
-                    });
+                outcome = await logic.importData(testUserId, { things: [{ content: 'post-read failure' }] }).then(function (result) {
+                    return { error: null, result: result };
+                }, function (error) {
+                    return { error: error, result: undefined };
                 });
             } finally {
                 things.get = originalGet;
@@ -524,15 +529,15 @@ describe('Import Safety and Consistency (RF-106)', function () {
 
             var outcome;
             try {
-                outcome = await new Promise(function (resolve) {
-                    logic.importData(testUserId, {
-                        things: [
-                            { content: 'first #existing #newtag' },
-                            { content: 'second #existing #newtag' }
-                        ]
-                    }, function (error, result) {
-                        resolve({ error: error, result: result });
-                    });
+                outcome = await logic.importData(testUserId, {
+                    things: [
+                        { content: 'first #existing #newtag' },
+                        { content: 'second #existing #newtag' }
+                    ]
+                }).then(function (result) {
+                    return { error: null, result: result };
+                }, function (error) {
+                    return { error: error, result: undefined };
                 });
             } finally {
                 things.insertFull = originalInsertFull;
@@ -576,13 +581,15 @@ describe('Import Safety and Consistency (RF-106)', function () {
 
             var outcome;
             try {
-                outcome = await new Promise(function (resolve) {
-                    logic.importData(testUserId, {
-                        things: [
-                            { content: 'first #existing #newtag' },
-                            { content: 'second without tags' }
-                        ]
-                    }, function (error, result) { resolve({ error: error, result: result }); });
+                outcome = await logic.importData(testUserId, {
+                    things: [
+                        { content: 'first #existing #newtag' },
+                        { content: 'second without tags' }
+                    ]
+                }).then(function (result) {
+                    return { error: null, result: result };
+                }, function (error) {
+                    return { error: error, result: undefined };
                 });
             } finally {
                 things.insertFull = originalInsertFull;
@@ -725,11 +732,10 @@ describe('Import Safety and Consistency (RF-106)', function () {
                         expect(fs.existsSync(targetFile)).to.be(false);
 
                         // Verify that the first note was rolled back from database
-                        things.getAll(testUserId, {}, 0, 10, function (err, result) {
-                            if (err) return done(err);
+                        things.getAll(testUserId, {}, 0, 10).then(function (result) {
                             expect(result.length).to.equal(0);
                             done();
-                        });
+                        }).catch(done);
                     });
             });
         });
@@ -777,11 +783,10 @@ describe('Import Safety and Consistency (RF-106)', function () {
                         expect(fs.readFileSync(targetFile, 'utf8')).to.equal('attachment content here');
 
                         // Verify notes exist in database
-                        things.getAll(testUserId, {}, 0, 10, function (err, result) {
-                            if (err) return done(err);
+                        things.getAll(testUserId, {}, 0, 10).then(function (result) {
                             expect(result.length).to.equal(2);
                             done();
-                        });
+                        }).catch(done);
                     });
             });
         });

@@ -19,6 +19,8 @@ var createApp = appModule.createApp;
 
 describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
     var app;
+    var dbClient;
+    var previousDb;
     var prevAttachmentDir = config.attachmentDir;
     var testAttachmentDir = '/tmp/meemo-upload-storage-' + process.pid;
     var authAgent;
@@ -28,47 +30,39 @@ describe('Upload Limits and Storage Key Hardening (RF-105)', function () {
     var prevMaxAttach = process.env.MAX_ATTACHMENT_SIZE;
     var prevMaxImport = process.env.MAX_IMPORT_SIZE;
 
-    before(function (done) {
+    before(async function () {
+        previousDb = config.db;
         config.attachmentDir = testAttachmentDir;
         process.env.MAX_ATTACHMENT_SIZE = '1024'; // 1 KB limit for testing
         process.env.MAX_IMPORT_SIZE = '2048';     // 2 KB limit for testing
 
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
 
-        config._clearDatabase(function (err) {
-            if (err) return done(err);
+        await config._clearDatabase();
+        dbClient = await require('mongodb').MongoClient.connect(config.databaseUrl);
+        config.db = dbClient.db();
+        app = createApp({ sessionMemory: true });
 
-            require('mongodb').MongoClient.connect(config.databaseUrl).then(function (client) {
-                config.db = client.db();
-                app = createApp({ sessionMemory: true });
-
-                users.create('uploader', 'uploader@example.com', 'Uploader', 'Password123!', function (err) {
-                    if (err) return done(err);
-
-                    users.resolveUser('uploader', function (err, u) {
-                        if (err) return done(err);
-                        uploaderUser = u;
-
-                        authAgent = request.agent(app);
-                        authAgent
-                            .post('/api/login')
-                            .send({ username: 'uploader', password: 'Password123!' })
-                            .expect(200, done);
-                    });
-                });
-            }, done);
-        });
+        await users.create('uploader', 'uploader@example.com', 'Uploader', 'Password123!');
+        uploaderUser = await users.resolveUser('uploader');
+        authAgent = request.agent(app);
+        await authAgent.post('/api/login').send({ username: 'uploader', password: 'Password123!' }).expect(200);
     });
 
-    after(function (done) {
-        config.attachmentDir = prevAttachmentDir;
-        if (prevMaxAttach === undefined) delete process.env.MAX_ATTACHMENT_SIZE;
-        else process.env.MAX_ATTACHMENT_SIZE = prevMaxAttach;
-        if (prevMaxImport === undefined) delete process.env.MAX_IMPORT_SIZE;
-        else process.env.MAX_IMPORT_SIZE = prevMaxImport;
+    after(async function () {
+        try {
+            config.attachmentDir = prevAttachmentDir;
+            if (prevMaxAttach === undefined) delete process.env.MAX_ATTACHMENT_SIZE;
+            else process.env.MAX_ATTACHMENT_SIZE = prevMaxAttach;
+            if (prevMaxImport === undefined) delete process.env.MAX_IMPORT_SIZE;
+            else process.env.MAX_IMPORT_SIZE = prevMaxImport;
 
-        fs.rmSync(testAttachmentDir, { recursive: true, force: true });
-        config._clearDatabase(done);
+            fs.rmSync(testAttachmentDir, { recursive: true, force: true });
+            await config._clearDatabase();
+        } finally {
+            config.db = previousDb;
+            if (dbClient) await dbClient.close();
+        }
     });
 
     it('removes temporary disk files when a multipart uploader disconnects', async function () {

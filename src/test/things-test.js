@@ -2,26 +2,12 @@
 
 /* global it:false */
 /* global describe:false */
-/* global before:false */
-/* global after:false */
 
 var expect = require('expect.js'),
-    config = require('../config.js'),
     logic = require('../services/thing-service.js');
 
 describe('Things', function () {
-    function setup(done) {
-        config._clearDatabase(done);
-    }
-
-    function cleanup(done) {
-        config._clearDatabase(done);
-    }
-
     describe('extractURLs',  function () {
-        before(setup);
-        after(cleanup);
-
         it('succeeds with one url', function () {
             var test = 'Some content with a url https://example.com/';
 
@@ -93,9 +79,6 @@ describe('Things', function () {
     });
 
     describe('extractTags',  function () {
-        before(setup);
-        after(cleanup);
-
         it('succeeds with one tag', function () {
             var test = 'Hello #tag there!';
 
@@ -211,31 +194,22 @@ describe('Things', function () {
     });
 
     describe('richContent',  function () {
-        before(setup);
-        after(cleanup);
-
         var USER_ID = 'testUserId';
 
-        it('shortens long URLs', function (done) {
+        it('shortens long URLs', async function () {
             var longUrl = 'https://example.com/nebulade/status/761263459120115716/761263459120115716/761263459120115716/?bar=bazhashsometihg=foo#more=so';
             var content = 'Hello this is a too long url ' + longUrl + ' yeah';
-
             var thing = {
                 tags: logic.extractTags(content),
                 externalContent: [{ type: logic.TYPE_UNKNOWN, url: longUrl }],
                 attachments: [],
                 content: content,
             };
-
-            logic.facelift(USER_ID, thing, function (error, result) {
-                expect(error).to.equal(null);
-                expect(result).to.equal('Hello this is a too long url [example.com/nebulade/status/761263459120...](' + longUrl + ') yeah');
-
-                done();
-            });
+            var result = await logic.facelift(USER_ID, thing);
+            expect(result).to.equal('Hello this is a too long url [example.com/nebulade/status/761263459120...](' + longUrl + ') yeah');
         });
 
-        it('succeeds for tags starting at the beginning', function (done) {
+        it('succeeds for tags starting at the beginning', async function () {
             var content = '#nad #and #we #do #this #more #often #So #we #can #produce #a #hell #of #a #lot #schlagworte';
             var thing = {
                 tags: logic.extractTags(content),
@@ -243,16 +217,11 @@ describe('Things', function () {
                 attachments: [],
                 content: content,
             };
-
-            logic.facelift(USER_ID, thing, function (error, result) {
-                expect(error).to.equal(null);
-                expect(result).to.equal('[#nad](#search?#nad) [#and](#search?#and) [#we](#search?#we) [#do](#search?#do) [#this](#search?#this) [#more](#search?#more) [#often](#search?#often) [#so](#search?#so) [#we](#search?#we) [#can](#search?#can) [#produce](#search?#produce) [#a](#search?#a) [#hell](#search?#hell) [#of](#search?#of) [#a](#search?#a) [#lot](#search?#lot) [#schlagworte](#search?#schlagworte)');
-
-                done();
-            });
+            var result = await logic.facelift(USER_ID, thing);
+            expect(result).to.equal('[#nad](#search?#nad) [#and](#search?#and) [#we](#search?#we) [#do](#search?#do) [#this](#search?#this) [#more](#search?#more) [#often](#search?#often) [#so](#search?#so) [#we](#search?#we) [#can](#search?#can) [#produce](#search?#produce) [#a](#search?#a) [#hell](#search?#hell) [#of](#search?#of) [#a](#search?#a) [#lot](#search?#lot) [#schlagworte](#search?#schlagworte)');
         });
 
-        it('succeeds for tags starting with other tags', function (done) {
+        it('succeeds for tags starting with other tags', async function () {
             var content = '#nad #more#often#so #we';
             var thing = {
                 tags: logic.extractTags(content),
@@ -260,16 +229,11 @@ describe('Things', function () {
                 attachments: [],
                 content: content,
             };
-
-            logic.facelift(USER_ID, thing, function (error, result) {
-                expect(error).to.equal(null);
-                expect(result).to.equal('[#nad](#search?#nad) [#more](#search?#more)[#often](#search?#often)[#so](#search?#so) [#we](#search?#we)');
-
-                done();
-            });
+            var result = await logic.facelift(USER_ID, thing);
+            expect(result).to.equal('[#nad](#search?#nad) [#more](#search?#more)[#often](#search?#often)[#so](#search?#so) [#we](#search?#we)');
         });
 
-        it('succeeds for attachments with special regex characters in fileName', function (done) {
+        it('succeeds for attachments with special regex characters in fileName', async function () {
             var fileName = 'file [1] (test) + foo*.png';
             var thing = {
                 _id: '507f1f77bcf86cd799439011',
@@ -282,15 +246,11 @@ describe('Things', function () {
                 }],
                 content: 'Here is an image: [' + fileName + ']'
             };
-
-            logic.facelift(USER_ID, thing, function (error, result) {
-                expect(error).to.equal(null);
-                expect(result).to.contain('![/api/files/' + USER_ID + '/' + thing._id + '/ident-123.png](/api/files/' + USER_ID + '/' + thing._id + '/ident-123.png)');
-                done();
-            });
+            var result = await logic.facelift(USER_ID, thing);
+            expect(result).to.contain('![/api/files/' + USER_ID + '/' + thing._id + '/ident-123.png](/api/files/' + USER_ID + '/' + thing._id + '/ident-123.png)');
         });
 
-        it('preserves WikiLink spans without rewriting attachment names or tags inside brackets', function (done) {
+        it('preserves WikiLink spans without rewriting attachment names or tags inside brackets', async function () {
             var fileName = 'diagram.png';
             var thing = {
                 _id: '507f1f77bcf86cd799439011',
@@ -303,75 +263,92 @@ describe('Things', function () {
                 }],
                 content: 'See [[diagram.png]] and [[Note #work]] alongside [' + fileName + '] and #work'
             };
-
-            logic.facelift(USER_ID, thing, function (error, result) {
-                expect(error).to.equal(null);
-                expect(result).to.contain('[[diagram.png]]');
-                expect(result).to.contain('[[Note #work]]');
-                expect(result).to.contain('![/api/files/' + USER_ID + '/' + thing._id + '/ident-diagram.png]');
-                expect(result).to.contain('[#work](#search?#work)');
-                done();
-            });
+            var result = await logic.facelift(USER_ID, thing);
+            expect(result).to.contain('[[diagram.png]]');
+            expect(result).to.contain('[[Note #work]]');
+            expect(result).to.contain('![/api/files/' + USER_ID + '/' + thing._id + '/ident-diagram.png]');
+            expect(result).to.contain('[#work](#search?#work)');
         });
     });
 
-    describe('buildSearchFilter', function () {
-        it('returns null for empty or invalid input', function () {
-            expect(logic.buildSearchFilter('')).to.equal(null);
-            expect(logic.buildSearchFilter('   ')).to.equal(null);
-            expect(logic.buildSearchFilter(null)).to.equal(null);
-            expect(logic.buildSearchFilter(undefined)).to.equal(null);
+    describe('HTTP /api/things and shared note routes', function () {
+        var MongoClient = require('mongodb').MongoClient;
+        var request = require('supertest');
+        var config = require('../config.js');
+        var users = require('../users.js');
+        var createApp = require('../http/app.js');
+        var dbClient;
+        var previousDb;
+        var app;
+        var aliceAgent;
+        var bobAgent;
+
+        before(async function () {
+            previousDb = config.db;
+            await config._clearDatabase();
+            dbClient = await MongoClient.connect(config.databaseUrl);
+            config.db = dbClient.db();
+            await users.create('httpalice', 'httpalice@example.com', 'HTTP Alice', 'password123');
+            await users.create('httpbob', 'httpbob@example.com', 'HTTP Bob', 'password123');
+            app = createApp({ sessionMemory: true, sessionSecret: 'things-http-test-secret' });
+            aliceAgent = request.agent(app);
+            bobAgent = request.agent(app);
+            await aliceAgent.post('/api/login').send({ username: 'httpalice', password: 'password123' }).expect(200);
+            await bobAgent.post('/api/login').send({ username: 'httpbob', password: 'password123' }).expect(200);
         });
 
-        it('builds tag query for single hashtag', function () {
-            var filter = logic.buildSearchFilter('#工作');
-            expect(filter).to.eql({ tags: '工作' });
+        after(async function () {
+            try {
+                await config._clearDatabase();
+            } finally {
+                if (dbClient) await dbClient.close();
+                config.db = previousDb;
+            }
         });
 
-        it('builds tag and-query for multiple hashtags', function () {
-            var filter = logic.buildSearchFilter('#work #urgent');
-            expect(filter).to.eql({
-                $and: [
-                    { tags: 'work' },
-                    { tags: 'urgent' }
-                ]
-            });
+        it('isolates GET /api/things/:id across users and rejects malformed ObjectIds', async function () {
+            var created = await aliceAgent.post('/api/things').send({ content: 'Alice secret note' }).expect(201);
+            var id = created.body.thing._id;
+
+            await aliceAgent.get('/api/things/' + id).expect(200);
+            var crossUser = await bobAgent.get('/api/things/' + id).expect(404);
+            expect(crossUser.body.code).to.equal('not_found');
+
+            var invalidId = await aliceAgent.get('/api/things/not-an-object-id').expect(400);
+            expect(invalidId.body.code).to.equal('invalid_request');
         });
 
-        it('builds case-insensitive regex query for Chinese keyword', function () {
-            var filter = logic.buildSearchFilter('机器学习');
-            expect(filter).to.eql({
-                $or: [
-                    { content: { $regex: '机器学习', $options: 'i' } },
-                    { tags: '机器学习' }
-                ]
-            });
+        it('filters GET /api/things by sticky and query string end-to-end', async function () {
+            var sticky = await aliceAgent.post('/api/things').send({ content: '置顶计划 #roadmap' }).expect(201);
+            await aliceAgent.put('/api/things/' + sticky.body.thing._id).send({
+                content: '置顶计划 #roadmap',
+                sticky: true,
+                expectedRevision: sticky.body.thing.revision
+            }).expect(201);
+            await aliceAgent.post('/api/things').send({ content: '普通记录 #notes' }).expect(201);
+
+            var stickyList = await aliceAgent.get('/api/things?sticky=true').expect(200);
+            expect(stickyList.body.things.map(function (t) { return t._id; })).to.eql([sticky.body.thing._id]);
+
+            var filtered = await aliceAgent.get('/api/things').query({ filter: '置顶 #roadmap' }).expect(200);
+            expect(filtered.body.things.map(function (t) { return t._id; })).to.eql([sticky.body.thing._id]);
         });
 
-        it('builds multi-word AND query combining regex and tags', function () {
-            var filter = logic.buildSearchFilter('学习 算法');
-            expect(filter.$and).to.be.an('array');
-            expect(filter.$and.length).to.equal(2);
-            expect(filter.$and[0]).to.eql({
-                $or: [
-                    { content: { $regex: '学习', $options: 'i' } },
-                    { tags: '学习' }
-                ]
-            });
-            expect(filter.$and[1]).to.eql({
-                $or: [
-                    { content: { $regex: '算法', $options: 'i' } },
-                    { tags: '算法' }
-                ]
-            });
-        });
+        it('serves shared notes on GET /api/public/shared/things/:thingId while blocking non-shared notes', async function () {
+            var created = await aliceAgent.post('/api/things').send({ content: 'Shared note body' }).expect(201);
+            var id = created.body.thing._id;
 
-        it('safely escapes special regex characters', function () {
-            var filter = logic.buildSearchFilter('c++ (v2.0) [test]?');
-            expect(filter.$and.length).to.equal(3);
-            expect(filter.$and[0].$or[0].content.$regex).to.equal('c\\+\\+');
-            expect(filter.$and[1].$or[0].content.$regex).to.equal('\\(v2\\.0\\)');
-            expect(filter.$and[2].$or[0].content.$regex).to.equal('\\[test\\]\\?');
+            await request(app).get('/api/public/shared/things/' + id).expect(403);
+
+            await aliceAgent.put('/api/things/' + id).send({
+                content: 'Shared note body',
+                shared: true,
+                expectedRevision: created.body.thing.revision
+            }).expect(201);
+
+            var sharedRes = await request(app).get('/api/public/shared/things/' + id).expect(200);
+            expect(sharedRes.body.thing._id).to.equal(id);
+            expect(sharedRes.body.thing.content).to.equal('Shared note body');
         });
     });
 });

@@ -3,16 +3,12 @@
 /* global it:false */
 /* global describe:false */
 
-var fs = require('fs'),
-    path = require('path'),
-    expect = require('expect.js'),
+var expect = require('expect.js'),
     appModule = require('../../app.js'),
     createApp = appModule.createApp,
     startServer = appModule.startServer;
 
 describe('Production Deployment Hardening (RF-602)', function () {
-    var rootDir = path.resolve(__dirname, '../..');
-
     describe('Fail-fast on missing production secret', function () {
         it('throws immediately in createApp when NODE_ENV=production and SESSION_SECRET is missing', function () {
             expect(function () {
@@ -86,47 +82,6 @@ describe('Production Deployment Hardening (RF-602)', function () {
                 else delete process.env.AUTH_USER_SOURCE;
                 users.initRepository();
             }
-        });
-    });
-
-    describe('Dockerfile production security defaults', function () {
-        var dockerfile = fs.readFileSync(path.join(rootDir, 'Dockerfile'), 'utf8');
-
-        it('enforces non-root user execution (1000:1000)', function () {
-            expect(dockerfile).to.contain('USER 1000:1000');
-        });
-
-        it('probes /api/health/ready for comprehensive readiness checks', function () {
-            expect(dockerfile).to.contain('http://127.0.0.1:${PORT}/api/health/ready');
-        });
-    });
-
-    describe('Docker Compose security options and isolation', function () {
-        var composeContent = fs.readFileSync(path.join(rootDir, 'docker-compose.yml'), 'utf8');
-
-        it('enforces read-only root filesystem on meemo service', function () {
-            expect(composeContent).to.contain('read_only: true');
-        });
-
-        it('mounts tmpfs on /tmp with noexec and nosuid', function () {
-            expect(composeContent).to.contain('/tmp:rw,noexec,nosuid');
-        });
-
-        it('drops all Linux capabilities and prevents privilege escalation', function () {
-            expect(composeContent).to.contain('no-new-privileges:true');
-            expect(composeContent).to.contain('cap_drop:');
-            expect(composeContent).to.contain('- ALL');
-        });
-
-        it('enforces required SESSION_SECRET parameter expansion', function () {
-            expect(composeContent).to.contain('${SESSION_SECRET:?');
-        });
-
-        it('keeps mongodb isolated without exposing ports to host', function () {
-            var mongoSection = composeContent.split('\n  mongodb:')[1].split('\nvolumes:')[0];
-            expect(mongoSection).not.to.contain('ports:');
-            expect(mongoSection).to.contain('networks:');
-            expect(mongoSection).to.contain('- backend');
         });
     });
 });

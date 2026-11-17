@@ -1,6 +1,13 @@
-import { flushPromises, mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import NoteComposer from './NoteComposer.vue';
+import { api } from '../api/client';
+import { shrinkImage } from '../utils/image';
+
+vi.mock('../api/client', () => ({ api: { files: { upload: vi.fn() } } }));
+vi.mock('../utils/image', () => ({ shrinkImage: vi.fn() }));
+enableAutoUnmount(afterEach);
+beforeEach(() => vi.resetAllMocks());
 
 function clickOutside() {
   document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
@@ -199,5 +206,78 @@ describe('NoteComposer behavior', () => {
     expect(onSave).not.toHaveBeenCalled();
     expect((wrapper.get('.composer-textarea').element as HTMLTextAreaElement).value).toBe('Keep for later');
     wrapper.unmount();
+  });
+});
+
+
+describe('NoteComposer attachments', () => {
+  it.each(['input', 'drop', 'paste'])('shrinks and uploads an image via %s', async (source) => {
+    const file = new File(['original'], 'photo.png', { type: 'image/png' });
+    const shrunk = new File(['small'], 'photo.jpg', { type: 'image/jpeg' });
+    const uploaded = { identifier: 'image-1', fileName: 'photo.jpg', type: 'image' as const };
+    vi.mocked(shrinkImage).mockResolvedValue(shrunk);
+    let finish!: (value: typeof uploaded) => void;
+    vi.mocked(api.files.upload).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const onSave = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteComposer, { props: { onSave } });
+    await wrapper.get('textarea').setValue('Photo note');
+    if (source === 'input') {
+      const input = wrapper.get('input[type="file"]');
+      Object.defineProperty(input.element, 'files', { value: [file] });
+      await input.trigger('change');
+    } else if (source === 'drop') {
+      await wrapper.trigger('drop', { dataTransfer: { files: [file] } });
+    } else {
+      await wrapper.get('textarea').trigger('paste', { clipboardData: { items: [
+        { kind: 'string', getAsFile: () => null },
+        { kind: 'file', getAsFile: () => file },
+      ] } });
+    }
+    await flushPromises();
+    expect(shrinkImage).toHaveBeenCalledExactlyOnceWith(file);
+    expect(api.files.upload).toHaveBeenCalledExactlyOnceWith(shrunk, expect.any(Function));
+    vi.mocked(api.files.upload).mock.calls[0][1]!(60);
+    await flushPromises();
+    expect(wrapper.get('.progress-text').text()).toContain('60%');
+    finish(uploaded);
+    await flushPromises();
+    expect(wrapper.get('.attachment-chip').text()).toContain('photo.jpg');
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('Photo note');
+    expect(wrapper.find('.upload-progress-box').exists()).toBe(false);
+    await wrapper.get('.btn-close').trigger('click');
+    await flushPromises();
+    expect(onSave).toHaveBeenCalledWith('Photo note', [uploaded]);
+  });
+
+  it('appends a non-image filename token and removes it with its attachment', async () => {
+    const file = new File(['document'], 'report.pdf', { type: 'application/pdf' });
+    vi.mocked(shrinkImage).mockResolvedValue(file);
+    vi.mocked(api.files.upload).mockResolvedValue({ identifier: 'file-1', fileName: 'report.pdf' });
+    const onSave = vi.fn().mockResolvedValue({ success: true });
+    const wrapper = mount(NoteComposer, { props: { onSave } });
+    await wrapper.get('textarea').setValue('Read this');
+    await wrapper.trigger('drop', { dataTransfer: { files: [file] } });
+    await flushPromises();
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('Read this [report.pdf] ');
+    await wrapper.get('[aria-label="Remove attachment report.pdf"]').trigger('click');
+    expect(wrapper.find('.attachment-chip').exists()).toBe(false);
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('Read this');
+    await wrapper.get('.btn-close').trigger('click');
+    await flushPromises();
+    expect(onSave).toHaveBeenCalledWith('Read this', []);
+  });
+
+  it('shows upload errors without losing note text or adding an attachment', async () => {
+    const file = new File(['file'], 'report.pdf');
+    vi.mocked(shrinkImage).mockResolvedValue(file);
+    vi.mocked(api.files.upload).mockRejectedValue(new Error('Upload unavailable'));
+    const wrapper = mount(NoteComposer, { props: { onSave: vi.fn() } });
+    await wrapper.get('textarea').setValue('Keep my draft');
+    await wrapper.trigger('drop', { dataTransfer: { files: [file] } });
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toBe('Upload unavailable');
+    expect(wrapper.find('.attachment-chip').exists()).toBe(false);
+    expect(wrapper.find('.upload-progress-box').exists()).toBe(false);
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('Keep my draft');
   });
 });

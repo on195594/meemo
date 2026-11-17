@@ -11,9 +11,14 @@ var expect = require('expect.js'),
 describe('Structured Logging & Request Context (RF-401)', function () {
     it('generates a unique requestId and sets X-Request-Id header', function (done) {
         var logs = [];
+        var resolveRecord;
+        var recordReceived = new Promise(function (resolve) { resolveRecord = resolve; });
         var customLogger = logger.createLogger({
             forceEnable: true,
-            stream: function (record) { logs.push(record); }
+            stream: function (record) {
+                logs.push(record);
+                if (record.event === 'http_request') resolveRecord(record);
+            }
         });
 
         var app = createApp({
@@ -31,10 +36,8 @@ describe('Structured Logging & Request Context (RF-401)', function () {
                 expect(requestId).to.be.a('string');
                 expect(requestId.length).to.be.greaterThan(8);
 
-                // Wait tick for finish event
-                setTimeout(function () {
+                recordReceived.then(function (entry) {
                     expect(logs.length).to.be.greaterThan(0);
-                    var entry = logs[logs.length - 1];
                     expect(entry.requestId).to.equal(requestId);
                     expect(entry.method).to.equal('GET');
                     expect(entry.path).to.equal('/api/health/live');
@@ -43,12 +46,14 @@ describe('Structured Logging & Request Context (RF-401)', function () {
                     expect(entry.level).to.equal('info');
                     expect(entry.timestamp).to.be.a('string');
                     done();
-                }, 10);
+                }).catch(done);
             });
     });
 
     it('omits query strings and sensitive values from request logs', function (done) {
         var logs = [];
+        var resolveRecord;
+        var recordReceived = new Promise(function (resolve) { resolveRecord = resolve; });
         var consoleLogs = [];
         var previousDebug = process.env.DEBUG;
         var previousConsoleLog = console.log;
@@ -64,7 +69,10 @@ describe('Structured Logging & Request Context (RF-401)', function () {
 
         var customLogger = logger.createLogger({
             forceEnable: true,
-            stream: function (record) { logs.push(record); }
+            stream: function (record) {
+                logs.push(record);
+                if (record.event === 'http_request') resolveRecord(record);
+            }
         });
 
         var app = createApp({
@@ -80,10 +88,9 @@ describe('Structured Logging & Request Context (RF-401)', function () {
             .end(function (err) {
                 if (err) return finish(err);
 
-                setTimeout(function () {
+                recordReceived.then(function (entry) {
                     try {
                         expect(logs.length).to.be.greaterThan(0);
-                        var entry = logs[logs.length - 1];
                         var serializedLogs = JSON.stringify(logs.concat(consoleLogs));
                         var sensitiveValues = ['secret', 'private-note', 'user@example.com'];
 
@@ -96,15 +103,20 @@ describe('Structured Logging & Request Context (RF-401)', function () {
                     } catch (assertionError) {
                         finish(assertionError);
                     }
-                }, 10);
+                }).catch(finish);
             });
     });
 
     it('preserves existing client-provided X-Request-Id header', function (done) {
         var logs = [];
+        var resolveRecord;
+        var recordReceived = new Promise(function (resolve) { resolveRecord = resolve; });
         var customLogger = logger.createLogger({
             forceEnable: true,
-            stream: function (record) { logs.push(record); }
+            stream: function (record) {
+                logs.push(record);
+                if (record.event === 'http_request') resolveRecord(record);
+            }
         });
 
         var app = createApp({
@@ -122,20 +134,24 @@ describe('Structured Logging & Request Context (RF-401)', function () {
                 expect(err).to.be(null);
                 expect(res.headers['x-request-id']).to.equal(customId);
 
-                setTimeout(function () {
+                recordReceived.then(function (entry) {
                     expect(logs.length).to.be.greaterThan(0);
-                    var entry = logs[logs.length - 1];
                     expect(entry.requestId).to.equal(customId);
                     done();
-                }, 10);
+                }).catch(done);
             });
     });
 
     it('records warning level and errorCode for client errors (e.g. 400)', function (done) {
         var logs = [];
+        var resolveRecord;
+        var recordReceived = new Promise(function (resolve) { resolveRecord = resolve; });
         var customLogger = logger.createLogger({
             forceEnable: true,
-            stream: function (record) { logs.push(record); }
+            stream: function (record) {
+                logs.push(record);
+                if (record.event === 'http_request') resolveRecord(record);
+            }
         });
 
         var app = createApp({
@@ -151,14 +167,13 @@ describe('Structured Logging & Request Context (RF-401)', function () {
             .end(function (err) {
                 expect(err).to.be(null);
 
-                setTimeout(function () {
+                recordReceived.then(function (entry) {
                     expect(logs.length).to.be.greaterThan(0);
-                    var entry = logs[logs.length - 1];
                     expect(entry.status).to.equal(400);
                     expect(entry.level).to.equal('warn');
                     expect(entry.errorCode).to.equal('invalid_request');
                     done();
-                }, 10);
+                }).catch(done);
             });
     });
 

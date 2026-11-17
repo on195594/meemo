@@ -16,7 +16,7 @@ When MCP is enabled, dumps also contain sensitive `mcp_clients`, `mcp_requests`,
 
 After a database restore, keep `MCP_ENABLED=false` until a separately authorized, target-verified recovery step excludes or invalidates all five restored MCP collections. This prevents an older backup from resurrecting a revoked grant. Do not perform production deletion under this runbook without explicit authorization. Clients must reconnect/re-register afterward; ordinary note reads and browser login do not depend on OAuth state. See [MCP recovery and rollback](GEMINI_ASSISTANT.md#persistence-recovery-and-rollback).
 
-The current synthetic restore fixture does not seed or validate MCP grants; its PASS is not evidence of MCP-state recovery. Add that fixture before claiming OAuth recovery acceptance.
+No automated synthetic restore fixture tests MCP-state recovery; validate MCP exclusion/invalidation during an isolated restore exercise before claiming OAuth recovery acceptance.
 
 ## Compatibility
 

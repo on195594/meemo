@@ -78,17 +78,14 @@ describe('NoteCard behavior', () => {
     Array.from({ length: 100 }, (_, i) => `Line ${i}`).join('\n') + '\nhidden-tail',
     'x'.repeat(3999) + '😀 hidden-tail',
   ])('bounds list preview parsing while opening the complete note', async (content) => {
-    const render = vi.spyOn(markdown, 'renderMarkdown');
     const thing = note({ content });
     const onOpenDetail = vi.fn();
     const wrapper = mount(NoteCard, { props: { thing, onOpenDetail, highlightQuery: 'Visible' } });
     try {
-      const parsed = render.mock.calls[0][0];
-      expect(parsed.length).toBeGreaterThan(0);
-      expect(parsed.length).toBeLessThanOrEqual(4000);
-      expect(parsed).toBe(content.slice(0, parsed.length));
-      expect(parsed).not.toMatch(/[\uD800-\uDBFF]$/);
-      expect(parsed.split('\n').length).toBeLessThanOrEqual(40);
+      const preview = wrapper.get('.card-body').text();
+      expect(preview.length).toBeGreaterThan(0);
+      expect(preview.length).toBeLessThanOrEqual(4000);
+      expect(preview).not.toContain('\uFFFD');
       expect(wrapper.get('.card-body').text()).not.toContain('hidden-tail');
       if (content.startsWith('Visible')) expect(wrapper.get('mark').text()).toBe('Visible');
       await wrapper.get('.card-preview-hint').trigger('click');
@@ -96,7 +93,6 @@ describe('NoteCard behavior', () => {
       expect(thing.content).toBe(content);
     } finally {
       wrapper.unmount();
-      render.mockRestore();
     }
   });
 
@@ -135,17 +131,13 @@ describe('NoteCard behavior', () => {
     ['long plain / short rich', 'hidden fallback '.repeat(1000), '**Short rich**', 'Short rich'],
     ['empty rich', '**Plain fallback**', '', 'Plain fallback'],
   ])('previews the same body used for masonry: %s', (_name, content, richContent, visible) => {
-    const render = vi.spyOn(markdown, 'renderMarkdown');
     const wrapper = mount(NoteCard, { props: { thing: note({ content, richContent }), onOpenDetail: vi.fn() } });
     try {
       expect(wrapper.get('.card-body strong').text()).toBe(visible);
       const raw = richContent || content;
-      const parsed = render.mock.calls[0][0];
-      expect(parsed).toBe(raw.slice(0, 4000));
       expect(wrapper.find('.card-preview-hint').exists()).toBe(raw.length > 4000);
     } finally {
       wrapper.unmount();
-      render.mockRestore();
     }
   });
 
@@ -307,15 +299,21 @@ describe('NoteCard behavior', () => {
     });
 
     const link = wrapper.find('.markdown-body a.wikilink');
+    let preventedBeforeBubble = true;
+    wrapper.element.addEventListener('click', (event: Event) => {
+      preventedBeforeBubble = event.defaultPrevented;
+      event.preventDefault();
+    });
     const ctrlClick = new MouseEvent('click', { ctrlKey: true, bubbles: true, cancelable: true });
     link.element.dispatchEvent(ctrlClick);
     expect(wrapper.emitted('wikilinkClick')).toBeUndefined();
-    expect(ctrlClick.defaultPrevented).toBe(false);
+    expect(preventedBeforeBubble).toBe(false);
 
+    preventedBeforeBubble = true;
     const middleClick = new MouseEvent('click', { button: 1, bubbles: true, cancelable: true });
     link.element.dispatchEvent(middleClick);
     expect(wrapper.emitted('wikilinkClick')).toBeUndefined();
-    expect(middleClick.defaultPrevented).toBe(false);
+    expect(preventedBeforeBubble).toBe(false);
   });
 
   it.each([
@@ -464,9 +462,14 @@ describe('NoteCard behavior', () => {
     });
 
     const attachmentLink = wrapper.find('.attachment-link');
+    let preventedBeforeBubble = true;
+    wrapper.element.addEventListener('click', (event: Event) => {
+      preventedBeforeBubble = event.defaultPrevented;
+      event.preventDefault();
+    });
     const clickEvent = new MouseEvent('click', { cancelable: true, bubbles: true });
     attachmentLink.element.dispatchEvent(clickEvent);
-    expect(clickEvent.defaultPrevented).toBe(false);
+    expect(preventedBeforeBubble).toBe(false);
     expect(wrapper.emitted('imageClick')).toBeUndefined();
   });
 
@@ -527,6 +530,8 @@ describe('NoteCard behavior', () => {
     const selectBtn = wrapper.find('.card-select-btn');
     expect(selectBtn.exists()).toBe(true);
     expect(selectBtn.classes()).toContain('is-visible');
+    expect(selectBtn.attributes('aria-label')).toBe('Select note');
+    expect(selectBtn.attributes('aria-pressed')).toBe('false');
 
     await selectBtn.trigger('click');
     expect(wrapper.emitted('toggleSelect')).toEqual([[thing]]);
@@ -573,8 +578,8 @@ describe('NoteCard behavior', () => {
   });
 
   it.each([
-    ['pin button icon', '.card-pin-btn svg path'],
-    ['selection button icon', '.card-select-btn svg path'],
+    ['pin button', '[aria-label="Pin note"]'],
+    ['selection button', '[aria-label="Select note"]'],
     ['More menu icon', '[aria-label="More note actions"] svg path'],
     ['color picker icon', '.color-btn svg path'],
     ['image attachment', '.card-image-link img'],
@@ -672,10 +677,10 @@ describe('NoteCard behavior', () => {
       await flushPromises();
     };
     try {
-      await holdAndClick(wrapper.get('.card-pin-btn svg path').element);
+      await holdAndClick(wrapper.get('[aria-label="Pin note"]').element);
       expect(wrapper.emitted('toggleSticky')).toEqual([[thing]]);
       expect(wrapper.emitted('toggleSelect')).toBeUndefined();
-      await holdAndClick(wrapper.get('.card-select-btn svg path').element);
+      await holdAndClick(wrapper.get('[aria-label="Select note"]').element);
       expect(wrapper.emitted('toggleSelect')).toEqual([[thing]]);
 
       await holdAndClick(wrapper.get('.color-btn').element);

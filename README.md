@@ -51,13 +51,12 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 | `AUTH_USER_SOURCE` | `mongo` | `mongo` | Account repository: `mongo` (exclusive target) |
 | `SESSION_SECRET` | Random in development; required in production | Value of host `SESSION_SECRET` | Session signing secret |
 | `REGISTRATION_MODE` | `open` in development; `first-user` in production | `first-user` | Registration policy: `open`, `first-user`, or `disabled` |
-| `URL_ENRICHMENT_ENABLED` | `false` | `false` | Outbound URL metadata fetch (disabled by default for SSRF safety) |
-| `MAX_ATTACHMENT_SIZE` | `10485760` (10MB) | `10485760` | Maximum attachment upload size in bytes |
-| `MAX_IMPORT_SIZE` | `52428800` (50MB) | `52428800` | Maximum import archive size in bytes |
-| `ENABLE_WORKERS` | `true` | `true` | Enable background cleanup workers |
-| `SHUTDOWN_TIMEOUT_MS` | `15000` | `15000` | Graceful shutdown timeout in milliseconds |
-| `MONGO_MAX_POOL_SIZE` | `50` | `50` | Maximum MongoDB connection pool size |
-| `MONGO_MIN_POOL_SIZE` | `1` | `1` | Minimum MongoDB connection pool size |
+| `URL_ENRICHMENT_ENABLED` | `false` | Not set (app default) | Outbound URL metadata fetch (disabled by default for SSRF safety) |
+| `MAX_ATTACHMENT_SIZE` | `10485760` (10MB) | Not set (app default) | Maximum attachment upload size in bytes |
+| `MAX_IMPORT_SIZE` | `52428800` (50MB) | Not set (app default) | Maximum import archive size in bytes |
+| `SHUTDOWN_TIMEOUT_MS` | `15000` | Not set (app default) | Graceful shutdown timeout in milliseconds |
+| `MONGO_MAX_POOL_SIZE` | `50` | Not set (app default) | Maximum MongoDB connection pool size |
+| `MONGO_MIN_POOL_SIZE` | `1` | Not set (app default) | Minimum MongoDB connection pool size |
 | `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |
 | `MCP_ENABLED` | `false` | Not forwarded | Only the exact value `true` enables MCP; grants control read/write access |
 | `MCP_PUBLIC_URL` | Unset | Not forwarded | Required fixed HTTPS bare origin in full or setup mode; HTTP loopback allowed in development |
@@ -127,14 +126,14 @@ Build and test from the repository. Operate the deployed containers from the pro
 | Path | Contents |
 | --- | --- |
 | `app.js` | Runtime composition root and server entry point (`startServer`) |
-| `src/lifecycle.js` | Worker management, MongoDB pool lifecycle, and graceful shutdown sequencing |
+| `src/lifecycle.js` | MongoDB pool lifecycle and graceful shutdown sequencing |
 | `src/http/` | Injected Express app factory, session/upload setup, domain routes, validation, and uniform HTTP errors |
 | `src/services/` | Promise-first authentication, things, attachments, sharing, settings, health, and import/export behavior |
 | `src/storage/` | Local filesystem attachment adapter |
 | `src/database/` | MongoDB persistence for things, tags, settings, and users; sessions use `connect-mongo` in `src/http/session.js` |
 | `src/users.js` | MongoDB account operations and bcrypt password handling |
 | `types/` | TypeScript domain definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`) |
-| `scripts/` | Build/verification entry points, offline migrations, retirement preflight, readiness verification, benchmark, and attachment GC |
+| `scripts/` | Build/verification entry points, Thing revision migration, and attachment GC |
 | `src/test/` | Backend and contract tests run by Mocha |
 | `web/` | Vue 3 + Vite + TypeScript application and Vitest behavior tests; route query owns note filters |
 | `docs/` | [Documentation index](docs/README.md), current contracts/runbooks, roadmaps, and review snapshots |

@@ -17,6 +17,8 @@ var createApp = appModule.createApp;
 
 describe('Export and Import Round-Trip Safety Net (RF-107)', function () {
     var app;
+    var dbClient;
+    var previousDb;
     var prevAttachmentDir = config.attachmentDir;
     var testAttachmentDir = '/tmp/meemo-roundtrip-storage-' + process.pid;
 
@@ -33,50 +35,37 @@ describe('Export and Import Round-Trip Safety Net (RF-107)', function () {
         res.on('error', cb);
     };
 
-    before(function (done) {
+    before(async function () {
+        previousDb = config.db;
         config.attachmentDir = testAttachmentDir;
 
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
 
-        config._clearDatabase(function (err) {
-            if (err) return done(err);
+        await config._clearDatabase();
+        dbClient = await require('mongodb').MongoClient.connect(config.databaseUrl);
+        config.db = dbClient.db();
+        app = createApp({ sessionMemory: true });
 
-            require('mongodb').MongoClient.connect(config.databaseUrl).then(function (client) {
-                config.db = client.db();
-                app = createApp({ sessionMemory: true });
+        // Create exporter and importer users
+        await users.create('exporter', 'exporter@example.com', 'Exporter User', 'Password123!');
+        await users.create('importer', 'importer@example.com', 'Importer User', 'Password123!');
 
-                // Create exporter user
-                users.create('exporter', 'exporter@example.com', 'Exporter User', 'Password123!', function (err) {
-                    if (err) return done(err);
-
-                    // Create importer user
-                    users.create('importer', 'importer@example.com', 'Importer User', 'Password123!', function (err) {
-                        if (err) return done(err);
-
-                        exporterAgent = request.agent(app);
-                        exporterAgent
-                            .post('/api/login')
-                            .send({ username: 'exporter', password: 'Password123!' })
-                            .expect(200, function (err) {
-                                if (err) return done(err);
-
-                                importerAgent = request.agent(app);
-                                importerAgent
-                                    .post('/api/login')
-                                    .send({ username: 'importer', password: 'Password123!' })
-                                    .expect(200, done);
-                            });
-                    });
-                });
-            }, done);
-        });
+        exporterAgent = request.agent(app);
+        await exporterAgent.post('/api/login').send({ username: 'exporter', password: 'Password123!' }).expect(200);
+        importerAgent = request.agent(app);
+        await importerAgent.post('/api/login').send({ username: 'importer', password: 'Password123!' }).expect(200);
     });
 
-    after(function (done) {
-        config.attachmentDir = prevAttachmentDir;
+    after(async function () {
+        try {
+            config.attachmentDir = prevAttachmentDir;
 
-        fs.rmSync(testAttachmentDir, { recursive: true, force: true });
-        config._clearDatabase(done);
+            fs.rmSync(testAttachmentDir, { recursive: true, force: true });
+            await config._clearDatabase();
+        } finally {
+            config.db = previousDb;
+            if (dbClient) await dbClient.close();
+        }
     });
 
     it('step 1: populates source account with notes, tags, and attachment', function (done) {
@@ -215,8 +204,7 @@ describe('Export and Import Round-Trip Safety Net (RF-107)', function () {
     });
 
     it('step 5: verifies imported attachment is accessible and bit-for-bit intact', function (done) {
-        users.resolveUser('importer', function (err, u) {
-            if (err) return done(err);
+        users.resolveUser('importer').then(function (u) {
             var importerFolder = path.join(testAttachmentDir, u.id);
             var targetFile = path.join(importerFolder, uploadedAttachmentIdentifier);
 
@@ -249,12 +237,11 @@ describe('Export and Import Round-Trip Safety Net (RF-107)', function () {
                         done();
                     });
             });
-        });
+        }).catch(done);
     });
 
     it('step 6: ensures export-import round-trip is repeatable across multiple instances', function (done) {
-        users.create('repeat-user', 'repeat@example.com', 'Repeat User', 'Password123!', function (err) {
-            if (err) return done(err);
+        users.create('repeat-user', 'repeat@example.com', 'Repeat User', 'Password123!').then(function () {
 
             var repeatAgent = request.agent(app);
             repeatAgent
@@ -282,6 +269,6 @@ describe('Export and Import Round-Trip Safety Net (RF-107)', function () {
                                 });
                         });
                 });
-        });
+        }).catch(done);
     });
 });

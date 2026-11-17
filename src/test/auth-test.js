@@ -15,43 +15,37 @@ var expect = require('expect.js'),
 
 describe('Authentication & Registration Policy (RF-101)', function () {
     var app;
+    var dbClient;
+    var previousDb;
 
-    function resetUsers(done) {
-        if (config.db) {
-            var promise = config.db.collection('users').deleteMany({});
-            if (done) {
-                promise.then(function () { done(); }, done);
-                return;
-            }
-            return promise;
-        }
-        if (done) done();
+    async function resetUsers() {
+        if (config.db) await config.db.collection('users').deleteMany({});
     }
 
-    before(function (done) {
+    before(async function () {
+        previousDb = config.db;
         process.env.REGISTRATION_MODE = 'open';
-        resetUsers();
 
-        config._clearDatabase(function (err) {
-            if (err) return done(err);
-
-            require('mongodb').MongoClient.connect(config.databaseUrl).then(function (client) {
-                config.db = client.db();
-                app = createApp({ sessionMemory: true });
-                done();
-            }, done);
-        });
+        await config._clearDatabase();
+        dbClient = await require('mongodb').MongoClient.connect(config.databaseUrl);
+        config.db = dbClient.db();
+        app = createApp({ sessionMemory: true });
     });
 
-    after(function (done) {
-        delete process.env.REGISTRATION_MODE;
-        config._clearDatabase(done);
+    after(async function () {
+        try {
+            delete process.env.REGISTRATION_MODE;
+            await config._clearDatabase();
+        } finally {
+            config.db = previousDb;
+            if (dbClient) await dbClient.close();
+        }
     });
 
     describe('POST /api/register validation', function () {
-        beforeEach(function (done) {
+        beforeEach(async function () {
             process.env.REGISTRATION_MODE = 'open';
-            resetUsers(done);
+            await resetUsers();
         });
 
         it('rejects missing fields with 400', function (done) {
@@ -183,8 +177,8 @@ describe('Authentication & Registration Policy (RF-101)', function () {
     });
 
     describe('REGISTRATION_MODE policies', function () {
-        beforeEach(function (done) {
-            resetUsers(done);
+        beforeEach(async function () {
+            await resetUsers();
         });
 
         it('blocks registration when REGISTRATION_MODE=disabled', function (done) {
@@ -388,22 +382,111 @@ describe('Authentication & Registration Policy (RF-101)', function () {
         });
     });
 
+    describe('MongoDB sessions and production cookies', function () {
+        var stores;
+
+        function createMongoApp(options) {
+            var MongoStore = require('connect-mongo');
+            var originalCreate = MongoStore.create;
+            // Capture the real stores created by createSession so each client can be closed.
+            MongoStore.create = function (storeOptions) {
+                var store = originalCreate.call(MongoStore, storeOptions);
+                stores.push(store);
+                return store;
+            };
+            try {
+                return createApp(Object.assign({
+                    databaseUrl: config.databaseUrl,
+                    sessionSecret: 'mongo-session-test-secret'
+                }, options));
+            } finally {
+                MongoStore.create = originalCreate;
+            }
+        }
+
+        beforeEach(function () {
+            stores = [];
+        });
+
+        afterEach(async function () {
+            await Promise.all(stores.map(function (store) { return store.close(); }));
+        });
+
+        it('persists a login across independent application instances', async function () {
+            var previousMode = process.env.REGISTRATION_MODE;
+            try {
+                process.env.REGISTRATION_MODE = 'open';
+                var app1 = createMongoApp({ isProduction: false });
+                await request(app1).post('/api/register').send({
+                    username: 'persistentuser', password: 'password123',
+                    email: 'persistent@example.com', displayName: 'Persistent User'
+                }).expect(201);
+                var login = await request(app1).post('/api/login')
+                    .send({ username: 'persistentuser', password: 'password123' }).expect(200);
+                var cookie = login.headers['set-cookie'].find(function (value) {
+                    return value.startsWith('connect.sid=');
+                });
+                expect(cookie).to.be.ok();
+                await stores[0].close();
+                stores.shift();
+
+                var app2 = createMongoApp({ isProduction: false });
+                var profile = await request(app2).get('/api/profile')
+                    .set('Cookie', cookie.split(';')[0]).expect(200);
+                expect(profile.body.user.username).to.equal('persistentuser');
+                expect(profile.body.user.email).to.equal('persistent@example.com');
+            } finally {
+                if (previousMode === undefined) delete process.env.REGISTRATION_MODE;
+                else process.env.REGISTRATION_MODE = previousMode;
+            }
+        });
+
+        it('sets Secure only for an HTTPS production origin', async function () {
+            var previousOrigin = process.env.APP_ORIGIN;
+            try {
+                await users.create('cookieuser', 'cookie@example.com', 'Cookie User', 'password123');
+                process.env.APP_ORIGIN = 'https://notes.example.com';
+                var httpsApp = createMongoApp({ isProduction: true, authUserSource: 'mongo' });
+                httpsApp.set('trust proxy', 'loopback');
+                var secure = await request(httpsApp).post('/api/login')
+                    .set('X-Forwarded-Proto', 'https')
+                    .send({ username: 'cookieuser', password: 'password123' }).expect(200);
+                var secureCookie = secure.headers['set-cookie'].find(function (value) {
+                    return value.startsWith('connect.sid=');
+                });
+                expect(secureCookie).to.be.ok();
+                expect(/; Secure(?:;|$)/.test(secureCookie)).to.be(true);
+
+                process.env.APP_ORIGIN = 'http://notes.example.com';
+                var httpApp = createMongoApp({ isProduction: true, authUserSource: 'mongo' });
+                var insecure = await request(httpApp).post('/api/login')
+                    .send({ username: 'cookieuser', password: 'password123' }).expect(200);
+                var insecureCookie = insecure.headers['set-cookie'].find(function (value) {
+                    return value.startsWith('connect.sid=');
+                });
+                expect(insecureCookie).to.be.ok();
+                expect(/; Secure(?:;|$)/.test(insecureCookie)).to.be(false);
+            } finally {
+                if (previousOrigin === undefined) delete process.env.APP_ORIGIN;
+                else process.env.APP_ORIGIN = previousOrigin;
+            }
+        });
+    });
+
     describe('POST /api/login & session hardening (RF-102)', function () {
-        beforeEach(function (done) {
+        beforeEach(async function () {
             delete process.env.LOGIN_RATE_LIMIT_MAX;
             delete process.env.LOGIN_RATE_LIMIT_WINDOW_MS;
-            resetUsers(function (err) {
-                if (err) return done(err);
-                request(app)
-                    .post('/api/register')
-                    .send({
-                        username: 'validuser',
-                        password: 'password123',
-                        email: 'user@example.com',
-                        displayName: 'Valid User'
-                    })
-                    .expect(201, done);
-            });
+            await resetUsers();
+            await request(app)
+                .post('/api/register')
+                .send({
+                    username: 'validuser',
+                    password: 'password123',
+                    email: 'user@example.com',
+                    displayName: 'Valid User'
+                })
+                .expect(201);
         });
 
         it('returns 401 with unified message for nonexistent user without leaking 404', function (done) {
@@ -430,28 +513,29 @@ describe('Authentication & Registration Policy (RF-101)', function () {
                 });
         });
 
-        it('regenerates session and sets cookie on successful login', function (done) {
+        it('regenerates session and sets cookie on successful login', async function () {
             var agent = request.agent(app);
-            agent
-                .post('/api/login')
+            var first = await agent.post('/api/login')
                 .send({ username: 'validuser', password: 'password123' })
-                .expect(200)
-                .end(function (err, res) {
-                    expect(err).to.be(null);
-                    expect(res.headers['set-cookie']).to.be.ok();
-                    expect(res.body.user).to.be.an('object');
-                    expect(res.body.user.username).to.equal('validuser');
+                .expect(200);
+            expect(first.body.user).to.be.an('object');
+            expect(first.body.user.username).to.equal('validuser');
+            var firstCookie = first.headers['set-cookie'].find(function (cookie) {
+                return cookie.startsWith('connect.sid=');
+            });
+            expect(firstCookie).to.be.ok();
 
-                    // Profile can be accessed with authenticated session
-                    agent
-                        .get('/api/profile')
-                        .expect(200)
-                        .end(function (err, profileRes) {
-                            expect(err).to.be(null);
-                            expect(profileRes.body.user.username).to.equal('validuser');
-                            done();
-                        });
-                });
+            var second = await agent.post('/api/login')
+                .send({ username: 'validuser', password: 'password123' })
+                .expect(200);
+            var secondCookie = second.headers['set-cookie'].find(function (cookie) {
+                return cookie.startsWith('connect.sid=');
+            });
+            expect(secondCookie).to.be.ok();
+            expect(secondCookie.split(';')[0]).not.to.equal(firstCookie.split(';')[0]);
+
+            var profile = await agent.get('/api/profile').expect(200);
+            expect(profile.body.user.username).to.equal('validuser');
         });
 
         it('limits repeated failed login attempts with 429', function (done) {
