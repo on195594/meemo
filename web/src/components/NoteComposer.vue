@@ -106,29 +106,17 @@
           >
             <UiIcon name="palette" />
           </button>
-          <div
-            v-if="showColorPicker"
-            ref="colorPaletteRef"
+          <NoteColorPopover
+            :open="showColorPicker"
             :id="colorPaletteId"
-            class="color-palette-popover"
-            role="group"
-            aria-label="Note color"
-          >
-            <button
-              v-for="(c, index) in NOTE_COLORS"
-              :key="c.key"
-              type="button"
-              class="color-swatch-btn"
-              :class="{ active: selectedColor === c.key, 'is-default': c.key === 'default' }"
-              :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
-              :title="c.name"
-              :aria-label="c.name"
-              :aria-pressed="selectedColor === c.key"
-              :tabindex="focusedColorIndex === index ? 0 : -1"
-              @click="selectColor(c.key)"
-              @keydown="handleColorKeydown($event, index)"
-            ></button>
-          </div>
+            :color="selectedColor"
+            label="Note color"
+            :anchor="colorTriggerRef"
+            :wrapper="colorPickerWrapperRef"
+            @navigate="selectedColor = $event"
+            @select="selectColor"
+            @close="closeColorPicker"
+          />
         </div>
 
         <button
@@ -162,9 +150,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted, getCurrentInstance } from 'vue';
 import UiIcon from './UiIcon.vue';
-import { usePopoverPosition } from '../composables/usePopoverPosition';
+import NoteColorPopover from './NoteColorPopover.vue';
 import { api, type AttachmentDescriptor, type NoteColor } from '../api/client';
-import { NOTE_COLORS } from '../constants/noteColors';
 import { joinTitle } from '../utils/noteTitle';
 import { isImageAttachment } from '../utils/markdown';
 import { loadDraft, saveDraft } from '../utils/drafts';
@@ -184,13 +171,10 @@ const emit = defineEmits<{
 
 const selectedColor = ref<NoteColor>('default');
 const showColorPicker = ref(false);
-const focusedColorIndex = ref(0);
 const composerRef = ref<HTMLElement | null>(null);
 const colorPickerWrapperRef = ref<HTMLElement | null>(null);
 const colorTriggerRef = ref<HTMLButtonElement | null>(null);
-const colorPaletteRef = ref<HTMLElement | null>(null);
 const colorPaletteId = `note-colors-${getCurrentInstance()!.uid}`;
-usePopoverPosition(colorTriggerRef, colorPaletteRef, showColorPicker);
 
 const title = ref('');
 const content = ref('');
@@ -283,18 +267,9 @@ function handleBlur() {
   }, 200);
 }
 
-function focusColor(index: number) {
-  focusedColorIndex.value = index;
-  nextTick(() => {
-    colorPaletteRef.value?.querySelectorAll<HTMLButtonElement>('.color-swatch-btn')[index]?.focus();
-  });
-}
-
 function closeColorPicker(returnFocus = false) {
   const shouldRestoreFocus = returnFocus && showColorPicker.value;
   showColorPicker.value = false;
-  document.removeEventListener('pointerdown', handleOutsideColorPicker);
-  document.removeEventListener('focusin', handleOutsideColorPicker);
   if (shouldRestoreFocus) nextTick(() => colorTriggerRef.value?.focus());
 }
 
@@ -304,10 +279,6 @@ function toggleColorPicker() {
     return;
   }
   showColorPicker.value = true;
-  document.addEventListener('pointerdown', handleOutsideColorPicker);
-  document.addEventListener('focusin', handleOutsideColorPicker);
-  const selected = NOTE_COLORS.findIndex((color) => color.key === selectedColor.value);
-  focusColor(selected < 0 ? 0 : selected);
 }
 
 function selectColor(color: NoteColor) {
@@ -315,42 +286,7 @@ function selectColor(color: NoteColor) {
   closeColorPicker(true);
 }
 
-function handleColorKeydown(event: KeyboardEvent, index: number) {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    event.stopPropagation();
-    closeColorPicker(true);
-    return;
-  }
-
-  const columnCount = 4;
-  const offsets: Record<string, number> = {
-    ArrowLeft: -1,
-    ArrowRight: 1,
-    ArrowUp: -columnCount,
-    ArrowDown: columnCount,
-  };
-  if (offsets[event.key] === undefined && event.key !== 'Home' && event.key !== 'End') return;
-
-  event.preventDefault();
-  let nextIndex;
-  if (event.key === 'Home') nextIndex = 0;
-  else if (event.key === 'End') nextIndex = NOTE_COLORS.length - 1;
-  else nextIndex = (index + offsets[event.key] + NOTE_COLORS.length) % NOTE_COLORS.length;
-  selectedColor.value = NOTE_COLORS[nextIndex].key;
-  focusColor(nextIndex);
-}
-
-function handleOutsideColorPicker(event: Event) {
-  const target = event.target as Node;
-  if (showColorPicker.value && !colorPickerWrapperRef.value?.contains(target)) {
-    closeColorPicker();
-  }
-}
-
 onUnmounted(() => {
-  document.removeEventListener('pointerdown', handleOutsideColorPicker);
-  document.removeEventListener('focusin', handleOutsideColorPicker);
   document.removeEventListener('pointerdown', handleOutsidePointer);
 });
 
@@ -700,53 +636,8 @@ defineExpose({
   display: inline-flex;
 }
 
-.color-palette-popover {
-  position: fixed;
-  background: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--keep-card-radius);
-  box-shadow: var(--keep-shadow-raised);
-  padding: 8px;
-  display: grid;
-  grid-template-columns: repeat(4, var(--keep-control-size));
-  gap: 4px;
-  z-index: 50;
-}
-
-.color-swatch-btn {
-  width: var(--keep-control-size);
-  height: var(--keep-control-size);
-  border-radius: var(--md-sys-shape-corner-full);
-  /* The hit area grows on touch screens; the color remains 28px. */
-  border: calc((var(--keep-control-size) - 28px) / 2) solid transparent;
-  background-clip: content-box;
-  cursor: pointer;
-  padding: 0;
-  box-shadow: inset 0 0 0 1px var(--md-sys-color-outline-variant);
-  transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
-}
-
-.color-swatch-btn:hover {
-  transform: scale(1.1);
-}
-
-/* Selection ring sits in the transparent border, 2px off the swatch */
-.color-swatch-btn.active {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: -4px;
-}
-
-.color-swatch-btn:focus-visible {
-  outline: 2px solid var(--md-sys-color-on-surface);
-  outline-offset: -2px;
-}
-
 .hidden-file-input {
   display: none;
-}
-
-.color-swatch-btn.is-default {
-  box-shadow: inset 0 0 0 2px var(--md-sys-color-outline-variant);
 }
 
 .btn-close {

@@ -131,30 +131,18 @@
           >
             <UiIcon name="palette" />
           </button>
-          <div
-            v-if="showColorPicker"
-            ref="colorPaletteRef"
+          <NoteColorPopover
+            :open="showColorPicker"
             :id="colorPaletteId"
-            class="color-palette-popover"
-            role="group"
-            aria-label="Note card color"
-          >
-            <button
-              v-for="(c, index) in NOTE_COLORS"
-              :key="c.key"
-              type="button"
-              class="color-swatch-btn"
-              :class="{ active: (thing.color || 'default') === c.key, 'is-default': c.key === 'default' }"
-              :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
-              :title="c.name"
-              :aria-label="c.name"
-              :aria-pressed="(thing.color || 'default') === c.key"
-              :aria-disabled="isColorSaving"
-              :tabindex="focusedColorIndex === index ? 0 : -1"
-              @click="selectColor(c.key)"
-              @keydown="handleColorKeydown($event, index)"
-            ></button>
-          </div>
+            :color="thing.color || 'default'"
+            label="Note card color"
+            :anchor="colorTriggerRef"
+            :wrapper="colorPickerWrapperRef"
+            :disabled="isColorSaving"
+            wait-cursor
+            @select="selectColor"
+            @close="closeColorPicker"
+          />
         </div>
 
         <ActionMenu v-model:open="showMoreMenu" label="More note actions" :disabled="isColorSaving || duplicating" @update:open="onMoreMenuChange">
@@ -179,12 +167,13 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onUnmounted, getCurrentInstance } from 'vue';
+import { attachmentUrl as getAttachmentUrl, imageAttachments as getImageAttachments, fileAttachments as getFileAttachments, collectImages as collectNoteImages, formatFileSize } from '../utils/attachments';
+import { useNoteBodyInteraction } from '../composables/useNoteBodyInteraction';
 import UiIcon from './UiIcon.vue';
 import ActionMenu from './ActionMenu.vue';
-import { usePopoverPosition } from '../composables/usePopoverPosition';
+import NoteColorPopover from './NoteColorPopover.vue';
 import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
-import { NOTE_COLORS } from '../constants/noteColors';
-import { renderMarkdown, highlightKeyword, toggleTaskItem, stripImageAttachmentReferences, isImageAttachment } from '../utils/markdown';
+import { renderMarkdown, highlightKeyword, toggleTaskItem, stripImageAttachmentReferences } from '../utils/markdown';
 import type { LightboxImage } from './ImageLightbox.vue';
 import { assistantLabel } from '../utils/assistant';
 
@@ -207,32 +196,21 @@ async function makeCopy() {
     card?.querySelector<HTMLButtonElement>('[aria-label="More note actions"]')?.focus();
   }
 }
-const focusedColorIndex = ref(0);
 const colorPickerWrapperRef = ref<HTMLElement | null>(null);
 const colorTriggerRef = ref<HTMLButtonElement | null>(null);
-const colorPaletteRef = ref<HTMLElement | null>(null);
-usePopoverPosition(colorTriggerRef, colorPaletteRef, showColorPicker);
 
 function onMoreMenuChange(open: boolean) {
   if (open) closeColorPicker();
 }
 
-function focusColor(index: number) {
-  focusedColorIndex.value = index;
-  nextTick(() => {
-    colorPaletteRef.value?.querySelectorAll<HTMLButtonElement>('.color-swatch-btn')[index]?.focus();
-  });
-}
-
 function closeColorPicker(returnFocus = false) {
   const shouldRestoreFocus = returnFocus && showColorPicker.value;
   showColorPicker.value = false;
-  document.removeEventListener('pointerdown', handleOutsideColorPicker);
-  document.removeEventListener('focusin', handleOutsideColorPicker);
   if (shouldRestoreFocus) nextTick(() => {
     // Saving can move the note between masonry columns and replace its card.
     const card = Array.from(document.querySelectorAll<HTMLElement>('.note-card')).find(el => el.dataset.noteId === props.thing._id);
-    (colorTriggerRef.value || card?.querySelector<HTMLButtonElement>('.color-btn'))?.focus();
+    const liveTrigger = colorTriggerRef.value?.isConnected ? colorTriggerRef.value : null;
+    (liveTrigger || card?.querySelector<HTMLButtonElement>('.color-btn'))?.focus();
   });
 }
 
@@ -243,41 +221,6 @@ function toggleColorPicker() {
   }
   actionError.value = null;
   showColorPicker.value = true;
-  document.addEventListener('pointerdown', handleOutsideColorPicker);
-  document.addEventListener('focusin', handleOutsideColorPicker);
-  const selected = NOTE_COLORS.findIndex((color) => color.key === (props.thing.color || 'default'));
-  focusColor(selected < 0 ? 0 : selected);
-}
-
-function handleColorKeydown(event: KeyboardEvent, index: number) {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    event.stopPropagation();
-    closeColorPicker(true);
-    return;
-  }
-
-  const columnCount = 4;
-  const offsets: Record<string, number> = {
-    ArrowLeft: -1,
-    ArrowRight: 1,
-    ArrowUp: -columnCount,
-    ArrowDown: columnCount,
-  };
-  if (offsets[event.key] === undefined && event.key !== 'Home' && event.key !== 'End') return;
-
-  event.preventDefault();
-  let nextIndex;
-  if (event.key === 'Home') nextIndex = 0;
-  else if (event.key === 'End') nextIndex = NOTE_COLORS.length - 1;
-  else nextIndex = (index + offsets[event.key] + NOTE_COLORS.length) % NOTE_COLORS.length;
-  focusColor(nextIndex);
-}
-
-function handleOutsideColorPicker(event: Event) {
-  if (showColorPicker.value && !colorPickerWrapperRef.value?.contains(event.target as Node)) {
-    closeColorPicker();
-  }
 }
 
 async function selectColor(color: NoteColor, closeAfterSave = true) {
@@ -308,8 +251,6 @@ async function selectColor(color: NoteColor, closeAfterSave = true) {
 onUnmounted(() => {
   clearTouchTimer();
   if (touchResetTimer) clearTimeout(touchResetTimer);
-  document.removeEventListener('pointerdown', handleOutsideColorPicker);
-  document.removeEventListener('focusin', handleOutsideColorPicker);
 });
 
 const props = withDefaults(
@@ -374,12 +315,9 @@ const relativeDate = computed(() => {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 });
 
-function attachmentUrl(att: AttachmentDescriptor): string {
-  return `/api/files/${props.thing.ownerId || 'me'}/${props.thing._id}/${att.identifier}`;
-}
-
-const imageAttachments = computed(() => (props.thing.attachments || []).filter(isImageAttachment));
-const fileAttachments = computed(() => (props.thing.attachments || []).filter((att) => !isImageAttachment(att)));
+const attachmentUrl = (att: AttachmentDescriptor) => getAttachmentUrl(props.thing, att);
+const imageAttachments = computed(() => getImageAttachments(props.thing));
+const fileAttachments = computed(() => getFileAttachments(props.thing));
 
 const bodyPreview = computed(() => {
   const raw = props.thing.richContent || props.thing.content || '';
@@ -394,13 +332,6 @@ const renderedBody = computed(() => {
   const html = renderedMarkdown.value;
   return props.highlightQuery ? highlightKeyword(html, props.highlightQuery) : html;
 });
-
-function formatFileSize(bytes?: number): string {
-  if (!bytes || bytes <= 0) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 const instance = getCurrentInstance();
 const colorPaletteId = `note-colors-${instance!.uid}`;
@@ -517,37 +448,7 @@ function handleCardKeydown(event: KeyboardEvent) {
 
 const cardBodyRef = ref<HTMLElement | null>(null);
 
-function collectImages(): LightboxImage[] {
-  const images: LightboxImage[] = [];
-  if (cardBodyRef.value) {
-    const imgs = cardBodyRef.value.querySelectorAll<HTMLImageElement>('img');
-    imgs.forEach((img) => {
-      const src = img.getAttribute('src');
-      if (src) {
-        images.push({
-          src,
-          alt: img.getAttribute('alt') || '',
-          title: img.getAttribute('title') || img.getAttribute('alt') || '',
-        });
-      }
-    });
-  }
-  if (props.thing.attachments && props.thing.attachments.length > 0) {
-    for (const att of props.thing.attachments) {
-      if (isImageAttachment(att)) {
-        const src = attachmentUrl(att);
-        if (!images.some((i) => i.src === src)) {
-          images.push({
-            src,
-            alt: att.fileName || att.identifier,
-            title: att.fileName || att.identifier,
-          });
-        }
-      }
-    }
-  }
-  return images;
-}
+const collectImages = () => collectNoteImages(props.thing, cardBodyRef.value);
 
 function openLightbox(src: string) {
   const images = collectImages();
@@ -569,104 +470,53 @@ function applyTaskOverrides(base: string): string {
   return content;
 }
 
-function handleAttachmentClick(event: MouseEvent, att: AttachmentDescriptor) {
-  if (hasImageClickListener.value && isImageAttachment(att) && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
-    event.preventDefault();
-    openLightbox(attachmentUrl(att));
-  }
-}
+async function toggleBodyTask(checkbox: HTMLInputElement, taskIndex: number) {
+  const targetChecked = checkbox.checked;
+  taskOverrides.set(taskIndex, targetChecked);
 
-async function handleBodyClick(event: MouseEvent) {
-  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+  const updatedContent = applyTaskOverrides(props.thing.content || '');
+  const wasChecked = !targetChecked;
+  isTaskSaving.value = true;
+  activeTaskSaves++;
+  actionError.value = null;
 
-  const targetEl = event.target as HTMLElement | null;
-  if (!targetEl) return;
-
-  // 1. Task list item checkbox click (interactive checklist)
-  const checkbox = targetEl.closest<HTMLInputElement>('.task-list-item-checkbox');
-  if (checkbox) {
-    event.stopPropagation();
-    if (!props.canEdit) {
-      event.preventDefault();
-      return;
-    }
-    const rawIndex = checkbox.dataset.taskIndex;
-    if (rawIndex === undefined) return;
-    const taskIndex = parseInt(rawIndex, 10);
-    if (isNaN(taskIndex)) return;
-
-    const targetChecked = checkbox.checked;
-    taskOverrides.set(taskIndex, targetChecked);
-
-    const updatedContent = applyTaskOverrides(props.thing.content || '');
-    const wasChecked = !targetChecked;
-    isTaskSaving.value = true;
-    activeTaskSaves++;
-    actionError.value = null;
-
-    try {
-      if (props.onSaveEdit) {
-        const result = await props.onSaveEdit(props.thing._id, { content: updatedContent });
-        if (!result.success) {
-          taskOverrides.delete(taskIndex);
-          checkbox.checked = wasChecked;
-          actionError.value = result.error || 'Failed to update task';
-        } else {
-          taskOverrides.delete(taskIndex);
-        }
+  try {
+    if (props.onSaveEdit) {
+      const result = await props.onSaveEdit(props.thing._id, { content: updatedContent });
+      if (!result.success) {
+        taskOverrides.delete(taskIndex);
+        checkbox.checked = wasChecked;
+        actionError.value = result.error || 'Failed to update task';
       } else {
         taskOverrides.delete(taskIndex);
-        emit('update', props.thing._id, { content: updatedContent });
       }
-    } catch (err: any) {
+    } else {
       taskOverrides.delete(taskIndex);
-      checkbox.checked = wasChecked;
-      actionError.value = err.message || 'Failed to update task';
-    } finally {
-      activeTaskSaves--;
-      if (activeTaskSaves <= 0) {
-        activeTaskSaves = 0;
-        isTaskSaving.value = false;
-        taskOverrides.clear();
-      }
+      emit('update', props.thing._id, { content: updatedContent });
     }
-    return;
-  }
-
-  // 2. Image click inside markdown body (lightbox preview)
-  const imgTarget = targetEl.closest('img');
-  if (imgTarget && hasImageClickListener.value) {
-    const anchor = imgTarget.closest('a');
-    if (!anchor) {
-      event.preventDefault();
-      event.stopPropagation();
-      openLightbox(imgTarget.getAttribute('src') || '');
-      return;
-    }
-  }
-
-  // 3. Anchor links (wikilinks or tag searches)
-  const target = targetEl.closest('a');
-  if (!target) return;
-
-  if (target.classList.contains('wikilink') || target.dataset.wikilink) {
-    event.preventDefault();
-    const query = target.dataset.wikilink || target.textContent?.trim() || '';
-    if (query) {
-      emit('wikilinkClick', query);
-    }
-    return;
-  }
-
-  const href = target.getAttribute('href') || '';
-  if (href.startsWith('#search?#')) {
-    event.preventDefault();
-    const tag = href.replace('#search?#', '').trim();
-    if (tag) {
-      emit('tagClick', tag);
+  } catch (err: any) {
+    taskOverrides.delete(taskIndex);
+    checkbox.checked = wasChecked;
+    actionError.value = err.message || 'Failed to update task';
+  } finally {
+    activeTaskSaves--;
+    if (activeTaskSaves <= 0) {
+      activeTaskSaves = 0;
+      isTaskSaving.value = false;
+      taskOverrides.clear();
     }
   }
 }
+
+const { handleBodyClick, handleAttachmentClick } = useNoteBodyInteraction({
+  canEdit: () => props.canEdit,
+  hasImageClickListener: () => hasImageClickListener.value,
+  attachmentUrl,
+  onTask: toggleBodyTask,
+  onImage: openLightbox,
+  onTag: (tag) => { emit('tagClick', tag); },
+  onWikilink: (query) => { emit('wikilinkClick', query); },
+});
 
 </script>
 
@@ -890,55 +740,6 @@ async function handleBodyClick(event: MouseEvent) {
 .color-picker-wrapper {
   position: relative;
   display: inline-flex;
-}
-
-.color-palette-popover {
-  position: fixed;
-  background: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--keep-card-radius);
-  box-shadow: var(--keep-shadow-raised);
-  padding: 8px;
-  display: grid;
-  grid-template-columns: repeat(4, var(--keep-control-size));
-  gap: 4px;
-  z-index: 50;
-}
-
-.color-swatch-btn {
-  width: var(--keep-control-size);
-  height: var(--keep-control-size);
-  border-radius: var(--md-sys-shape-corner-full);
-  /* The hit area grows on touch screens; the color remains 28px. */
-  border: calc((var(--keep-control-size) - 28px) / 2) solid transparent;
-  background-clip: content-box;
-  cursor: pointer;
-  padding: 0;
-  box-shadow: inset 0 0 0 1px var(--md-sys-color-outline-variant);
-  transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
-}
-
-.color-swatch-btn:hover {
-  transform: scale(1.1);
-}
-
-/* Selection ring sits in the transparent border, 2px off the swatch */
-.color-swatch-btn.active {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: -4px;
-}
-
-.color-swatch-btn.is-default {
-  box-shadow: inset 0 0 0 2px var(--md-sys-color-outline-variant);
-}
-
-.color-swatch-btn:focus-visible {
-  outline: 2px solid var(--md-sys-color-on-surface);
-  outline-offset: -2px;
-}
-
-.color-swatch-btn[aria-disabled="true"] {
-  cursor: wait;
 }
 
 .action-error {

@@ -149,30 +149,18 @@
                   <UiIcon name="palette" />
                 </button>
                 <Teleport to="body">
-                  <div
-                    v-if="showColorPicker"
-                    ref="colorPaletteRef"
+                  <NoteColorPopover
+                    :open="showColorPicker"
                     :id="colorPaletteId"
-                    class="color-palette-popover"
-                    role="group"
-                    aria-label="Note modal color"
-                  >
-                    <button
-                      v-for="(c, index) in NOTE_COLORS"
-                      :key="c.key"
-                      type="button"
-                      class="color-swatch-btn"
-                      :class="{ active: (currentNote.color || 'default') === c.key, 'is-default': c.key === 'default' }"
-                      :style="{ backgroundColor: 'var(--note-color-' + c.key + ')' }"
-                      :title="c.name"
-                      :aria-label="c.name"
-                      :aria-pressed="(currentNote.color || 'default') === c.key"
-                      :aria-disabled="isColorSaving"
-                      :tabindex="focusedColorIndex === index ? 0 : -1"
-                      @click="selectColor(c.key)"
-                      @keydown="handleColorKeydown($event, index)"
-                    ></button>
-                  </div>
+                    :color="currentNote.color || 'default'"
+                    label="Note modal color"
+                    :anchor="colorTriggerRef"
+                    :wrapper="colorWrapperRef"
+                    :disabled="isColorSaving"
+                    modal
+                    @select="selectColor"
+                    @close="closeColorPicker"
+                  />
                 </Teleport>
               </div>
 
@@ -215,12 +203,13 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, nextTick, onUnmounted, getCurrentInstance } from 'vue';
 import type { Thing, AttachmentDescriptor, NoteColor } from '../api/client';
-import { NOTE_COLORS } from '../constants/noteColors';
-import { renderMarkdown, highlightKeyword, toggleTaskItem, stripImageAttachmentReferences, isImageAttachment } from '../utils/markdown';
+import { renderMarkdown, highlightKeyword, stripImageAttachmentReferences } from '../utils/markdown';
 import type { LightboxImage } from './ImageLightbox.vue';
+import { attachmentUrl as getAttachmentUrl, imageAttachments as getImageAttachments, fileAttachments as getFileAttachments, collectImages as collectNoteImages, formatFileSize } from '../utils/attachments';
+import { useNoteBodyInteraction } from '../composables/useNoteBodyInteraction';
 import UiIcon from './UiIcon.vue';
 import ActionMenu from './ActionMenu.vue';
-import { usePopoverPosition } from '../composables/usePopoverPosition';
+import NoteColorPopover from './NoteColorPopover.vue';
 import { splitTitle, joinTitle } from '../utils/noteTitle';
 import { assistantLabel } from '../utils/assistant';
 import { loadDraft, saveDraft } from '../utils/drafts';
@@ -289,13 +278,11 @@ function setDraft(content: string) {
 }
 const isSaving = ref(false);
 const isColorSaving = ref(false);
-const isTaskSaving = ref(false);
 const actionError = ref<string | null>(null);
 let draftGeneration = 0;
 
 const showColorPicker = ref(false);
 const showMoreMenu = ref(false);
-const focusedColorIndex = ref(0);
 
 const overlayRef = ref<HTMLElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -309,8 +296,6 @@ function autosize() {
 const renderedBodyRef = ref<HTMLElement | null>(null);
 const colorWrapperRef = ref<HTMLElement | null>(null);
 const colorTriggerRef = ref<HTMLButtonElement | null>(null);
-const colorPaletteRef = ref<HTMLElement | null>(null);
-usePopoverPosition(colorTriggerRef, colorPaletteRef, showColorPicker);
 
 function onMoreMenuChange(open: boolean) {
   if (open) closeColorPicker();
@@ -360,12 +345,9 @@ const editedLabel = computed(() => {
     : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }));
 });
 
-function attachmentUrl(att: AttachmentDescriptor): string {
-  return `/api/files/${currentNote.value.ownerId || 'me'}/${currentNote.value._id}/${att.identifier}`;
-}
-
-const imageAttachments = computed(() => (currentNote.value.attachments || []).filter(isImageAttachment));
-const fileAttachments = computed(() => (currentNote.value.attachments || []).filter((att) => !isImageAttachment(att)));
+const attachmentUrl = (att: AttachmentDescriptor) => getAttachmentUrl(currentNote.value, att);
+const imageAttachments = computed(() => getImageAttachments(currentNote.value));
+const fileAttachments = computed(() => getFileAttachments(currentNote.value));
 
 const renderedHtml = computed(() => {
   const raw = currentNote.value.richContent || currentNote.value.content || '';
@@ -374,44 +356,7 @@ const renderedHtml = computed(() => {
   return props.highlightQuery ? highlightKeyword(html, props.highlightQuery) : html;
 });
 
-function formatFileSize(bytes?: number): string {
-  if (!bytes || bytes <= 0) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function collectImages(): LightboxImage[] {
-  const images: LightboxImage[] = [];
-  if (renderedBodyRef.value) {
-    const imgs = renderedBodyRef.value.querySelectorAll<HTMLImageElement>('img');
-    imgs.forEach((img) => {
-      const src = img.getAttribute('src');
-      if (src) {
-        images.push({
-          src,
-          alt: img.getAttribute('alt') || '',
-          title: img.getAttribute('title') || img.getAttribute('alt') || '',
-        });
-      }
-    });
-  }
-  if (currentNote.value.attachments && currentNote.value.attachments.length > 0) {
-    for (const att of currentNote.value.attachments) {
-      if (isImageAttachment(att)) {
-        const src = attachmentUrl(att);
-        if (!images.some((i) => i.src === src)) {
-          images.push({
-            src,
-            alt: att.fileName || att.identifier,
-            title: att.fileName || att.identifier,
-          });
-        }
-      }
-    }
-  }
-  return images;
-}
+const collectImages = () => collectNoteImages(currentNote.value, renderedBodyRef.value);
 
 const instance = getCurrentInstance();
 const colorPaletteId = `note-colors-${instance!.uid}`;
@@ -420,120 +365,21 @@ const hasStickyListener = computed(() => Boolean(instance?.vnode.props?.onToggle
 const hasPublicListener = computed(() => Boolean(instance?.vnode.props?.onTogglePublic));
 const hasArchiveListener = computed(() => Boolean(instance?.vnode.props?.onToggleArchive));
 
-function handleAttachmentClick(event: MouseEvent, att: AttachmentDescriptor) {
-  if (hasImageClickListener.value && isImageAttachment(att) && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
-    event.preventDefault();
-    const images = collectImages();
-    const src = attachmentUrl(att);
-    const index = images.findIndex((img) => img.src === src);
-    emit('imageClick', images, index >= 0 ? index : 0);
-  }
+function openLightbox(src: string) {
+  const images = collectImages();
+  if (images.length === 0) return;
+  const index = images.findIndex(img => img.src === src);
+  emit('imageClick', images, index >= 0 ? index : 0);
 }
 
-async function handleBodyClick(event: MouseEvent) {
-  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
-  const targetEl = event.target as HTMLElement | null;
-  if (!targetEl) return;
-
-let pendingModalTaskContent: string | null = null;
-let activeModalTaskSaves = 0;
-
-  // 1. Task checkbox toggle
-  const checkbox = targetEl.closest<HTMLInputElement>('.task-list-item-checkbox');
-  if (checkbox) {
-    event.stopPropagation();
-    if (!props.canEdit) {
-      event.preventDefault();
-      return;
-    }
-    const rawIndex = checkbox.dataset.taskIndex;
-    if (rawIndex === undefined) return;
-    const taskIndex = parseInt(rawIndex, 10);
-    if (isNaN(taskIndex)) return;
-
-    const baseContent = pendingModalTaskContent !== null ? pendingModalTaskContent : (currentNote.value.content || '');
-    const updatedContent = toggleTaskItem(baseContent, taskIndex);
-    if (updatedContent === baseContent) return;
-
-    pendingModalTaskContent = updatedContent;
-    const wasChecked = !checkbox.checked;
-    isTaskSaving.value = true;
-    activeModalTaskSaves++;
-    actionError.value = null;
-
-    try {
-      if (props.onSaveEdit) {
-        const result = await props.onSaveEdit(currentNote.value._id, { content: updatedContent });
-        if (result.success) {
-          if (result.thing) currentNote.value = { ...result.thing };
-          else currentNote.value.content = updatedContent;
-          setDraft(currentNote.value.content || '');
-        } else {
-          checkbox.checked = wasChecked;
-          actionError.value = result.error || 'Failed to update task';
-          pendingModalTaskContent = null;
-        }
-      } else {
-        emit('update', currentNote.value._id, { content: updatedContent });
-        currentNote.value.content = updatedContent;
-        setDraft(updatedContent);
-      }
-    } catch (err: any) {
-      checkbox.checked = wasChecked;
-      actionError.value = err.message || 'Failed to update task';
-      pendingModalTaskContent = null;
-    } finally {
-      activeModalTaskSaves--;
-      if (activeModalTaskSaves <= 0) {
-        activeModalTaskSaves = 0;
-        isTaskSaving.value = false;
-        pendingModalTaskContent = null;
-      }
-    }
-    return;
-  }
-
-  // 2. Image preview click
-  const imgTarget = targetEl.closest('img');
-  if (imgTarget && hasImageClickListener.value) {
-    const anchor = imgTarget.closest('a');
-    if (!anchor) {
-      event.preventDefault();
-      event.stopPropagation();
-      const images = collectImages();
-      const src = imgTarget.getAttribute('src') || '';
-      const index = images.findIndex((img) => img.src === src);
-      emit('imageClick', images, index >= 0 ? index : 0);
-      return;
-    }
-  }
-
-  // 3. Anchor links (wikilinks or tag searches)
-  const anchor = targetEl.closest('a');
-  if (anchor) {
-    if (anchor.classList.contains('wikilink') || anchor.dataset.wikilink) {
-      event.preventDefault();
-      const query = anchor.dataset.wikilink || anchor.textContent?.trim() || '';
-      if (query) {
-        closeWithSave();
-        emit('wikilinkClick', query);
-      }
-      return;
-    }
-
-    const href = anchor.getAttribute('href') || '';
-    if (href.startsWith('#search?#')) {
-      event.preventDefault();
-      const tag = href.replace('#search?#', '').trim();
-      if (tag) {
-        closeWithSave();
-        emit('tagClick', tag);
-      }
-      return;
-    }
-    return;
-  }
-}
+const { handleBodyClick, handleAttachmentClick } = useNoteBodyInteraction({
+  canEdit: () => props.canEdit,
+  hasImageClickListener: () => hasImageClickListener.value,
+  attachmentUrl,
+  onImage: openLightbox,
+  onTag: (tag) => { closeWithSave(); emit('tagClick', tag); },
+  onWikilink: (query) => { closeWithSave(); emit('wikilinkClick', query); },
+});
 
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let autoSavePaused = false;
@@ -714,6 +560,7 @@ function handleBackdropClick() {
 function handleWindowKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     if (showColorPicker.value) {
+      event.preventDefault();
       closeColorPicker(true);
       return;
     }
@@ -723,18 +570,10 @@ function handleWindowKeydown(event: KeyboardEvent) {
 }
 
 // Color Picker
-function focusColor(index: number) {
-  focusedColorIndex.value = index;
-  nextTick(() => {
-    colorPaletteRef.value?.querySelectorAll<HTMLButtonElement>('.color-swatch-btn')[index]?.focus();
-  });
-}
 
 function closeColorPicker(returnFocus = false) {
   const shouldRestoreFocus = returnFocus && showColorPicker.value;
   showColorPicker.value = false;
-  document.removeEventListener('pointerdown', handleOutsideColorPicker);
-  document.removeEventListener('focusin', handleOutsideColorPicker);
   if (shouldRestoreFocus) nextTick(() => colorTriggerRef.value?.focus());
 }
 
@@ -746,47 +585,6 @@ function toggleColorPicker() {
   }
   actionError.value = null;
   showColorPicker.value = true;
-  document.addEventListener('pointerdown', handleOutsideColorPicker);
-  document.addEventListener('focusin', handleOutsideColorPicker);
-  const selected = NOTE_COLORS.findIndex((color) => color.key === (currentNote.value.color || 'default'));
-  focusColor(selected < 0 ? 0 : selected);
-}
-
-function handleOutsideColorPicker(event: Event) {
-  if (showColorPicker.value && !colorWrapperRef.value?.contains(event.target as Node) && !colorPaletteRef.value?.contains(event.target as Node)) {
-    closeColorPicker();
-  }
-}
-
-function handleColorKeydown(event: KeyboardEvent, index: number) {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    event.stopPropagation();
-    closeColorPicker(true);
-    return;
-  }
-
-  if (event.key === 'Tab') {
-    colorTriggerRef.value?.focus();
-    closeColorPicker();
-    return;
-  }
-
-  const columnCount = 4;
-  const offsets: Record<string, number> = {
-    ArrowLeft: -1,
-    ArrowRight: 1,
-    ArrowUp: -columnCount,
-    ArrowDown: columnCount,
-  };
-  if (offsets[event.key] === undefined && event.key !== 'Home' && event.key !== 'End') return;
-
-  event.preventDefault();
-  let nextIndex;
-  if (event.key === 'Home') nextIndex = 0;
-  else if (event.key === 'End') nextIndex = NOTE_COLORS.length - 1;
-  else nextIndex = (index + offsets[event.key] + NOTE_COLORS.length) % NOTE_COLORS.length;
-  focusColor(nextIndex);
 }
 
 async function selectColor(color: NoteColor) {
@@ -979,8 +777,6 @@ onUnmounted(() => {
   document.body.style.overflow = '';
   window.removeEventListener('keydown', handleWindowKeydown);
   document.removeEventListener('visibilitychange', handleVisibilityChange);
-  document.removeEventListener('pointerdown', handleOutsideColorPicker);
-  document.removeEventListener('focusin', handleOutsideColorPicker);
 });
 </script>
 
@@ -1400,47 +1196,6 @@ onUnmounted(() => {
 
 .color-picker-wrapper {
   position: relative;
-}
-
-.color-palette-popover {
-  position: fixed;
-  z-index: 1050;
-  display: grid;
-  grid-template-columns: repeat(4, var(--keep-control-size));
-  gap: 4px;
-  padding: 8px;
-  background-color: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--keep-card-radius);
-  box-shadow: var(--keep-shadow-raised);
-}
-
-.color-swatch-btn {
-  width: var(--keep-control-size);
-  height: var(--keep-control-size);
-  border-radius: var(--md-sys-shape-corner-full);
-  border: calc((var(--keep-control-size) - 28px) / 2) solid transparent;
-  background-clip: content-box;
-  padding: 0;
-  box-shadow: inset 0 0 0 1px var(--md-sys-color-outline-variant);
-  cursor: pointer;
-  transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing);
-}
-
-.color-swatch-btn:hover { transform: scale(1.1); }
-
-.color-swatch-btn.active {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: -4px;
-}
-
-.color-swatch-btn:focus-visible {
-  outline: 2px solid var(--md-sys-color-on-surface);
-  outline-offset: -2px;
-}
-
-.color-swatch-btn.is-default {
-  box-shadow: inset 0 0 0 2px var(--md-sys-color-outline-variant);
 }
 
 .footer-right {

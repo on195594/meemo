@@ -131,7 +131,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void;
-  (e: 'saved'): void;
 }>();
 
 const { settings, isLoading, saveSettings } = useSettings();
@@ -221,7 +220,6 @@ async function handleSave() {
   });
 
   if (result.success) {
-    emit('saved');
     emit('update:modelValue', false);
   } else {
     errorMessage.value = result.error || 'Failed to save settings';

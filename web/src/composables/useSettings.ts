@@ -15,7 +15,7 @@ export function getStoredTheme(): ThemeMode {
   return 'auto';
 }
 
-export function applyThemeToDOM(theme: ThemeMode): void {
+function applyThemeToDOM(theme: ThemeMode): void {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   if (theme === 'dark') {
@@ -37,7 +37,7 @@ export function setStoredTheme(theme: ThemeMode): void {
   applyThemeToDOM(theme);
 }
 
-export interface AppSettings {
+interface AppSettings {
   title?: string;
   theme?: ThemeMode;
   wide?: boolean;

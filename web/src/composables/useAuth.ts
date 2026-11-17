@@ -10,7 +10,7 @@ import { resetSettingsState } from './useSettings';
 import { clearDrafts } from '../utils/drafts';
 import { clearOfflineData } from '../utils/pwa';
 
-export interface RegisterPayload {
+interface RegisterPayload {
   username: string;
   email: string;
   displayName: string;

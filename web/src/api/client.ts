@@ -1,6 +1,6 @@
 import type { components, paths } from '../../../types/generated/api-types';
 
-export interface ApiErrorDetails {
+interface ApiErrorDetails {
   status: string;
   code: string;
   message: string;
@@ -20,7 +20,6 @@ export class ApiError extends Error {
 
 export type UserProfile = components['schemas']['UserProfile'];
 export type PublicUserProfile = components['schemas']['PublicUserProfile'];
-export type PublicUserSummary = components['schemas']['PublicUserSummary'];
 export type AttachmentDescriptor = components['schemas']['AttachmentDescriptor'];
 export type Thing = components['schemas']['Thing'];
 export type NoteColor = components['schemas']['NoteColor'];

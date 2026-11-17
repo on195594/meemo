@@ -378,9 +378,6 @@ const userAvatarInitial = computed(() => {
 });
 
 provide('openAuthModal', openLoginModal);
-provide('openSettingsModal', openSettings);
-provide('openImportModal', openImport);
-provide('openCheatsheetModal', openCheatsheet);
 
 function closeUserMenu(returnFocus = false) {
   showUserMenu.value = false;

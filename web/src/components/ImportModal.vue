@@ -31,7 +31,7 @@
         >
           <span class="drop-icon">📦</span>
           <span v-if="selectedFile" class="file-name">
-            {{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) }})
+            {{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) || '0 B' }})
           </span>
           <span v-else class="drop-text">
             Drop your <code>meemo-export.tar</code> here, or click to browse
@@ -103,6 +103,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { api } from '../api/client';
+import { formatFileSize } from '../utils/attachments';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -144,17 +145,8 @@ function setFile(file: File) {
   selectedFile.value = file;
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function handleClose() {
   if (isImporting.value) return;
-  if (successResult.value) {
-    emit('imported');
-  }
   selectedFile.value = null;
   successResult.value = null;
   errorMessage.value = null;

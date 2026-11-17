@@ -71,7 +71,7 @@ function fieldValue(thing: Record<string, any>, field: MergeField): unknown {
 }
 
 // Field-level three-way merge of a full PUT body; null when both sides changed the same field differently.
-export function mergeUpdate(base: Thing, mine: Record<string, any>, theirs: Thing): Record<string, any> | null {
+function mergeUpdate(base: Thing, mine: Record<string, any>, theirs: Thing): Record<string, any> | null {
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   const merged: Record<string, any> = { expectedRevision: theirs.revision };
   for (const field of MERGE_FIELDS) {
