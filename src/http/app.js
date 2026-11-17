@@ -1,7 +1,6 @@
 'use strict';
 
 var express = require('express'),
-    json = require('body-parser').json,
     config = require('../config.js'),
     cors = require('cors'),
     path = require('path'),
@@ -67,8 +66,8 @@ function createApp(options) {
         app.use(cors({ origin: allowedOrigins, credentials: true }));
     }
 
-    app.use('/api/mcp', json({ strict: true, limit: '2kb' }));
-    app.use(json({ strict: true, limit: '5mb' }));
+    app.use('/api/mcp', express.json({ strict: true, limit: '2kb' }));
+    app.use(express.json({ strict: true, limit: '5mb' }));
 
     app.use('/api/health/ready', function (req, res, next) {
         if (options.shutdownManager && options.shutdownManager.isShuttingDown) {

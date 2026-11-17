@@ -1,7 +1,6 @@
 'use strict';
 
-var nodeify = require('../promise.js'),
-    settings = require('./settings-service.js'),
+var settings = require('./settings-service.js'),
     things = require('./thing-service.js'),
     users = require('../users.js'),
     UserError = users.UserError;
@@ -22,26 +21,23 @@ async function resolve(rawUserId) {
     }
 }
 
-function getThing(rawUserId, thingId, callback) {
-    var promise = Promise.resolve().then(async function () {
-        if (rawUserId === 'shared') {
-            return await things.getPublicShared(thingId);
+async function getThing(rawUserId, thingId) {
+    if (rawUserId === 'shared') {
+        return await things.getPublicShared(thingId);
+    }
+    var target = await resolve(rawUserId);
+    try {
+        return await things.getPublic(target.id, thingId);
+    } catch (error) {
+        if (error && error.message === 'not found' && target.username !== target.id) {
+            return things.getPublic(target.username, thingId);
         }
-        var target = await resolve(rawUserId);
-        try {
-            return await things.getPublic(target.id, thingId);
-        } catch (error) {
-            if (error && error.message === 'not found' && target.username !== target.id) {
-                return things.getPublic(target.username, thingId);
-            }
-            throw error;
-        }
-    });
-    return nodeify(promise, callback);
+        throw error;
+    }
 }
 
-function getAll(rawUserId, query, skip, limit, callback) {
-    var promise = resolve(rawUserId).then(async function (target) {
+async function getAll(rawUserId, query, skip, limit) {
+    return resolve(rawUserId).then(async function (target) {
         try {
             return await things.getAllPublic(target.id, query, skip, limit);
         } catch (error) {
@@ -49,15 +45,14 @@ function getAll(rawUserId, query, skip, limit, callback) {
             throw error;
         }
     });
-    return nodeify(promise, callback);
 }
 
-function listUsers(callback) {
-    return nodeify(users.list(), callback);
+async function listUsers() {
+    return users.list();
 }
 
-function profile(rawUserId, callback) {
-    var promise = resolve(rawUserId).then(function (target) {
+async function profile(rawUserId) {
+    return resolve(rawUserId).then(function (target) {
         if (!target.user) throw notFound();
         return {
             id: target.user.id,
@@ -65,11 +60,10 @@ function profile(rawUserId, callback) {
             displayName: target.user.displayName
         };
     });
-    return nodeify(promise, callback);
 }
 
-function feed(rawUserId, callback) {
-    var promise = resolve(rawUserId).then(async function (target) {
+async function feed(rawUserId) {
+    return resolve(rawUserId).then(async function (target) {
         if (!target.user) throw notFound();
         var config = await settings.get(target.id);
         var result;
@@ -81,7 +75,6 @@ function feed(rawUserId, callback) {
         }
         return { user: target.user, settings: config, things: result };
     });
-    return nodeify(promise, callback);
 }
 
 module.exports = {

@@ -2,18 +2,16 @@
 
 'use strict';
 
-var MongoClient = require('mongodb').MongoClient,
-    nodeify = require('./promise.js');
+var MongoClient = require('mongodb').MongoClient;
 
-function clearDatabase(callback) {
+async function clearDatabase() {
     var client;
-    var promise = MongoClient.connect(module.exports.databaseUrl).then(function (connected) {
+    return MongoClient.connect(module.exports.databaseUrl).then(function (connected) {
         client = connected;
         return client.db().dropDatabase();
     }).finally(function () {
         if (client) return client.close();
     });
-    return nodeify(promise, callback);
 }
 
 module.exports = {

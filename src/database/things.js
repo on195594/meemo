@@ -5,13 +5,9 @@
 var assert = require('assert'),
     ObjectId = require('mongodb').ObjectId,
     config = require('../config.js'),
-    nodeify = require('../promise.js'),
     noteColors = require('../note-colors.js');
 
-var indexesCreated = false;
 var MAX_REVISION = Number.MAX_SAFE_INTEGER;
-var WRITE_GATE_ID = 'thing-writes';
-var WRITE_GATE_COLLECTION = 'system_maintenance';
 
 function revisionError(code, message) {
     var error = new Error(message);
@@ -36,64 +32,8 @@ function conflictError() {
     return revisionError('revision_conflict', 'Thing revision conflict');
 }
 
-function writeGateCollection() {
-    if (!config.db) throw new Error('MongoDB database is not connected');
-    return config.db.collection(WRITE_GATE_COLLECTION);
-}
-
-function writeFrozenError() {
-    return new Error('Thing writes are frozen for maintenance');
-}
-
-async function checkNotFrozen() {
-    if (!config.db) return;
-    var gate = await writeGateCollection().findOne({ _id: WRITE_GATE_ID });
-    if (gate && gate.frozen === true) {
-        throw writeFrozenError();
-    }
-}
-
-// ponytail: check maintenance gate without active-writer lease counters; no lock contention or crash deadlocks.
-function acquireWriteFreeze(callback) {
-    var promise = Promise.resolve().then(async function () {
-        await writeGateCollection().updateOne(
-            { _id: WRITE_GATE_ID },
-            { $set: { frozen: true, frozenAt: Date.now() } },
-            { upsert: true }
-        );
-    });
-    return nodeify(promise, callback);
-}
-
-function releaseWriteFreeze(callback) {
-    var promise = Promise.resolve().then(async function () {
-        var result = await writeGateCollection().updateOne(
-            { _id: WRITE_GATE_ID, frozen: true },
-            { $set: { frozen: false, releasedAt: Date.now() } }
-        );
-        if (result.matchedCount !== 1) throw new Error('Thing write freeze is not active');
-    });
-    return nodeify(promise, callback);
-}
-
-function requireWriteFreeze(db, callback) {
-    if (typeof db === 'function') {
-        callback = db;
-        db = null;
-    }
-    db = db || config.db;
-    var promise = Promise.resolve().then(async function () {
-        if (!db) throw new Error('MongoDB database is not connected');
-        var gate = await db.collection(WRITE_GATE_COLLECTION).findOne({ _id: WRITE_GATE_ID });
-        if (!gate || gate.frozen !== true) {
-            throw new Error('A verified Thing write freeze is required');
-        }
-    });
-    return nodeify(promise, callback);
-}
-
 function resetCache() {
-    indexesCreated = false;
+    // Kept for test isolation hooks that reset database handles between suites.
 }
 
 function getUnifiedCollection() {
@@ -159,26 +99,21 @@ async function ensureTextIndex(collection) {
     }
 }
 
-function ensureIndexes(callback) {
-    var promise = Promise.resolve().then(async function () {
-        if (!config.db) throw new Error('MongoDB database is not connected');
-        var collection = config.db.collection('things');
-        await collection.updateMany({ archived: { $exists: false } }, { $set: { archived: false } });
-        await Promise.all([
-            createIndex(collection, { ownerId: 1, modifiedAt: -1 }),
-            createIndex(collection, { ownerId: 1, sticky: -1, modifiedAt: -1 }),
-            createIndex(collection, { ownerId: 1, archived: 1, modifiedAt: -1 }),
-            createIndex(collection, { ownerId: 1, tags: 1 }),
-            createIndex(collection, { ownerId: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
-            createIndex(collection, { ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
-            createIndex(collection, { ownerId: 1, deletedAt: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
-            createIndex(collection, { ownerId: 1, deletedAt: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 })
-        ]);
-        await ensureTextIndex(collection);
-    }).then(function () {
-        indexesCreated = true;
-    });
-    return nodeify(promise, callback);
+async function ensureIndexes() {
+    if (!config.db) throw new Error('MongoDB database is not connected');
+    var collection = config.db.collection('things');
+    await collection.updateMany({ archived: { $exists: false } }, { $set: { archived: false } });
+    await Promise.all([
+        createIndex(collection, { ownerId: 1, modifiedAt: -1 }),
+        createIndex(collection, { ownerId: 1, sticky: -1, modifiedAt: -1 }),
+        createIndex(collection, { ownerId: 1, archived: 1, modifiedAt: -1 }),
+        createIndex(collection, { ownerId: 1, tags: 1 }),
+        createIndex(collection, { ownerId: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
+        createIndex(collection, { ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
+        createIndex(collection, { ownerId: 1, deletedAt: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
+        createIndex(collection, { ownerId: 1, deletedAt: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 })
+    ]);
+    await ensureTextIndex(collection);
 }
 
 function queryHasText(query) {
@@ -254,25 +189,23 @@ function createListCursor(userId, query, skip, limit) {
     return cursor;
 }
 
-function getAll(userId, query, skip, limit, callback) {
+async function getAll(userId, query, skip, limit) {
     var cursor = createListCursor(userId, query, skip, limit);
-    var promise = cursor.toArray().then(function (result) {
+    return cursor.toArray().then(function (result) {
         (result || []).forEach(postProcess.bind(null, userId));
         return result || [];
     });
-    return nodeify(promise, callback);
 }
 
-function getAllLean(userId, callback) {
+async function getAllLean(userId) {
     assert.strictEqual(typeof userId, 'string');
 
-    var promise = getUnifiedCollection().find({ ownerId: userId, deletedAt: { $exists: false } })
+    return getUnifiedCollection().find({ ownerId: userId, deletedAt: { $exists: false } })
         .sort({ modifiedAt: -1, _id: -1 })
         .toArray().then(function (result) {
         (result || []).forEach(postProcess.bind(null, userId));
         return result || [];
     });
-    return nodeify(promise, callback);
 }
 
 function getSummaries(userId, query, skip, limit, includeContent) {
@@ -299,8 +232,7 @@ function getSnapshots(userId, thingIds) {
         .project({ content: 1, revision: 1 }).maxTimeMS(3000).toArray();
 }
 
-function getTagUsage(userId, options, callback) {
-    if (typeof options === 'function') { callback = options; options = undefined; }
+async function getTagUsage(userId, options) {
     assert.strictEqual(typeof userId, 'string');
 
     var pipeline = [
@@ -316,81 +248,51 @@ function getTagUsage(userId, options, callback) {
         if (options.skip) pipeline.push({ $skip: options.skip });
         pipeline.push({ $limit: options.limit });
     }
-    var promise = getUnifiedCollection().aggregate(pipeline, options ? { maxTimeMS: 3000 } : {}).toArray().then(function (result) {
+    return getUnifiedCollection().aggregate(pipeline, options ? { maxTimeMS: 3000 } : {}).toArray().then(function (result) {
         return (result || []).map(function (tag) {
             return { ownerId: userId, name: tag._id, usage: tag.usage };
         });
     });
-    return nodeify(promise, callback);
 }
 
-function get(userId, thingId, callback) {
+async function get(userId, thingId) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
 
-    var promise = Promise.resolve().then(async function () {
-        if (!ObjectId.isValid(thingId)) throw new Error('not found');
-        var id = new ObjectId(thingId);
-        var result = await getUnifiedCollection().findOne({ _id: id, ownerId: userId, deletedAt: { $exists: false } });
-        if (!result) throw new Error('not found');
-        postProcess(userId, result);
-        return result;
-    });
-    return nodeify(promise, callback);
+    if (!ObjectId.isValid(thingId)) throw new Error('not found');
+    var id = new ObjectId(thingId);
+    var result = await getUnifiedCollection().findOne({ _id: id, ownerId: userId, deletedAt: { $exists: false } });
+    if (!result) throw new Error('not found');
+    postProcess(userId, result);
+    return result;
 }
 
-function getById(thingId, callback) {
+async function getById(thingId) {
     assert.strictEqual(typeof thingId, 'string');
 
-    var promise = Promise.resolve().then(async function () {
-        if (!ObjectId.isValid(thingId)) throw new Error('not found');
-        var id = new ObjectId(thingId);
-        var result = await getUnifiedCollection().findOne({ _id: id });
-        if (!result) throw new Error('not found');
-        postProcess(result.ownerId, result);
-        return result;
-    });
-    return nodeify(promise, callback);
+    if (!ObjectId.isValid(thingId)) throw new Error('not found');
+    var id = new ObjectId(thingId);
+    var result = await getUnifiedCollection().findOne({ _id: id });
+    if (!result) throw new Error('not found');
+    postProcess(result.ownerId, result);
+    return result;
 }
 
-function add(userId, content, tags, attachments, externalContent, color, assistant, callback) {
-    if (typeof color === 'function') {
-        callback = color;
-        color = 'default';
-    }
-    if (typeof assistant === 'function') {
-        callback = assistant;
-        assistant = undefined;
-    }
-    var promise = insertFull(userId, content, tags, attachments, externalContent, Date.now(), Date.now(), color, assistant).then(function (result) {
+async function add(userId, content, tags, attachments, externalContent, color = 'default', assistant) {
+    return insertFull(userId, content, tags, attachments, externalContent, Date.now(), Date.now(), color, assistant).then(function (result) {
         return get(userId, result._id);
     });
-    return nodeify(promise, callback);
 }
 
-function addFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color, callback) {
-    if (typeof color === 'function') {
-        callback = color;
-        color = 'default';
-    }
-    var promise = insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color).then(function (result) {
+async function addFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color = 'default') {
+    return insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color).then(function (result) {
         return get(userId, result._id);
     });
-    return nodeify(promise, callback);
 }
 
-function insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color, assistant, callback) {
-    if (typeof color === 'function') {
-        callback = color;
-        color = 'default';
-    }
-    if (typeof assistant === 'function') {
-        callback = assistant;
-        assistant = undefined;
-    }
-    if (color === undefined) color = 'default';
+async function insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color = 'default', assistant) {
     if (!noteColors.isValidNoteColor(color)) {
-        return nodeify(Promise.reject(noteColors.invalidNoteColorError()), callback);
+        return Promise.reject(noteColors.invalidNoteColorError());
     }
 
     assert.strictEqual(typeof userId, 'string');
@@ -416,36 +318,19 @@ function insertFull(userId, content, tags, attachments, externalContent, created
     };
     if (assistant) doc.assistant = assistant;
 
-    var promise = Promise.resolve().then(async function () {
-        await checkNotFrozen();
-        var result = await getUnifiedCollection().insertOne(doc);
-        if (!result) throw new Error('no result returned');
-        doc._id = result.insertedId.toString();
-        postProcess(userId, doc);
-        return doc;
-    });
-    return nodeify(promise, callback);
+    var result = await getUnifiedCollection().insertOne(doc);
+    if (!result) throw new Error('no result returned');
+    doc._id = result.insertedId.toString();
+    postProcess(userId, doc);
+    return doc;
 }
 
-function put(userId, thingId, content, tags, attachments, externalContent, isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant, callback) {
-    if (typeof expectedRevision === 'function') {
-        callback = expectedRevision;
-        expectedRevision = undefined;
-    }
-    if (typeof assistant === 'function') {
-        callback = assistant;
-        assistant = undefined;
-    }
-    if (typeof color === 'function') {
-        callback = color;
-        color = undefined;
-        expectedRevision = undefined;
-    }
+async function put(userId, thingId, content, tags, attachments, externalContent, isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
-    if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(notFoundError()), callback);
+    if (!ObjectId.isValid(thingId)) return Promise.reject(notFoundError());
     if (color !== undefined && !noteColors.isValidNoteColor(color)) {
-        return nodeify(Promise.reject(noteColors.invalidNoteColorError()), callback);
+        return Promise.reject(noteColors.invalidNoteColorError());
     }
 
     var data = {
@@ -467,114 +352,82 @@ function put(userId, thingId, content, tags, attachments, externalContent, isPub
     if (assistant) data.assistant = assistant;
     else update.$unset = { assistant: '' };
 
-    var promise = Promise.resolve().then(async function () {
-        requireRevision(expectedRevision, true);
-        await checkNotFrozen();
-        var id = new ObjectId(thingId);
-        var collection = getUnifiedCollection();
-        var result = await collection.findOneAndUpdate(
-            { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: false } },
-            update,
-            { returnDocument: 'after', includeResultMetadata: false }
-        );
-        if (!result) {
-            var existing = await collection.findOne({ _id: id, ownerId: userId }, { projection: { _id: 1 } });
-            throw existing ? conflictError() : notFoundError();
-        }
-        postProcess(userId, result);
-        return result;
-    });
-    return nodeify(promise, callback);
+    requireRevision(expectedRevision, true);
+    var id = new ObjectId(thingId);
+    var collection = getUnifiedCollection();
+    var result = await collection.findOneAndUpdate(
+        { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: false } },
+        update,
+        { returnDocument: 'after', includeResultMetadata: false }
+    );
+    if (!result) {
+        var existing = await collection.findOne({ _id: id, ownerId: userId }, { projection: { _id: 1 } });
+        throw existing ? conflictError() : notFoundError();
+    }
+    postProcess(userId, result);
+    return result;
 }
 
-function del(userId, thingId, expectedRevision, assistant, callback) {
-    if (typeof expectedRevision === 'function') {
-        callback = expectedRevision;
-        expectedRevision = undefined;
-    }
-    if (typeof assistant === 'function') {
-        callback = assistant;
-        assistant = undefined;
-    }
+async function del(userId, thingId, expectedRevision, assistant) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
-    if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(notFoundError()), callback);
+    if (!ObjectId.isValid(thingId)) return Promise.reject(notFoundError());
 
-    var promise = Promise.resolve().then(async function () {
-        requireRevision(expectedRevision, false);
-        await checkNotFrozen();
-        var id = new ObjectId(thingId);
-        var collection = getUnifiedCollection();
-        var result = await collection.updateOne(
-            { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: false } },
-            {
-                $set: Object.assign({
-                    deletedAt: Date.now(),
-                    modifiedAt: Date.now(),
-                    public: false,
-                    shared: false,
-                    sticky: false
-                }, assistant ? { assistant: assistant } : {}),
-                $inc: { revision: 1 }
-            }
-        );
-        if (result.modifiedCount === 0) {
-            var existing = await collection.findOne({ _id: id, ownerId: userId, deletedAt: { $exists: false } }, { projection: { _id: 1 } });
-            throw existing ? conflictError() : notFoundError();
+    requireRevision(expectedRevision, false);
+    var id = new ObjectId(thingId);
+    var collection = getUnifiedCollection();
+    var result = await collection.updateOne(
+        { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: false } },
+        {
+            $set: Object.assign({
+                deletedAt: Date.now(),
+                modifiedAt: Date.now(),
+                public: false,
+                shared: false,
+                sticky: false
+            }, assistant ? { assistant: assistant } : {}),
+            $inc: { revision: 1 }
         }
-    });
-    return nodeify(promise, callback);
+    );
+    if (result.modifiedCount === 0) {
+        var existing = await collection.findOne({ _id: id, ownerId: userId, deletedAt: { $exists: false } }, { projection: { _id: 1 } });
+        throw existing ? conflictError() : notFoundError();
+    }
 }
 
-function restore(userId, thingId, expectedRevision, callback) {
-    if (typeof expectedRevision === 'function') {
-        callback = expectedRevision;
-        expectedRevision = undefined;
-    }
+async function restore(userId, thingId, expectedRevision) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
-    if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(notFoundError()), callback);
+    if (!ObjectId.isValid(thingId)) return Promise.reject(notFoundError());
 
-    var promise = Promise.resolve().then(async function () {
-        requireRevision(expectedRevision, true);
-        await checkNotFrozen();
-        var id = new ObjectId(thingId);
-        var collection = getUnifiedCollection();
-        var result = await collection.findOneAndUpdate(
-            { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: true } },
-            {
-                $unset: { deletedAt: '', assistant: '' },
-                $set: { modifiedAt: Date.now(), public: false, shared: false },
-                $inc: { revision: 1 }
-            },
-            { returnDocument: 'after', includeResultMetadata: false }
-        );
-        if (!result) {
-            var existing = await collection.findOne({ _id: id, ownerId: userId }, { projection: { _id: 1, deletedAt: 1 } });
-            throw existing ? conflictError() : notFoundError();
-        }
-        postProcess(userId, result);
-        return result;
-    });
-    return nodeify(promise, callback);
+    requireRevision(expectedRevision, true);
+    var id = new ObjectId(thingId);
+    var collection = getUnifiedCollection();
+    var result = await collection.findOneAndUpdate(
+        { _id: id, ownerId: userId, revision: expectedRevision, deletedAt: { $exists: true } },
+        {
+            $unset: { deletedAt: '', assistant: '' },
+            $set: { modifiedAt: Date.now(), public: false, shared: false },
+            $inc: { revision: 1 }
+        },
+        { returnDocument: 'after', includeResultMetadata: false }
+    );
+    if (!result) {
+        var existing = await collection.findOne({ _id: id, ownerId: userId }, { projection: { _id: 1, deletedAt: 1 } });
+        throw existing ? conflictError() : notFoundError();
+    }
+    postProcess(userId, result);
+    return result;
 }
 
-function purge(userId, thingId, expectedRevision, callback) {
-    if (typeof expectedRevision === 'function') {
-        callback = expectedRevision;
-        expectedRevision = undefined;
-    }
+async function purge(userId, thingId, expectedRevision) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof thingId, 'string');
-    if (!ObjectId.isValid(thingId)) return nodeify(Promise.reject(notFoundError()), callback);
+    if (!ObjectId.isValid(thingId)) return Promise.reject(notFoundError());
 
-    var promise = Promise.resolve().then(async function () {
-        requireRevision(expectedRevision, false);
-        await checkNotFrozen();
-        var result = await getUnifiedCollection().deleteOne({ _id: new ObjectId(thingId), ownerId: userId, revision: expectedRevision });
-        if (!result.deletedCount) throw notFoundError();
-    });
-    return nodeify(promise, callback);
+    requireRevision(expectedRevision, false);
+    var result = await getUnifiedCollection().deleteOne({ _id: new ObjectId(thingId), ownerId: userId, revision: expectedRevision });
+    if (!result.deletedCount) throw notFoundError();
 }
 
 module.exports = {
@@ -593,12 +446,8 @@ module.exports = {
     del: del,
     restore: restore,
     purge: purge,
-    acquireWriteFreeze: acquireWriteFreeze,
-    releaseWriteFreeze: releaseWriteFreeze,
-    requireWriteFreeze: requireWriteFreeze,
     ensureIndexes: ensureIndexes,
     getUnifiedCollection: getUnifiedCollection,
-    createListCursor: createListCursor,
     resetCache: resetCache,
     queryHasText: queryHasText,
     normalizeQueryForIndex: normalizeQueryForIndex

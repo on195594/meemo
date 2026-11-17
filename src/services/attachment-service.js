@@ -4,7 +4,6 @@ var crypto = require('crypto'),
     config = require('../config.js'),
     ObjectId = require('mongodb').ObjectId,
     path = require('path'),
-    nodeify = require('../promise.js'),
     isSafePathSegment = require('../path-segment.js'),
     storage = require('../storage/local-storage.js'),
     things = require('./thing-service.js'),
@@ -37,23 +36,20 @@ function safeExtension(detectedType) {
     return '.bin';
 }
 
-function save(userId, file, callback) {
-    var promise = Promise.resolve().then(async function () {
-        var detectedType = detectImageType(file.buffer);
-        var isImage = Boolean(detectedType && file.mimetype && file.mimetype.indexOf('image/') === 0);
-        var storageKey = crypto.randomUUID() + safeExtension(detectedType);
-        await storage.saveAttachment(userId, storageKey, file.buffer);
-        return {
-            identifier: storageKey,
-            fileName: path.basename(file.originalname || 'attachment'),
-            type: isImage ? things.TYPE_IMAGE : things.TYPE_UNKNOWN
-        };
-    });
-    return nodeify(promise, callback);
+async function save(userId, file) {
+    var detectedType = detectImageType(file.buffer);
+    var isImage = Boolean(detectedType && file.mimetype && file.mimetype.indexOf('image/') === 0);
+    var storageKey = crypto.randomUUID() + safeExtension(detectedType);
+    await storage.saveAttachment(userId, storageKey, file.buffer);
+    return {
+        identifier: storageKey,
+        fileName: path.basename(file.originalname || 'attachment'),
+        type: isImage ? things.TYPE_IMAGE : things.TYPE_UNKNOWN
+    };
 }
 
-function authorize(rawUserId, thingId, identifier, session, callback) {
-    var promise = Promise.resolve().then(async function () {
+async function authorize(rawUserId, thingId, identifier, session) {
+    try {
         if (!ObjectId.isValid(thingId)) throw serviceError('not_found', 'not found');
 
         var targetUser;
@@ -89,11 +85,10 @@ function authorize(rawUserId, thingId, identifier, session, callback) {
             visible: !!(thing.public || thing.shared),
             root: await storage.resolveAttachmentRoot(targetUserId, targetUsername, identifier)
         };
-    }).catch(function (error) {
+    } catch (error) {
         if (error.message === 'not found' && !error.code) throw serviceError('not_found', 'not found');
         throw error;
-    });
-    return nodeify(promise, callback);
+    }
 }
 
 function addReference(references, root, identifier) {
@@ -149,48 +144,45 @@ async function hasReference(identifier) {
     return false;
 }
 
-function garbageCollect(options, callback) {
+async function garbageCollect(options) {
     options = options || {};
     var graceMs = options.graceMs === undefined ? DEFAULT_GC_GRACE_MS : Number(options.graceMs);
     var now = options.now === undefined ? Date.now() : Number(options.now);
     var apply = options.apply === true;
-    var promise = Promise.resolve().then(async function () {
-        if (!Number.isFinite(graceMs) || graceMs < 0) throw new Error('graceMs must be a non-negative number');
-        if (!Number.isFinite(now)) throw new Error('now must be a number');
+    if (!Number.isFinite(graceMs) || graceMs < 0) throw new Error('graceMs must be a non-negative number');
+    if (!Number.isFinite(now)) throw new Error('now must be a number');
 
-        // Finish both scans before any deletion so scan errors always fail closed.
-        var references = await scanReferences();
-        var files = await storage.listAttachments();
-        var orphans = files.filter(function (file) {
-            return !references.has(file.identifier);
-        }).map(function (file) {
-            var ageMs = now - file.mtimeMs;
-            return Object.assign({}, file, { ageMs: ageMs, eligible: ageMs > graceMs });
-        });
-        var eligible = orphans.filter(function (file) { return file.eligible; });
-        var deleted = 0;
-        if (apply) {
-            for (var file of eligible) {
-                // Recheck references created since enumeration without loading every document again.
-                // This check and removal, as before, are not atomic with concurrent note writes.
-                if (await hasReference(file.identifier)) continue;
-                await storage.removeFile(file.path);
-                deleted += 1;
-            }
-        }
-        return {
-            mode: apply ? 'apply' : 'dry-run',
-            gracePeriodMs: graceMs,
-            filesScanned: files.length,
-            orphansFound: orphans.length,
-            eligibleForDeletion: eligible.length,
-            deleted: deleted,
-            orphans: orphans.map(function (file) {
-                return { root: file.root, identifier: file.identifier, ageMs: file.ageMs, eligible: file.eligible };
-            })
-        };
+    // Finish both scans before any deletion so scan errors always fail closed.
+    var references = await scanReferences();
+    var files = await storage.listAttachments();
+    var orphans = files.filter(function (file) {
+        return !references.has(file.identifier);
+    }).map(function (file) {
+        var ageMs = now - file.mtimeMs;
+        return Object.assign({}, file, { ageMs: ageMs, eligible: ageMs > graceMs });
     });
-    return nodeify(promise, callback);
+    var eligible = orphans.filter(function (file) { return file.eligible; });
+    var deleted = 0;
+    if (apply) {
+        for (var file of eligible) {
+            // Recheck references created since enumeration without loading every document again.
+            // This check and removal, as before, are not atomic with concurrent note writes.
+            if (await hasReference(file.identifier)) continue;
+            await storage.removeFile(file.path);
+            deleted += 1;
+        }
+    }
+    return {
+        mode: apply ? 'apply' : 'dry-run',
+        gracePeriodMs: graceMs,
+        filesScanned: files.length,
+        orphansFound: orphans.length,
+        eligibleForDeletion: eligible.length,
+        deleted: deleted,
+        orphans: orphans.map(function (file) {
+            return { root: file.root, identifier: file.identifier, ageMs: file.ageMs, eligible: file.eligible };
+        })
+    };
 }
 
 module.exports = {
@@ -198,6 +190,5 @@ module.exports = {
     authorize: authorize,
     garbageCollect: garbageCollect,
     detectImageType: detectImageType,
-    DEFAULT_GC_GRACE_MS: DEFAULT_GC_GRACE_MS,
     TYPE_IMAGE: things.TYPE_IMAGE
 };

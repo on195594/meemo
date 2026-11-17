@@ -4,8 +4,7 @@
 
 var assert = require('assert'),
     ObjectId = require('mongodb').ObjectId,
-    config = require('../config.js'),
-    nodeify = require('../promise.js');
+    config = require('../config.js');
 
 function MongoUserRepository(db) {
     this._db = db || null;
@@ -32,47 +31,40 @@ MongoUserRepository.prototype.getCollection = function () {
     return collection;
 };
 
-MongoUserRepository.prototype.ensureIndexes = function (callback) {
+MongoUserRepository.prototype.ensureIndexes = async function () {
     var self = this;
-    var promise = Promise.resolve().then(function () {
+    try {
         var db = self._db || config.db;
         if (!db) throw new Error('MongoDB database is not connected');
-        return db.collection('users').createIndex({ usernameNorm: 1 }, { unique: true });
-    }).then(function () {
+        await db.collection('users').createIndex({ usernameNorm: 1 }, { unique: true });
         self._indexesCreated = true;
-    }).catch(function (error) {
+    } catch (error) {
         if (error.codeName === 'IndexOptionsConflict') {
             self._indexesCreated = true;
             return;
         }
         throw error;
-    });
-    return nodeify(promise, callback);
+    }
 };
 
-MongoUserRepository.prototype.claimFirstUserRegistration = function (callback) {
+MongoUserRepository.prototype.claimFirstUserRegistration = async function () {
     var self = this;
-    var promise = Promise.resolve().then(function () {
+    try {
         var db = self._db || config.db;
         if (!db) throw new Error('MongoDB database is not connected');
-        return db.collection('system_config').insertOne({ _id: 'registration-initialized' });
-    }).then(function () {
+        await db.collection('system_config').insertOne({ _id: 'registration-initialized' });
         return true;
-    }).catch(function (error) {
+    } catch (error) {
         if (isDuplicateKey(error)) return false;
         throw error;
-    });
-    return nodeify(promise, callback);
+    }
 };
 
-MongoUserRepository.prototype.releaseFirstUserRegistration = function (callback) {
+MongoUserRepository.prototype.releaseFirstUserRegistration = async function () {
     var self = this;
-    var promise = Promise.resolve().then(function () {
-        var db = self._db || config.db;
-        if (!db) throw new Error('MongoDB database is not connected');
-        return db.collection('system_config').deleteOne({ _id: 'registration-initialized' });
-    });
-    return nodeify(promise, callback);
+    var db = self._db || config.db;
+    if (!db) throw new Error('MongoDB database is not connected');
+    return db.collection('system_config').deleteOne({ _id: 'registration-initialized' });
 };
 
 function mapUser(doc, includePassword) {
@@ -88,7 +80,7 @@ function mapUser(doc, includePassword) {
     };
 }
 
-MongoUserRepository.prototype.get = function (id, callback) {
+MongoUserRepository.prototype.get = async function (id) {
     var self = this;
     assert.strictEqual(typeof id, 'string');
 
@@ -96,30 +88,24 @@ MongoUserRepository.prototype.get = function (id, callback) {
     var conditions = [{ usernameNorm: norm }, { username: id }];
     if (ObjectId.isValid(id) && String(new ObjectId(id)) === id) conditions.unshift({ _id: new ObjectId(id) });
 
-    return nodeify(Promise.resolve().then(function () {
-        return self.getCollection().findOne({ $or: conditions });
-    }).then(function (doc) {
-        return mapUser(doc, true);
-    }), callback);
+    var doc = await self.getCollection().findOne({ $or: conditions });
+    return mapUser(doc, true);
 };
 
-MongoUserRepository.prototype.getByUsername = function (username, callback) {
+MongoUserRepository.prototype.getByUsername = async function (username) {
     var self = this;
     assert.strictEqual(typeof username, 'string');
 
-    return nodeify(Promise.resolve().then(function () {
-        return self.getCollection().findOne({ usernameNorm: username.toLowerCase() });
-    }).then(function (doc) {
-        return mapUser(doc, true);
-    }), callback);
+    var doc = await self.getCollection().findOne({ usernameNorm: username.toLowerCase() });
+    return mapUser(doc, true);
 };
 
-MongoUserRepository.prototype.create = function (userData, callback) {
+MongoUserRepository.prototype.create = async function (userData) {
     var self = this;
     assert(userData && typeof userData === 'object');
     assert.strictEqual(typeof userData.username, 'string');
 
-    var promise = this.getByUsername(userData.username).then(function (existing) {
+    return this.getByUsername(userData.username).then(function (existing) {
         if (existing) throw new Error('user exists');
 
         var doc = {
@@ -142,24 +128,17 @@ MongoUserRepository.prototype.create = function (userData, callback) {
         }
         throw error;
     });
-
-    return nodeify(promise, callback);
 };
 
-MongoUserRepository.prototype.list = function (callback) {
+MongoUserRepository.prototype.list = async function () {
     var self = this;
-    return nodeify(Promise.resolve().then(function () {
-        return self.getCollection().find({ status: { $ne: 'disabled' } }).sort({ username: 1 }).toArray();
-    }).then(function (docs) {
-        return (docs || []).map(function (doc) { return mapUser(doc, false); });
-    }), callback);
+    var docs = await self.getCollection().find({ status: { $ne: 'disabled' } }).sort({ username: 1 }).toArray();
+    return (docs || []).map(function (doc) { return mapUser(doc, false); });
 };
 
-MongoUserRepository.prototype.count = function (callback) {
+MongoUserRepository.prototype.count = async function () {
     var self = this;
-    return nodeify(Promise.resolve().then(function () {
-        return self.getCollection().countDocuments({ status: { $ne: 'disabled' } });
-    }), callback);
+    return self.getCollection().countDocuments({ status: { $ne: 'disabled' } });
 };
 
 module.exports = MongoUserRepository;

@@ -77,7 +77,7 @@ async function getRSS(req, res) {
     var webServer = (process.env.APP_ORIGIN || 'http://localhost').replace(/\/+$/, '');
     var feed = new rss({
         title: (data.settings && data.settings.title) || 'Meemo',
-        image_url: webServer + '/img/logo128.png',
+        image_url: webServer + '/favicon.png',
         site_url: webServer
     });
 
@@ -210,8 +210,5 @@ module.exports = {
     users: listUsers,
     profile: profile,
     getAll: getAll,
-    getThing: getThing,
-    getFile: getFile,
-    getRSS: getRSS,
-    streamPage: streamPage
+    getThing: getThing
 };

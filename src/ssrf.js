@@ -6,8 +6,7 @@ var http = require('http'),
     https = require('https'),
     dns = require('dns'),
     net = require('net'),
-    debug = require('debug')('ssrf'),
-    nodeify = require('./promise.js');
+    debug = require('debug')('ssrf');
 
 var TYPE_IMAGE = 'image';
 var TYPE_UNKNOWN = 'unknown';
@@ -89,20 +88,14 @@ async function checkSafeUrl(urlString) {
     }
 }
 
-function isSafeUrl(urlString, callback) {
-    var promise = checkSafeUrl(urlString);
-    if (typeof callback !== 'function') return promise;
-    promise.then(function (result) { callback(null, result.safe, result.parsed); }, callback);
+async function isSafeUrl(urlString) {
+    return checkSafeUrl(urlString);
 }
 
-function probeUrl(rawUrl, options, callback) {
-    if (typeof options === 'function') {
-        callback = options;
-        options = {};
-    }
+async function probeUrl(rawUrl, options) {
     options = options || {};
 
-    var promise = checkSafeUrl(rawUrl).then(function (safeResult) {
+    return checkSafeUrl(rawUrl).then(function (safeResult) {
         if (!safeResult.safe || !safeResult.parsed) return { url: options.originalUrl || rawUrl, type: TYPE_UNKNOWN };
 
         return new Promise(function (resolve) {
@@ -171,7 +164,6 @@ function probeUrl(rawUrl, options, callback) {
             request.end();
         });
     });
-    return nodeify(promise, callback);
 }
 
 var probeCache = new Map();
@@ -204,41 +196,34 @@ function isEnrichmentEnabled() {
     return process.env.URL_ENRICHMENT_ENABLED === 'true';
 }
 
-function enrichUrls(urls, options, callback) {
-    if (typeof options === 'function') {
-        callback = options;
-        options = {};
-    }
+async function enrichUrls(urls, options) {
     options = options || {};
 
-    var promise = Promise.resolve().then(async function () {
-        if (!Array.isArray(urls) || !urls.length) return [];
-        if (!isEnrichmentEnabled()) return urls.map(function (url) { return { url: url, type: TYPE_UNKNOWN }; });
+    if (!Array.isArray(urls) || !urls.length) return [];
+    if (!isEnrichmentEnabled()) return urls.map(function (url) { return { url: url, type: TYPE_UNKNOWN }; });
 
-        var maxEnrich = typeof options.maxUrls === 'number' ? options.maxUrls : MAX_ENRICH_URLS;
-        var toProbe = urls.slice(0, maxEnrich);
-        var results = new Array(toProbe.length);
-        var nextIndex = 0;
+    var maxEnrich = typeof options.maxUrls === 'number' ? options.maxUrls : MAX_ENRICH_URLS;
+    var toProbe = urls.slice(0, maxEnrich);
+    var results = new Array(toProbe.length);
+    var nextIndex = 0;
 
-        async function worker() {
-            while (nextIndex < toProbe.length) {
-                var index = nextIndex++;
-                var targetUrl = toProbe[index];
-                var cached = getCachedProbe(targetUrl);
-                if (cached) {
-                    results[index] = cached;
-                } else {
-                    var res = await module.exports.probeUrl(targetUrl, options);
-                    setCachedProbe(targetUrl, res);
-                    results[index] = res;
-                }
+    async function worker() {
+        while (nextIndex < toProbe.length) {
+            var index = nextIndex++;
+            var targetUrl = toProbe[index];
+            var cached = getCachedProbe(targetUrl);
+            if (cached) {
+                results[index] = cached;
+            } else {
+                var res = await module.exports.probeUrl(targetUrl, options);
+                setCachedProbe(targetUrl, res);
+                results[index] = res;
             }
         }
+    }
 
-        await Promise.all(Array.from({ length: Math.min(3, toProbe.length) }, worker));
-        return results.concat(urls.slice(maxEnrich).map(function (url) { return { url: url, type: TYPE_UNKNOWN }; }));
-    });
-    return nodeify(promise, callback);
+    await Promise.all(Array.from({ length: Math.min(3, toProbe.length) }, worker));
+    return results.concat(urls.slice(maxEnrich).map(function (url) { return { url: url, type: TYPE_UNKNOWN }; }));
 }
 
 module.exports = {
@@ -249,8 +234,5 @@ module.exports = {
     clearProbeCache: clearProbeCache,
     isEnrichmentEnabled: isEnrichmentEnabled,
     TYPE_IMAGE: TYPE_IMAGE,
-    TYPE_UNKNOWN: TYPE_UNKNOWN,
-    MAX_ENRICH_URLS: MAX_ENRICH_URLS,
-    DEFAULT_TIMEOUT: DEFAULT_TIMEOUT,
-    MAX_REDIRECTS: MAX_REDIRECTS
+    TYPE_UNKNOWN: TYPE_UNKNOWN
 };

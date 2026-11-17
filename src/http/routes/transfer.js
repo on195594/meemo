@@ -35,7 +35,5 @@ function registerRoutes(router, auth, upload) {
 }
 
 module.exports = {
-    registerRoutes: registerRoutes,
-    exportThings: exportThings,
-    importThings: importThings
+    registerRoutes: registerRoutes
 };

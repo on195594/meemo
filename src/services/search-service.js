@@ -142,6 +142,5 @@ module.exports = {
     buildQuery: buildQuery,
     buildSearchFilter: buildSearchFilter,
     escapeRegExp: escapeRegExp,
-    parseTokens: parseTokens,
     queryHasText: queryHasText
 };

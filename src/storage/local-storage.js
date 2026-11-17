@@ -119,8 +119,6 @@ async function listAttachments() {
 }
 
 module.exports = {
-    userDirectory: userDirectory,
-    ensureUserDirectory: ensureUserDirectory,
     saveAttachment: saveAttachment,
     resolveAttachmentRoot: resolveAttachmentRoot,
     exportDirectory: exportDirectory,

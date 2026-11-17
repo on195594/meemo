@@ -5,7 +5,6 @@
 var assert = require('assert'),
     util = require('util'),
     bcrypt = require('bcrypt'),
-    nodeify = require('./promise.js'),
     MongoUserRepository = require('./database/users-mongo.js');
 
 function UserError(code, messageOrError) {
@@ -54,11 +53,11 @@ function initRepository(source) {
     return repository;
 }
 
-function profile(userId, full, callback) {
+async function profile(userId, full) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof full, 'boolean');
 
-    var promise = getRepository().get(userId).then(function (user) {
+    return getRepository().get(userId).then(function (user) {
         if (!user) throw new UserError(UserError.NOT_FOUND);
         return {
             id: user.id || user.username || userId,
@@ -71,14 +70,13 @@ function profile(userId, full, callback) {
         if (error instanceof UserError) throw error;
         throw new UserError(UserError.INTERNAL_ERROR, error);
     });
-    return nodeify(promise, callback);
 }
 
-function resolveUser(identifier, callback) {
+async function resolveUser(identifier) {
     assert.strictEqual(typeof identifier, 'string');
 
     var repo = getRepository();
-    var promise = repo.get(identifier).then(function (user) {
+    return repo.get(identifier).then(function (user) {
         return user || repo.getByUsername(identifier);
     }).then(function (user) {
         if (!user) throw new UserError(UserError.NOT_FOUND);
@@ -92,17 +90,16 @@ function resolveUser(identifier, callback) {
         if (error instanceof UserError) throw error;
         throw new UserError(UserError.INTERNAL_ERROR, error);
     });
-    return nodeify(promise, callback);
 }
 
-function create(username, email, displayName, password, callback) {
+async function create(username, email, displayName, password) {
     assert.strictEqual(typeof username, 'string');
     assert.strictEqual(typeof email, 'string');
     assert.strictEqual(typeof displayName, 'string');
     assert.strictEqual(typeof password, 'string');
 
     var repo = getRepository();
-    var promise = repo.getByUsername(username).then(function (existing) {
+    return repo.getByUsername(username).then(function (existing) {
         if (existing) throw new UserError('user exists');
         return bcrypt.hash(password, 10);
     }).then(function (passwordHash) {
@@ -119,14 +116,13 @@ function create(username, email, displayName, password, callback) {
         if (error.message === 'user exists') throw new UserError('user exists');
         throw new UserError(UserError.INTERNAL_ERROR, error);
     });
-    return nodeify(promise, callback);
 }
 
-function verify(username, password, callback) {
+async function verify(username, password) {
     assert.strictEqual(typeof username, 'string');
     assert.strictEqual(typeof password, 'string');
 
-    var promise = getRepository().getByUsername(username).then(function (user) {
+    return getRepository().getByUsername(username).then(function (user) {
         if (!user) throw new UserError(UserError.NOT_FOUND);
         return bcrypt.compare(password, user.passwordHash).then(function (valid) {
             if (!valid) throw new UserError(UserError.NOT_AUTHORIZED);
@@ -136,25 +132,22 @@ function verify(username, password, callback) {
         if (error instanceof UserError) throw error;
         throw new UserError(UserError.INTERNAL_ERROR, error);
     });
-    return nodeify(promise, callback);
 }
 
-function list(callback) {
-    var promise = getRepository().list().then(function (users) {
+async function list() {
+    return getRepository().list().then(function (users) {
         return (users || []).map(function (user) {
             return { username: user.username, displayName: user.displayName };
         });
     }).catch(function (error) {
         throw new UserError(UserError.INTERNAL_ERROR, error);
     });
-    return nodeify(promise, callback);
 }
 
-function count(callback) {
-    var promise = getRepository().count().catch(function (error) {
+async function count() {
+    return getRepository().count().catch(function (error) {
         throw new UserError(UserError.INTERNAL_ERROR, error);
     });
-    return nodeify(promise, callback);
 }
 
 module.exports = {

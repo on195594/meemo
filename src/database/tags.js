@@ -14,8 +14,7 @@
 
 var assert = require('assert'),
     crypto = require('crypto'),
-    config = require('../config.js'),
-    nodeify = require('../promise.js');
+    config = require('../config.js');
 
 var collectionDatabase = null;
 var indexesCreated = false;
@@ -41,47 +40,42 @@ function getUnifiedCollection() {
     return config.db.collection('tags');
 }
 
-function ensureIndexes(callback) {
-    var promise = Promise.resolve().then(function () {
+async function ensureIndexes() {
+    try {
         if (!config.db) throw new Error('MongoDB database is not connected');
-        return config.db.collection('tags').createIndex({ ownerId: 1, name: 1 }, { unique: true });
-    }).then(function () {
+        await config.db.collection('tags').createIndex({ ownerId: 1, name: 1 }, { unique: true });
         indexesCreated = true;
-    }).catch(function (error) {
+    } catch (error) {
         if (error.codeName === 'IndexOptionsConflict') {
             indexesCreated = true;
             return;
         }
         throw error;
-    });
-    return nodeify(promise, callback);
+    }
 }
 
-function replaceAll(documents, callback) {
+async function replaceAll(documents) {
     assert(Array.isArray(documents));
 
-    var promise = Promise.resolve().then(async function () {
-        if (!config.db) throw new Error('MongoDB database is not connected');
-        var temporaryName = '_tags_repair_' + crypto.randomUUID().replace(/-/g, '');
-        var temporary = config.db.collection(temporaryName);
+    if (!config.db) throw new Error('MongoDB database is not connected');
+    var temporaryName = '_tags_repair_' + crypto.randomUUID().replace(/-/g, '');
+    var temporary = config.db.collection(temporaryName);
+    try {
+        await temporary.createIndex({ ownerId: 1, name: 1 }, { unique: true });
+        if (documents.length) await temporary.insertMany(documents);
+        await temporary.rename('tags', { dropTarget: true });
+        collectionDatabase = config.db;
+        indexesCreated = true;
+    } catch (error) {
         try {
-            await temporary.createIndex({ ownerId: 1, name: 1 }, { unique: true });
-            if (documents.length) await temporary.insertMany(documents);
-            await temporary.rename('tags', { dropTarget: true });
-            collectionDatabase = config.db;
-            indexesCreated = true;
-        } catch (error) {
-            try {
-                await temporary.drop();
-            } catch (cleanupError) {
-                if (!cleanupError || cleanupError.code !== 26) {
-                    error.message += '; temporary tag collection cleanup failed';
-                }
+            await temporary.drop();
+        } catch (cleanupError) {
+            if (!cleanupError || cleanupError.code !== 26) {
+                error.message += '; temporary tag collection cleanup failed';
             }
-            throw error;
         }
-    });
-    return nodeify(promise, callback);
+        throw error;
+    }
 }
 
 module.exports = {

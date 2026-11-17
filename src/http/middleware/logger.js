@@ -134,7 +134,6 @@ var defaultLogger = createLogger();
 
 module.exports = {
     createLogger: createLogger,
-    generateRequestId: generateRequestId,
     sanitizeObject: sanitizeObject,
     defaultLogger: defaultLogger,
     middleware: defaultLogger.middleware,

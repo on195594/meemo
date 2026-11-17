@@ -5,7 +5,6 @@ var assert = require('assert'),
     files = fs.promises,
     os = require('os'),
     path = require('path'),
-    nodeify = require('../promise.js'),
     isSafePathSegment = require('../path-segment.js'),
     noteColors = require('../note-colors.js'),
     storage = require('../storage/local-storage.js'),
@@ -93,8 +92,8 @@ async function buildAttachmentManifest(tempExtractDir, data) {
     return manifest;
 }
 
-function exportData(userId, callback) {
-    var promise = things.getAllLean(userId).then(function (result) {
+async function exportData(userId) {
+    return things.getAllLean(userId).then(function (result) {
         return {
             things: (result || []).map(function (thing) {
                 return {
@@ -109,70 +108,63 @@ function exportData(userId, callback) {
             })
         };
     });
-    return nodeify(promise, callback);
 }
 
-function createExport(userId, username, callback) {
-    var promise = Promise.resolve().then(async function () {
-        var attachmentFolder = await storage.exportDirectory(userId, username);
-        var result;
+async function createExport(userId, username) {
+    var attachmentFolder = await storage.exportDirectory(userId, username);
+    var result;
+    try {
+        result = await exportData(userId);
+    } catch (error) {
+        if (!username || username === userId) throw error;
+        result = await exportData(username);
+    }
+
+    var attachmentIdentifiers = Array.from(new Set(result.things.reduce(function (all, thing) {
+        return all.concat((thing.attachments || []).map(function (attachment) {
+            return typeof attachment === 'string' ? attachment : attachment.identifier;
+        }));
+    }, [])));
+    for (var identifier of attachmentIdentifiers) {
+        if (!isSafePathSegment(identifier)) throw new Error('Cannot export invalid attachment identifier: ' + identifier);
+        var attachmentStat;
         try {
-            result = await exportData(userId);
+            attachmentStat = await files.lstat(path.join(attachmentFolder, identifier));
         } catch (error) {
-            if (!username || username === userId) throw error;
-            result = await exportData(username);
+            if (error.code === 'ENOENT') throw new Error('Cannot export missing attachment: ' + identifier);
+            throw error;
         }
-
-        var attachmentIdentifiers = Array.from(new Set(result.things.reduce(function (all, thing) {
-            return all.concat((thing.attachments || []).map(function (attachment) {
-                return typeof attachment === 'string' ? attachment : attachment.identifier;
-            }));
-        }, [])));
-        for (var identifier of attachmentIdentifiers) {
-            if (!isSafePathSegment(identifier)) throw new Error('Cannot export invalid attachment identifier: ' + identifier);
-            var attachmentStat;
-            try {
-                attachmentStat = await files.lstat(path.join(attachmentFolder, identifier));
-            } catch (error) {
-                if (error.code === 'ENOENT') throw new Error('Cannot export missing attachment: ' + identifier);
-                throw error;
-            }
-            if (!attachmentStat.isFile()) throw new Error('Cannot export unsupported attachment: ' + identifier);
+        if (!attachmentStat.isFile()) throw new Error('Cannot export unsupported attachment: ' + identifier);
+    }
+    var stream = tar.pack(attachmentFolder, {
+        entries: attachmentIdentifiers,
+        finalize: false,
+        finish: function (pack) {
+            pack.entry({ name: 'things.json' }, JSON.stringify(result, null, 4));
+            pack.finalize();
+        },
+        map: function (header) {
+            header.name = 'attachments/' + header.name;
+            return header;
         }
-        var stream = tar.pack(attachmentFolder, {
-            entries: attachmentIdentifiers,
-            finalize: false,
-            finish: function (pack) {
-                pack.entry({ name: 'things.json' }, JSON.stringify(result, null, 4));
-                pack.finalize();
-            },
-            map: function (header) {
-                header.name = 'attachments/' + header.name;
-                return header;
-            }
-        });
-        return stream;
     });
-    return nodeify(promise, callback);
+    return stream;
 }
 
-function importData(userId, data, callback) {
+async function importData(userId, data) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof data, 'object');
 
-    var promise = Promise.resolve().then(async function () {
-        var schemaError = validateThingsData(data);
-        if (schemaError) throw new Error(schemaError);
-        var state = { thingIds: [], thingRevisions: {} };
+    var schemaError = validateThingsData(data);
+    if (schemaError) throw new Error(schemaError);
+    var state = { thingIds: [], thingRevisions: {} };
 
-        try {
-            await insertImportedData(userId, data, state);
-        } catch (error) {
-            throw addCleanupFailures(error, await rollbackImportedData(userId, state));
-        }
-        return state.thingIds;
-    });
-    return nodeify(promise, callback);
+    try {
+        await insertImportedData(userId, data, state);
+    } catch (error) {
+        throw addCleanupFailures(error, await rollbackImportedData(userId, state));
+    }
+    return state.thingIds;
 }
 
 async function insertImportedData(userId, data, state) {
@@ -296,105 +288,98 @@ function extractArchive(filePath, tempExtractDir) {
     });
 }
 
-function importArchive(userId, filePath, callback) {
+async function importArchive(userId, filePath) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof filePath, 'string');
 
-    var promise = Promise.resolve().then(async function () {
-        var tempExtractDir = await files.mkdtemp(path.join(os.tmpdir(), 'meemo-import-'));
-        var copiedFiles = [];
-        var state = { thingIds: [], thingRevisions: {} };
-        var result;
-        var primaryError;
+    var tempExtractDir = await files.mkdtemp(path.join(os.tmpdir(), 'meemo-import-'));
+    var copiedFiles = [];
+    var state = { thingIds: [], thingRevisions: {} };
+    var result;
+    var primaryError;
 
+    try {
+        await extractArchive(filePath, tempExtractDir);
+        var thingsJsonPath = path.join(tempExtractDir, 'things.json');
+        var rawContent;
         try {
-            await extractArchive(filePath, tempExtractDir);
-            var thingsJsonPath = path.join(tempExtractDir, 'things.json');
-            var rawContent;
-            try {
-                rawContent = await files.readFile(thingsJsonPath, 'utf8');
-            } catch (error) {
-                if (error.code === 'ENOENT') throw new Error('Archive missing things.json');
-                throw error;
-            }
-
-            var data;
-            try {
-                data = JSON.parse(rawContent);
-            } catch (error) {
-                throw new Error('things.json is not valid JSON: ' + error.message);
-            }
-            var schemaError = validateThingsData(data);
-            if (schemaError) throw new Error('Schema validation failed: ' + schemaError);
-            var manifest = await buildAttachmentManifest(tempExtractDir, data);
-
-            await insertImportedData(userId, data, state);
-
-            for (var entry of manifest) {
-                var copied = await storage.copyAttachment(userId, entry.sourcePath, entry.identifier);
-                copiedFiles.push(copied.path);
-            }
-
-            result = { total: data.things.length, imported: state.thingIds.length, failed: 0 };
+            rawContent = await files.readFile(thingsJsonPath, 'utf8');
         } catch (error) {
-            var failures = await rollbackImportedData(userId, state);
-            try {
-                var fileFailures = await storage.removeFiles(copiedFiles);
-                failures = failures.concat(fileFailures.map(function (failure) {
-                    return { operation: 'remove imported attachment', target: path.basename(failure.file), error: failure.error };
-                }));
-            } catch (cleanupError) {
-                failures.push({ operation: 'remove imported attachments', target: '<all>', error: cleanupError });
-            }
-            primaryError = addCleanupFailures(error, failures);
+            if (error.code === 'ENOENT') throw new Error('Archive missing things.json');
+            throw error;
         }
 
+        var data;
         try {
-            await files.rm(tempExtractDir, { recursive: true, force: true });
-        } catch (cleanupError) {
-            var failure = {
-                operation: 'remove temporary extraction directory',
-                target: path.basename(tempExtractDir),
-                error: cleanupError
-            };
-            if (primaryError) primaryError = addCleanupFailures(primaryError, [failure]);
-            else addCleanupWarning(result, failure);
+            data = JSON.parse(rawContent);
+        } catch (error) {
+            throw new Error('things.json is not valid JSON: ' + error.message);
         }
-        if (primaryError) throw primaryError;
-        return result;
-    });
-    return nodeify(promise, callback);
+        var schemaError = validateThingsData(data);
+        if (schemaError) throw new Error('Schema validation failed: ' + schemaError);
+        var manifest = await buildAttachmentManifest(tempExtractDir, data);
+
+        await insertImportedData(userId, data, state);
+
+        for (var entry of manifest) {
+            var copied = await storage.copyAttachment(userId, entry.sourcePath, entry.identifier);
+            copiedFiles.push(copied.path);
+        }
+
+        result = { total: data.things.length, imported: state.thingIds.length, failed: 0 };
+    } catch (error) {
+        var failures = await rollbackImportedData(userId, state);
+        try {
+            var fileFailures = await storage.removeFiles(copiedFiles);
+            failures = failures.concat(fileFailures.map(function (failure) {
+                return { operation: 'remove imported attachment', target: path.basename(failure.file), error: failure.error };
+            }));
+        } catch (cleanupError) {
+            failures.push({ operation: 'remove imported attachments', target: '<all>', error: cleanupError });
+        }
+        primaryError = addCleanupFailures(error, failures);
+    }
+
+    try {
+        await files.rm(tempExtractDir, { recursive: true, force: true });
+    } catch (cleanupError) {
+        var failure = {
+            operation: 'remove temporary extraction directory',
+            target: path.basename(tempExtractDir),
+            error: cleanupError
+        };
+        if (primaryError) primaryError = addCleanupFailures(primaryError, [failure]);
+        else addCleanupWarning(result, failure);
+    }
+    if (primaryError) throw primaryError;
+    return result;
 }
 
-function importUploadedArchive(userId, filePath, callback) {
-    var promise = Promise.resolve().then(async function () {
-        var result;
-        var primaryError;
-        try {
-            result = await importArchive(userId, filePath);
-        } catch (error) {
-            primaryError = error;
-        }
-        try {
-            await storage.removeFile(filePath);
-        } catch (cleanupError) {
-            var failure = {
-                operation: 'remove uploaded archive', target: path.basename(filePath), error: cleanupError
-            };
-            if (primaryError) primaryError = addCleanupFailures(primaryError, [failure]);
-            else addCleanupWarning(result, failure);
-        }
-        if (primaryError) throw primaryError;
-        return result;
-    });
-    return nodeify(promise, callback);
+async function importUploadedArchive(userId, filePath) {
+    var result;
+    var primaryError;
+    try {
+        result = await importArchive(userId, filePath);
+    } catch (error) {
+        primaryError = error;
+    }
+    try {
+        await storage.removeFile(filePath);
+    } catch (cleanupError) {
+        var failure = {
+            operation: 'remove uploaded archive', target: path.basename(filePath), error: cleanupError
+        };
+        if (primaryError) primaryError = addCleanupFailures(primaryError, [failure]);
+        else addCleanupWarning(result, failure);
+    }
+    if (primaryError) throw primaryError;
+    return result;
 }
 
 module.exports = {
     createExport: createExport,
     importUploadedArchive: importUploadedArchive,
     importArchive: importArchive,
-    exportData: exportData,
     importData: importData,
     validateThingsData: validateThingsData
 };

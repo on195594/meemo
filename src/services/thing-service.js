@@ -1,7 +1,6 @@
 'use strict';
 
 var debug = require('debug')('services:things'),
-    nodeify = require('../promise.js'),
     search = require('./search-service.js'),
     ssrf = require('../ssrf.js'),
     tags = require('../database/tags.js'),
@@ -119,11 +118,8 @@ function faceliftSync(userId, thing) {
     return data;
 }
 
-function facelift(userId, thing, callback) {
-    var promise = Promise.resolve().then(function () {
-        return faceliftSync(userId, thing);
-    });
-    return nodeify(promise, callback);
+async function facelift(userId, thing) {
+    return faceliftSync(userId, thing);
 }
 
 function addRichContent(userId, result) {
@@ -141,20 +137,19 @@ function addRichContent(userId, result) {
     return result;
 }
 
-function getAll(userId, query, skip, limit, callback) {
-    var promise = things.getAll(userId, query, skip, limit).then(function (result) {
+async function getAll(userId, query, skip, limit) {
+    return things.getAll(userId, query, skip, limit).then(function (result) {
         return addRichContent(userId, result);
     });
-    return nodeify(promise, callback);
 }
 
-function getAllPublic(userId, query, skip, limit, callback) {
+async function getAllPublic(userId, query, skip, limit) {
     query.public = true;
-    return getAll(userId, query, skip, limit, callback);
+    return getAll(userId, query, skip, limit);
 }
 
-function get(userId, thingId, callback) {
-    var promise = things.get(userId, thingId).then(function (result) {
+async function get(userId, thingId) {
+    return things.get(userId, thingId).then(function (result) {
         try {
             result.richContent = faceliftSync(userId, result);
         } catch (error) {
@@ -164,94 +159,52 @@ function get(userId, thingId, callback) {
         result.attachments = result.attachments || [];
         return result;
     });
-    return nodeify(promise, callback);
 }
 
-function getPublic(userId, thingId, callback) {
-    var promise = get(userId, thingId).then(function (result) {
+async function getPublic(userId, thingId) {
+    return get(userId, thingId).then(function (result) {
         if (!result.public && !result.shared) throw 'not allowed';
         return result;
     });
-    return nodeify(promise, callback);
 }
 
-function getPublicShared(thingId, callback) {
-    var promise = things.getById(thingId).then(function (doc) {
+async function getPublicShared(thingId) {
+    return things.getById(thingId).then(function (doc) {
         return getPublic(doc.ownerId, thingId);
     });
-    return nodeify(promise, callback);
 }
 
-function add(userId, content, attachments, color, assistant, callback) {
-    if (typeof color === 'function') {
-        callback = color;
-        color = 'default';
-    }
-    if (typeof assistant === 'function') {
-        callback = assistant;
-        assistant = undefined;
-    }
-    var promise = Promise.resolve().then(async function () {
-        var urls = extractURLs(content);
-        var externalContent = await ssrf.enrichUrls(urls);
-        var tagObjects = extractTags(content, urls);
-        var result = await things.add(userId, content, tagObjects, attachments, externalContent, color, assistant);
-        if (!result) throw new Error('no result returned');
-        return addRichContent(userId, [result])[0];
-    });
-    return nodeify(promise, callback);
+async function add(userId, content, attachments, color = 'default', assistant) {
+    var urls = extractURLs(content);
+    var externalContent = await ssrf.enrichUrls(urls);
+    var tagObjects = extractTags(content, urls);
+    var result = await things.add(userId, content, tagObjects, attachments, externalContent, color, assistant);
+    if (!result) throw new Error('no result returned');
+    return addRichContent(userId, [result])[0];
 }
 
-function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant, callback) {
-    if (typeof expectedRevision === 'function') {
-        callback = expectedRevision;
-        expectedRevision = undefined;
+async function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant) {
+    var urls = extractURLs(content);
+    var tagObjects = extractTags(content, urls);
+    var externalContent;
+    try {
+        externalContent = await ssrf.enrichUrls(urls);
+    } catch (error) {
+        console.error('Failed to extract external content:', error);
+        externalContent = [];
     }
-    if (typeof assistant === 'function') {
-        callback = assistant;
-        assistant = undefined;
-    }
-    if (typeof color === 'function') {
-        callback = color;
-        color = undefined;
-        expectedRevision = undefined;
-    }
-    var promise = Promise.resolve().then(async function () {
-        var urls = extractURLs(content);
-        var tagObjects = extractTags(content, urls);
-        var externalContent;
-        try {
-            externalContent = await ssrf.enrichUrls(urls);
-        } catch (error) {
-            console.error('Failed to extract external content:', error);
-            externalContent = [];
-        }
 
-        // The repository still checks owner, deletion state and expectedRevision atomically.
-        return things.put(userId, thingId, content, tagObjects, attachments, externalContent,
-            isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant);
-    });
-    return nodeify(promise, callback);
+    // The repository still checks owner, deletion state and expectedRevision atomically.
+    return things.put(userId, thingId, content, tagObjects, attachments, externalContent,
+        isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant);
 }
 
-function del(userId, thingId, expectedRevision, assistant, callback) {
-    if (typeof expectedRevision === 'function') {
-        callback = expectedRevision;
-        expectedRevision = undefined;
-    }
-    if (typeof assistant === 'function') {
-        callback = assistant;
-        assistant = undefined;
-    }
-    return nodeify(things.del(userId, thingId, expectedRevision, assistant), callback);
+async function del(userId, thingId, expectedRevision, assistant) {
+    return things.del(userId, thingId, expectedRevision, assistant);
 }
 
-function restore(userId, thingId, expectedRevision, callback) {
-    if (typeof expectedRevision === 'function') {
-        callback = expectedRevision;
-        expectedRevision = undefined;
-    }
-    var promise = things.restore(userId, thingId, expectedRevision).then(function (result) {
+async function restore(userId, thingId, expectedRevision) {
+    return things.restore(userId, thingId, expectedRevision).then(function (result) {
         try {
             result.richContent = faceliftSync(userId, result);
         } catch (error) {
@@ -261,73 +214,64 @@ function restore(userId, thingId, expectedRevision, callback) {
         result.attachments = result.attachments || [];
         return result;
     });
-    return nodeify(promise, callback);
 }
 
-function purge(userId, thingId, expectedRevision, callback) {
-    if (typeof expectedRevision === 'function') {
-        callback = expectedRevision;
-        expectedRevision = undefined;
-    }
-    return nodeify(things.purge(userId, thingId, expectedRevision), callback);
+async function purge(userId, thingId, expectedRevision) {
+    return things.purge(userId, thingId, expectedRevision);
 }
 
-function getTags(userId, options, callback) {
-    if (typeof options === 'function') { callback = options; options = undefined; }
-    return nodeify(things.getTagUsage(userId, options), callback);
+async function getTags(userId, options) {
+    return things.getTagUsage(userId, options);
 }
 
-function cleanupTags(callback) {
-    var promise = Promise.resolve().then(async function () {
-        var repairedAt = Date.now();
-        var saved = await tags.getUnifiedCollection().find({}).toArray();
-        var metadata = new Map();
-        saved.forEach(function (tag) {
-            metadata.set(JSON.stringify([tag.ownerId, tag.name]), tag);
-        });
-
-        var thingsCol = things.getUnifiedCollection();
-        var allThings = await thingsCol.find({ deletedAt: { $exists: false } }).toArray();
-        for (var thing of allThings) {
-            if (typeof thing.ownerId !== 'string' || typeof thing.content !== 'string') {
-                throw new Error('Thing owner or content prevents exact tag reconstruction');
-            }
-            var extracted = extractTags(thing.content);
-            if (JSON.stringify(thing.tags) !== JSON.stringify(extracted)) {
-                // CAS: update only if content has not changed concurrently
-                await thingsCol.updateOne(
-                    { _id: thing._id, ownerId: thing.ownerId, content: thing.content, revision: thing.revision },
-                    { $set: { tags: extracted }, $inc: { revision: 1 } }
-                );
-            }
-        }
-
-        var aggregated = await thingsCol.aggregate([
-            { $match: { deletedAt: { $exists: false } } },
-            { $unwind: '$tags' },
-            { $group: { _id: { ownerId: '$ownerId', name: '$tags' }, usage: { $sum: 1 } } },
-            { $sort: { '_id.ownerId': 1, '_id.name': 1 } }
-        ]).toArray();
-
-        var reconstructed = aggregated.map(function (item) {
-            var identity = JSON.stringify([item._id.ownerId, item._id.name]);
-            var existing = metadata.get(identity);
-            var record = {
-                ownerId: item._id.ownerId,
-                name: item._id.name,
-                usage: item.usage,
-                createdAt: existing && existing.createdAt || repairedAt,
-                modifiedAt: repairedAt
-            };
-            if (existing && existing.usage === record.usage && existing.modifiedAt != null) {
-                record.modifiedAt = existing.modifiedAt;
-            }
-            return record;
-        });
-        debug('Reconstruct all tags projection atomically via rename');
-        await tags.replaceAll(reconstructed);
+async function cleanupTags() {
+    var repairedAt = Date.now();
+    var saved = await tags.getUnifiedCollection().find({}).toArray();
+    var metadata = new Map();
+    saved.forEach(function (tag) {
+        metadata.set(JSON.stringify([tag.ownerId, tag.name]), tag);
     });
-    return nodeify(promise, callback);
+
+    var thingsCol = things.getUnifiedCollection();
+    var allThings = await thingsCol.find({ deletedAt: { $exists: false } }).toArray();
+    for (var thing of allThings) {
+        if (typeof thing.ownerId !== 'string' || typeof thing.content !== 'string') {
+            throw new Error('Thing owner or content prevents exact tag reconstruction');
+        }
+        var extracted = extractTags(thing.content);
+        if (JSON.stringify(thing.tags) !== JSON.stringify(extracted)) {
+            // CAS: update only if content has not changed concurrently
+            await thingsCol.updateOne(
+                { _id: thing._id, ownerId: thing.ownerId, content: thing.content, revision: thing.revision },
+                { $set: { tags: extracted }, $inc: { revision: 1 } }
+            );
+        }
+    }
+
+    var aggregated = await thingsCol.aggregate([
+        { $match: { deletedAt: { $exists: false } } },
+        { $unwind: '$tags' },
+        { $group: { _id: { ownerId: '$ownerId', name: '$tags' }, usage: { $sum: 1 } } },
+        { $sort: { '_id.ownerId': 1, '_id.name': 1 } }
+    ]).toArray();
+
+    var reconstructed = aggregated.map(function (item) {
+        var identity = JSON.stringify([item._id.ownerId, item._id.name]);
+        var existing = metadata.get(identity);
+        var record = {
+            ownerId: item._id.ownerId,
+            name: item._id.name,
+            usage: item.usage,
+            createdAt: existing && existing.createdAt || repairedAt,
+            modifiedAt: repairedAt
+        };
+        if (existing && existing.usage === record.usage && existing.modifiedAt != null) {
+            record.modifiedAt = existing.modifiedAt;
+        }
+        return record;
+    });
+    debug('Reconstruct all tags projection atomically via rename');
+    await tags.replaceAll(reconstructed);
 }
 
 module.exports = {
