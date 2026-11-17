@@ -68,6 +68,16 @@ describe('MCP read/write tools and OAuth isolation', function () {
     var dbClient, db, app, alice, bob, aliceId, bobId, client, aliceToken, bobToken, noteId, archivedId, otherId;
     var logs = [];
 
+    async function stateHarness() {
+        var events = [];
+        var isolated = createApp({ sessionMemory: true, sessionSecret: 'synthetic-oauth-state-session',
+            logger: logger.createLogger({ enabled: true, stream: function (entry) { events.push(JSON.stringify(entry)); } }),
+            mcp: { enabled: true, publicUrl: origin, redirectUris: [callback] } });
+        var agent = request.agent(isolated);
+        await agent.post('/api/login').send({ username: 'mcp_alice', password: 'SyntheticPassword123!' }).expect(200);
+        return { app: isolated, alice: agent, client: await register(isolated), logs: events };
+    }
+
     before(async function () {
         await config._clearDatabase();
         dbClient = await MongoClient.connect(config.databaseUrl, { monitorCommands: true });
@@ -231,31 +241,98 @@ describe('MCP read/write tools and OAuth isolation', function () {
         await alice.post('/api/mcp/consent').set('X-CSRF-Token', denied.csrfToken).send({ request: denied.request, allow: true }).expect(400);
     });
 
-    it('preserves long opaque OAuth state through consent and rejects state beyond 4096 characters', async function () {
+    it('preserves opaque OAuth state beyond 4096 characters and logs only callback sizes', async function () {
+        var { app, alice, client, logs } = await stateHarness();
         var verifier = crypto.randomBytes(32).toString('base64url');
         var params = {
             client_id: client.client_id, redirect_uri: callback, response_type: 'code', resource: resource,
             scope: 'notes.read', code_challenge: challenge(verifier), code_challenge_method: 'S256'
         };
-        for (var length of [1001, 4096]) {
-            var state = 'opaque+/=?&%'.repeat(400).slice(0, length);
-            var response = await protocol(app, 'get', '/oauth/authorize').query(Object.assign({}, params, { state: state })).expect(302);
+        var states = ['opaque+/=?&%'.repeat(500), 's'.repeat(8192), '', undefined];
+        for (var state of states) {
+            var query = Object.assign({}, params, state === undefined ? {} : { state: state });
+            var response = await protocol(app, 'get', '/oauth/authorize').query(query).expect(302);
             var location = new URL(response.headers.location);
             assert.equal(location.origin + location.pathname, origin + '/assistant/authorize');
             var id = location.searchParams.get('request');
             var info = await alice.get('/api/mcp/consent').query({ request: id }).expect(200);
             var decision = await alice.post('/api/mcp/consent').set('X-CSRF-Token', info.body.csrfToken).send({ request: id, allow: true }).expect(200);
             var redirect = new URL(decision.body.redirectUrl);
-            assert.equal(redirect.searchParams.get('state'), state);
+            assert.equal(redirect.searchParams.get('state'), state === undefined ? null : state);
+            var audit = logs.map(function (line) { return JSON.parse(line); }).find(function (entry) {
+                return entry.event === 'mcp_oauth_callback' && entry.requestId === decision.headers['x-request-id'];
+            });
+            assert(audit);
+            assert.equal(audit.statePresent, state !== undefined);
+            assert.equal(audit.stateLength, state ? state.length : 0);
+            assert.equal(audit.stateUtf8Bytes, Buffer.byteLength(state || ''));
+            assert.equal(audit.callbackUrlBytes, Buffer.byteLength(decision.body.redirectUrl));
+            assert.equal(audit.statePreserved, true);
+            assert.equal(audit.withinBudget, true);
+            var auditText = JSON.stringify(audit);
+            if (state) assert(!auditText.includes(state));
+            assert(!auditText.includes(redirect.searchParams.get('code')));
             assert.equal((await exchange(app, client, verifier, redirect.searchParams.get('code'))).status, 200);
         }
-        var pending = await db.collection('mcp_requests').countDocuments({ clientId: client.client_id });
-        var rejected = await protocol(app, 'get', '/oauth/authorize').query(Object.assign({}, params, { state: 'x'.repeat(4097) })).expect(302);
-        var error = new URL(rejected.headers.location);
-        assert.equal(error.origin + error.pathname, callback);
-        assert.equal(error.searchParams.get('error'), 'invalid_request');
-        assert.equal(error.searchParams.get('error_description'), 'State too long');
-        assert.equal(await db.collection('mcp_requests').countDocuments({ clientId: client.client_id }), pending);
+        var denied = await protocol(app, 'get', '/oauth/authorize').query(Object.assign({}, params, { state: states[0] })).expect(302);
+        var deniedId = new URL(denied.headers.location).searchParams.get('request');
+        var deniedInfo = await alice.get('/api/mcp/consent').query({ request: deniedId }).expect(200);
+        var denial = await alice.post('/api/mcp/consent').set('X-CSRF-Token', deniedInfo.body.csrfToken).send({ request: deniedId, allow: false }).expect(200);
+        var denialUrl = new URL(denial.body.redirectUrl);
+        assert.equal(denialUrl.searchParams.get('state'), states[0]);
+        assert.equal(denialUrl.searchParams.get('error'), 'access_denied');
+        assert(!denialUrl.searchParams.has('code'));
+    });
+
+    it('rejects oversized OAuth transport and invalid state encoding before persistence', async function () {
+        var { app, client } = await stateHarness();
+        var params = {
+            client_id: client.client_id, redirect_uri: callback, response_type: 'code', resource: resource,
+            code_challenge: challenge(crypto.randomBytes(32).toString('base64url')), code_challenge_method: 'S256'
+        };
+        var pending = await db.collection('mcp_requests').countDocuments({});
+        var oversized = Object.assign({}, params, { state: 's'.repeat(20000) });
+        await protocol(app, 'get', '/oauth/authorize').query(oversized).expect(431);
+        var server = require('http').createServer({ maxHeaderSize: 32768 }, app);
+        await request(server).get('/oauth/authorize').set('Host', 'meemo.example').query(oversized).expect(414);
+        await protocol(app, 'post', '/oauth/authorize').type('form').send(oversized).expect(413);
+        for (var length of [5300, 6000]) {
+            var inflatedError = await protocol(app, 'get', '/oauth/authorize').query(Object.assign({}, params, {
+                state: '~'.repeat(length), scope: 'unsupported'
+            })).expect(400);
+            assert.equal(inflatedError.body.error, 'invalid_request');
+            assert(!inflatedError.headers.location);
+        }
+        var invalid = await protocol(app, 'post', '/oauth/authorize').send(Object.assign({}, params, { state: '\ud800' })).expect(302);
+        var redirect = new URL(invalid.headers.location);
+        assert.equal(redirect.origin + redirect.pathname, callback);
+        assert.equal(redirect.searchParams.get('error'), 'invalid_request');
+        assert.equal(await db.collection('mcp_requests').countDocuments({}), pending);
+    });
+
+    it('rejects callbacks inflated beyond the OAuth budget without issuing grants or codes', async function () {
+        var { app, alice, client, logs } = await stateHarness();
+        var state = '~'.repeat(6000);
+        var params = {
+            client_id: client.client_id, redirect_uri: callback, response_type: 'code', resource: resource,
+            state: state, code_challenge: challenge(crypto.randomBytes(32).toString('base64url')), code_challenge_method: 'S256'
+        };
+        var response = await protocol(app, 'get', '/oauth/authorize').query(params).expect(302);
+        var id = new URL(response.headers.location).searchParams.get('request');
+        var info = await alice.get('/api/mcp/consent').query({ request: id }).expect(200);
+        var grants = await db.collection('mcp_grants').countDocuments({});
+        var codes = await db.collection('mcp_codes').countDocuments({});
+        var decision = await alice.post('/api/mcp/consent').set('X-CSRF-Token', info.body.csrfToken).send({ request: id, allow: true }).expect(400);
+        assert.equal(decision.body.error, 'oauth_callback_too_large');
+        assert.equal(await db.collection('mcp_grants').countDocuments({}), grants);
+        assert.equal(await db.collection('mcp_codes').countDocuments({}), codes);
+        var audit = logs.map(function (line) { return JSON.parse(line); }).find(function (entry) {
+            return entry.event === 'mcp_oauth_callback' && entry.requestId === decision.headers['x-request-id'];
+        });
+        assert.equal(audit.statePreserved, true);
+        assert.equal(audit.withinBudget, false);
+        assert.equal(audit.encodedStateBytes, 18000);
+        assert(!JSON.stringify(audit).includes(state));
     });
 
     it('requires login, explicit consent and CSRF; pending requests cannot cross users', async function () {

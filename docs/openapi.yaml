@@ -826,11 +826,12 @@ paths:
         - { name: code_challenge, in: query, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' } }
         - { name: code_challenge_method, in: query, required: true, schema: { type: string, enum: [S256] } }
         - { name: scope, in: query, schema: { type: string, description: 'Requested scopes (notes.read, notes.write)' } }
-        - { name: state, in: query, schema: { type: string, maxLength: 4096 } }
+        - { name: state, in: query, schema: { type: string, description: 'Opaque well-formed UTF-8 value, preserved exactly; bounded by the complete 16 KiB OAuth request URL/body and callback URL budgets, not an independent character cap' } }
       responses:
         '302': { description: Redirect to Meemo consent, or exact client callback with OAuth error }
         '400': { description: Invalid OAuth request }
         '404': { description: MCP disabled }
+        '414': { description: OAuth request URL exceeds 16 KiB; the HTTP server may reject oversized request headers earlier with 431 }
   /oauth/token:
     post:
       tags: [assistant]

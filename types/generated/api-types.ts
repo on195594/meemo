@@ -421,6 +421,13 @@ export interface paths {
                     };
                     content?: never;
                 };
+                /** @description OAuth request URL exceeds 16 KiB; the HTTP server may reject oversized request headers earlier with 431 */
+                414: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
             };
         };
         put?: never;

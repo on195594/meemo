@@ -17,6 +17,8 @@ var express = require('express'),
     createServer = require('./mcp-tools.js'),
     OAuthClientMetadataSchema = require('@modelcontextprotocol/sdk/shared/auth.js').OAuthClientMetadataSchema;
 
+var OAUTH_REDIRECT_HEADER_BYTES = 2 * 1024;
+
 function settingsFromOptions(options) {
     var supplied = options.mcp || {};
     var enabled = supplied.enabled !== undefined ? supplied.enabled : process.env.MCP_ENABLED === 'true';
@@ -88,7 +90,22 @@ function createMcp(options, logger) {
         if (req.method === 'OPTIONS') return res.sendStatus(204);
         next();
     });
-    protocol.use('/oauth', express.urlencoded({ extended: false, limit: '16kb' }), express.json({ limit: '16kb' }));
+    protocol.use('/oauth', function (req, res, next) {
+        var redirect = res.redirect;
+        res.redirect = function (status, target) {
+            var location = typeof status === 'string' ? status : target;
+            var bytes = Buffer.byteLength(location, 'utf8');
+            if (bytes + OAUTH_REDIRECT_HEADER_BYTES > authService.OAUTH_REQUEST_BYTES) {
+                logger.write({ level: 'warn', event: 'mcp_oauth_redirect_rejected', requestId: req.id, redirectUrlBytes: bytes });
+                return res.status(400).json({ error: 'invalid_request', error_description: 'OAuth redirect exceeds the transport budget' });
+            }
+            return redirect.apply(this, arguments);
+        };
+        if (Buffer.byteLength(req.originalUrl, 'utf8') > authService.OAUTH_REQUEST_BYTES) {
+            return res.status(414).json({ error: 'invalid_request', error_description: 'OAuth request URL exceeds the transport budget' });
+        }
+        next();
+    }, express.urlencoded({ extended: false, limit: authService.OAUTH_REQUEST_BYTES }), express.json({ limit: authService.OAUTH_REQUEST_BYTES }));
     protocol.get('/.well-known/oauth-protected-resource/mcp', function (req, res) {
         res.json({ resource: settings.publicUrl + '/mcp', authorization_servers: [settings.publicUrl], scopes_supported: ['notes.read', 'notes.write'], resource_name: 'Meemo private notes' });
     });
@@ -124,7 +141,7 @@ function createMcp(options, logger) {
         protocol.use(protocolError);
         return { protocol: protocol, browser: browser };
     }
-    var provider = authService.createProvider(settings);
+    var provider = authService.createProvider(settings, logger);
     var registrationReasons = new Map([
         ['Redirect URI is not allowed', 'redirect_uri_not_allowed'],
         ['Only authorization_code is supported', 'unsupported_grant_types'],
@@ -233,7 +250,7 @@ function createMcp(options, logger) {
     }));
     browser.post('/api/mcp/consent', wrap(async function (req, res) {
         var body = z.object({ request: z.string().regex(/^[A-Za-z0-9_-]{43}$/), allow: z.boolean() }).strict().parse(req.body);
-        res.json({ redirectUrl: await provider.decide(body.request, req.user.id, body.allow) });
+        res.json({ redirectUrl: await provider.decide(body.request, req.user.id, body.allow, req.id) });
     }));
     browser.use('/api/mcp', function (error, req, res, next) {
         if (res.headersSent || (error.status && !error.errorCode)) return next(error);

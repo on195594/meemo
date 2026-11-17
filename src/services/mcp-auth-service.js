@@ -5,6 +5,7 @@ var crypto = require('crypto'),
     createRepository = require('../database/mcp.js'),
     errors = require('@modelcontextprotocol/sdk/server/auth/errors.js');
 
+var OAUTH_REQUEST_BYTES = 16 * 1024;
 var ACCESS_SECONDS = 100 * 365 * 24 * 60 * 60;
 var CLIENT_REGISTRATION_SECONDS = 30 * 24 * 60 * 60;
 var ALLOWED_SCOPES = ['notes.read', 'notes.write'];
@@ -24,7 +25,7 @@ async function getActiveUser(userId) {
     return { id: user.id || user.username, username: user.username };
 }
 
-function createProvider(settings) {
+function createProvider(settings, logger) {
     var repository = createRepository();
     var resource = settings.publicUrl + '/mcp';
 
@@ -90,7 +91,9 @@ function createProvider(settings) {
                 }
             }
             if (!/^[A-Za-z0-9_-]{43}$/.test(params.codeChallenge)) throw new errors.InvalidRequestError('Invalid S256 challenge');
-            if (params.state && params.state.length > 4096) throw new errors.InvalidRequestError('State too long');
+            if (params.state !== undefined && Buffer.from(params.state, 'utf8').toString('utf8') !== params.state) {
+                throw new errors.InvalidRequestError('Invalid OAuth state encoding');
+            }
             if (!settings.redirectUris.includes(params.redirectUri)) throw new errors.InvalidRequestError('Redirect URI is not allowed');
             if (await repository.count('requests', { clientId: client.client_id }) >= 20) throw new errors.TooManyRequestsError('Too many pending authorizations');
             var request = random();
@@ -148,15 +151,32 @@ function createProvider(settings) {
             var scopeStr = (record.scopes || ['notes.read']).join(' ');
             return { clientName: client.client_name, scope: scopeStr, expiresIn: ACCESS_SECONDS };
         },
-        decide: async function (request, userId, allow) {
+        decide: async function (request, userId, allow, requestId) {
             var record = await repository.consume('requests', { _id: hash(request), userId: userId });
             if (!record) throw new errors.InvalidRequestError('Authorization request expired or unavailable');
             var url = new URL(record.redirectUri);
-            if (record.state) url.searchParams.set('state', record.state);
-            if (!allow) {
-                url.searchParams.set('error', 'access_denied');
-                return url.href;
+            var hasState = record.state !== undefined && record.state !== null;
+            if (hasState) url.searchParams.set('state', record.state);
+            var code = allow ? random() : undefined;
+            if (allow) url.searchParams.set('code', code);
+            else url.searchParams.set('error', 'access_denied');
+            var statePreserved = !hasState || url.searchParams.get('state') === record.state;
+            var callbackUrlBytes = Buffer.byteLength(url.href, 'utf8');
+            var withinBudget = callbackUrlBytes <= OAUTH_REQUEST_BYTES;
+            logger.write({
+                level: statePreserved && withinBudget ? 'info' : 'warn', event: 'mcp_oauth_callback', requestId: requestId,
+                approved: allow, statePresent: hasState, stateLength: hasState ? record.state.length : 0,
+                stateUtf8Bytes: Buffer.byteLength(record.state || '', 'utf8'),
+                encodedStateBytes: hasState ? new URLSearchParams({ state: record.state }).toString().length - 6 : 0,
+                callbackUrlBytes: callbackUrlBytes, statePreserved: statePreserved, withinBudget: withinBudget
+            });
+            if (!statePreserved || !withinBudget) {
+                throw new errors.CustomOAuthError(
+                    statePreserved ? 'oauth_callback_too_large' : 'oauth_state_invalid',
+                    statePreserved ? 'OAuth callback exceeds the transport budget' : 'OAuth state was not preserved'
+                );
             }
+            if (!allow) return url.href;
             var client = await provider.clientsStore.getClient(record.clientId);
             if (!client || !settings.redirectUris.includes(record.redirectUri)) throw new errors.InvalidClientError('Client unavailable');
             if (await repository.count('grants', { userId: userId, revoked: { $ne: true } }) >= 50) throw new errors.TooManyRequestsError('Connection capacity reached');
@@ -170,12 +190,10 @@ function createProvider(settings) {
                 createdAt: new Date(), expiresAt: expiry(ACCESS_SECONDS)
             });
             await repository.extendClient(record.clientId, grant.expiresAt);
-            var code = random();
             await repository.insert('codes', {
                 _id: hash(code), clientId: record.clientId, grantId: grant._id,
                 redirectUri: record.redirectUri, challenge: record.challenge, expiresAt: expiry(180)
             });
-            url.searchParams.set('code', code);
             return url.href;
         },
         listConnections: async function (userId) {
@@ -190,4 +208,4 @@ function createProvider(settings) {
     return provider;
 }
 
-module.exports = { createProvider: createProvider, getActiveUser: getActiveUser, hash: hash, random: random };
+module.exports = { createProvider: createProvider, getActiveUser: getActiveUser, hash: hash, random: random, OAUTH_REQUEST_BYTES: OAUTH_REQUEST_BYTES };
