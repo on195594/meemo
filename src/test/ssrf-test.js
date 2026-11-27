@@ -243,5 +243,31 @@ describe('SSRF Protection', function () {
             expect(note.externalContent[0].type).to.equal(ssrf.TYPE_UNKNOWN);
             expect(note.externalContent[1].type).to.equal(ssrf.TYPE_UNKNOWN);
         });
+
+        it('caches probeUrl results across subsequent enrichments to prevent repeated network delays', async function () {
+            var prevEnv = process.env.URL_ENRICHMENT_ENABLED;
+            process.env.URL_ENRICHMENT_ENABLED = 'true';
+            ssrf.clearProbeCache();
+            var originalProbe = ssrf.probeUrl;
+            var probeCount = 0;
+            ssrf.probeUrl = async function (url) {
+                probeCount++;
+                return { url: url, type: ssrf.TYPE_IMAGE };
+            };
+            try {
+                var first = await ssrf.enrichUrls(['https://example.com/photo.jpg']);
+                expect(probeCount).to.equal(1);
+                expect(first).to.eql([{ url: 'https://example.com/photo.jpg', type: ssrf.TYPE_IMAGE }]);
+
+                var second = await ssrf.enrichUrls(['https://example.com/photo.jpg']);
+                expect(probeCount).to.equal(1);
+                expect(second).to.eql([{ url: 'https://example.com/photo.jpg', type: ssrf.TYPE_IMAGE }]);
+            } finally {
+                ssrf.probeUrl = originalProbe;
+                ssrf.clearProbeCache();
+                if (prevEnv !== undefined) process.env.URL_ENRICHMENT_ENABLED = prevEnv;
+                else delete process.env.URL_ENRICHMENT_ENABLED;
+            }
+        });
     });
 });

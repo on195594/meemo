@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { distributeColumns, columnCountFor, estimateItemHeight, layoutMasonry } from './masonry';
+import { columnCountFor, estimateItemHeight, layoutMasonry } from './masonry';
 
 describe('masonry', () => {
-  it('distributes items in left-to-right row order when heights are uniform', () => {
-    expect(distributeColumns([1, 2, 3, 4, 5], 3)).toEqual([[1, 4], [2, 5], [3]]);
+  it('places uniform-height items in left-to-right row order across columns', () => {
+    const layout = layoutMasonry([1, 2, 3, 4, 5], 3, 16);
+    expect(layout.placements.map((p) => [p.item, p.column])).toEqual([
+      [1, 0],
+      [2, 1],
+      [3, 2],
+      [4, 0],
+      [5, 1],
+    ]);
   });
 
   it('reuses cached item height for identical object references', () => {
@@ -14,8 +21,6 @@ describe('masonry', () => {
   });
 
   it('balances columns by placing items in the shortest column to avoid blank gaps', () => {
-    // 4 columns: item 1 (tall: 400), item 2 (short: 100), item 3 (tall: 400), item 4 (tall: 400)
-    // Then item 5 (medium: 200) and item 6 (medium: 200) should both go to column 1 to fill its gap.
     const items = [
       { id: '1', h: 400 },
       { id: '2', h: 100 },
@@ -24,11 +29,10 @@ describe('masonry', () => {
       { id: '5', h: 200 },
       { id: '6', h: 200 },
     ];
-    const columns = distributeColumns(items, 4, (item) => item.h);
-    expect(columns[0].map((x) => x.id)).toEqual(['1']);
-    expect(columns[1].map((x) => x.id)).toEqual(['2', '5', '6']);
-    expect(columns[2].map((x) => x.id)).toEqual(['3']);
-    expect(columns[3].map((x) => x.id)).toEqual(['4']);
+    const layout = layoutMasonry(items, 4, 16, (item) => item.h);
+    const columns: string[][] = [[], [], [], []];
+    layout.placements.forEach((p) => columns[p.column].push(p.item.id));
+    expect(columns).toEqual([['1'], ['2', '5', '6'], ['3'], ['4']]);
   });
 
   it('estimates card heights accurately and bounded by CSS rules', () => {
@@ -63,7 +67,12 @@ describe('masonry', () => {
     const rich = { content: '短', richContent: '长'.repeat(1000) };
     const plain = { content: 'short' };
     const next = { content: 'next' };
-    expect(distributeColumns([rich, plain, next], 2)).toEqual([[rich], [plain, next]]);
+    const layout = layoutMasonry([rich, plain, next], 2, 16);
+    expect(layout.placements).toEqual([
+      { item: rich, column: 0, top: 0 },
+      { item: plain, column: 1, top: 0 },
+      { item: next, column: 1, top: 116 },
+    ]);
   });
 
   it.each([
@@ -83,16 +92,15 @@ describe('masonry', () => {
     expect(estimateItemHeight({ ...body, attachments })).toBe(480 + 220 + 36);
   });
 
-  it('handles invalid or non-finite height functions gracefully', () => {
-    const items = [1, 2, 3];
-    const columns = distributeColumns(items, 2, () => NaN);
-    expect(columns).toEqual([[1, 3], [2]]);
-  });
-
-  it('keeps empty trailing columns and tolerates bad counts', () => {
-    expect(distributeColumns([1, 2], 4)).toEqual([[1], [2], [], []]);
-    expect(distributeColumns([1, 2], 0)).toEqual([[1, 2]]);
-    expect(distributeColumns([], 3)).toEqual([[], [], []]);
+  it('handles invalid heights and non-positive column counts gracefully', () => {
+    const nanLayout = layoutMasonry([1, 2, 3], 2, 16, () => NaN);
+    expect(nanLayout.placements.map((p) => [p.item, p.column, p.top])).toEqual([
+      [1, 0, 0],
+      [2, 1, 0],
+      [3, 0, 116],
+    ]);
+    const zeroColLayout = layoutMasonry([1, 2], 0, 16, () => 100);
+    expect(zeroColLayout.placements.map((p) => p.column)).toEqual([0, 0]);
   });
 
   it('fits as many fixed-width cards as the width allows', () => {

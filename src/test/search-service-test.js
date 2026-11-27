@@ -10,7 +10,7 @@ describe('Search query policy', function () {
     it('combines archive, text, and sticky filters deterministically', function () {
         expect(search.buildQuery({ filter: 'Roadmap #Work', archived: false, sticky: true })).to.eql({
             $and: [
-                { $or: [{ archived: false }, { archived: { $exists: false } }] },
+                { archived: false },
                 { $and: [
                     { $or: [{ content: { $regex: 'Roadmap', $options: 'i' } }, { tags: 'roadmap' }] },
                     { tags: 'work' }

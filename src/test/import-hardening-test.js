@@ -15,7 +15,6 @@ var config = require('../config.js');
 var users = require('../users.js');
 var logic = require('../services/import-export-service.js');
 var storage = require('../storage/local-storage.js');
-var tags = require('../database/tags.js');
 var things = require('../database/things.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
@@ -519,102 +518,6 @@ describe('Import Safety and Consistency (RF-106)', function () {
 
             expect(outcome.error).to.be.ok();
             expect(await thingsCol.countDocuments({ ownerId: testUserId })).to.equal(0);
-        });
-
-        it('does not mutate persisted tag projection when an import fails', async function () {
-            var tagCollection = tags.getUnifiedCollection();
-            await tagCollection.insertOne({
-                ownerId: testUserId,
-                name: 'existing',
-                usage: 7,
-                createdAt: 111,
-                modifiedAt: 222,
-                marker: 'preserve'
-            });
-            var before = await tagCollection.findOne({ ownerId: testUserId, name: 'existing' });
-            var originalInsertManyFull = things.insertManyFull;
-            things.insertManyFull = function () {
-                return Promise.reject(new Error('forced batch insert failure'));
-            };
-
-            var outcome;
-            try {
-                outcome = await logic.importData(testUserId, {
-                    things: [
-                        { content: 'first #existing #newtag' },
-                        { content: 'second #existing #newtag' }
-                    ]
-                }).then(function (result) {
-                    return { error: null, result: result };
-                }, function (error) {
-                    return { error: error, result: undefined };
-                });
-            } finally {
-                things.insertManyFull = originalInsertManyFull;
-            }
-
-            var after = await tagCollection.findOne({ ownerId: testUserId, name: 'existing' });
-            expect(outcome.error).to.be.ok();
-            expect(JSON.stringify(after)).to.equal(JSON.stringify(before));
-            expect(await tagCollection.findOne({ ownerId: testUserId, name: 'newtag' })).to.be(null);
-            expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(0);
-            await tagCollection.deleteMany({ ownerId: testUserId });
-        });
-
-        it('leaves independent tag projection writes untouched during import rollback', async function () {
-            var tagCollection = tags.getUnifiedCollection();
-            await tagCollection.insertOne({
-                ownerId: testUserId,
-                name: 'existing',
-                usage: 7,
-                createdAt: 111,
-                modifiedAt: 222,
-                marker: 'before'
-            });
-            var originalInsertManyFull = things.insertManyFull;
-            things.insertManyFull = function () {
-                return Promise.all([
-                    tagCollection.updateOne({ ownerId: testUserId, name: 'existing' }, {
-                        $inc: { usage: 3 },
-                        $set: { modifiedAt: 999999, marker: 'concurrent', concurrentField: 'keep' }
-                    }),
-                    tagCollection.updateOne({ ownerId: testUserId, name: 'newtag' }, {
-                        $inc: { usage: 2 },
-                        $set: { modifiedAt: 999999, marker: 'concurrent-new', concurrentField: 'keep-new' },
-                        $setOnInsert: { createdAt: 999999 }
-                    }, { upsert: true })
-                ]).then(function () { throw new Error('forced failure after concurrent tag writes'); });
-            };
-
-            var outcome;
-            try {
-                outcome = await logic.importData(testUserId, {
-                    things: [
-                        { content: 'first #existing #newtag' },
-                        { content: 'second without tags' }
-                    ]
-                }).then(function (result) {
-                    return { error: null, result: result };
-                }, function (error) {
-                    return { error: error, result: undefined };
-                });
-            } finally {
-                things.insertManyFull = originalInsertManyFull;
-            }
-
-            var existing = await tagCollection.findOne({ ownerId: testUserId, name: 'existing' });
-            var newtag = await tagCollection.findOne({ ownerId: testUserId, name: 'newtag' });
-            expect(outcome.error.message).to.contain('forced failure after concurrent tag writes');
-            expect(existing.usage).to.equal(10);
-            expect(existing.modifiedAt).to.equal(999999);
-            expect(existing.marker).to.equal('concurrent');
-            expect(existing.concurrentField).to.equal('keep');
-            expect(newtag.usage).to.equal(2);
-            expect(newtag.modifiedAt).to.equal(999999);
-            expect(newtag.marker).to.equal('concurrent-new');
-            expect(newtag.concurrentField).to.equal('keep-new');
-            expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(0);
-            await tagCollection.deleteMany({ ownerId: testUserId });
         });
 
         it('attempts every rollback and reports failures without replacing the primary error', async function () {

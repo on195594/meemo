@@ -7,7 +7,7 @@ import SettingsModal from './SettingsModal.vue';
 vi.mock('../composables/useSettings', () => ({ useSettings: vi.fn(), getStoredTheme: vi.fn(() => 'auto'), setStoredTheme: vi.fn() }));
 enableAutoUnmount(afterEach);
 const wallpaper = 'data:image/png;base64,aGVsbG8=';
-const initial = { title: 'My Notes', theme: 'dark' as const, wide: true, wideNavbar: false, showTagSidebar: false, publicBackground: true, keepPositionAfterEdit: true, backgroundImageDataUrl: wallpaper };
+const initial = { title: 'My Notes', theme: 'dark' as const, wide: true, wideNavbar: false, publicBackground: true, keepPositionAfterEdit: true, backgroundImageDataUrl: wallpaper };
 const saveSettings = vi.fn();
 function render() {
   return mount(SettingsModal, { props: { modelValue: true }, global: { stubs: { RouterLink: true } } });

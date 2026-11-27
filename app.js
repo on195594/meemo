@@ -8,7 +8,6 @@ const BIND_ADDRESS = process.env.BIND_ADDRESS || '0.0.0.0';
 var createApp = require('./src/http/app.js'),
     lifecycle = require('./src/lifecycle.js'),
     things = require('./src/database/things.js'),
-    tags = require('./src/database/tags.js'),
     settings = require('./src/database/settings.js');
 
 function exit(error) {
@@ -34,7 +33,6 @@ async function startServer(options) {
     var connection = await databaseManager.connect(options);
     await Promise.all([
         things.ensureIndexes(),
-        tags.ensureIndexes(),
         settings.ensureIndexes(),
         require('./src/users.js').getRepository().ensureIndexes()
     ]);

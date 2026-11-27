@@ -3,18 +3,17 @@
 'use strict';
 
 var assert = require('assert'),
-    util = require('util'),
     bcrypt = require('bcrypt'),
     MongoUserRepository = require('./database/users-mongo.js');
 
-function UserError(code, messageOrError) {
-    assert.strictEqual(typeof code, 'string');
-    Error.call(this);
-    Error.captureStackTrace(this, this.constructor);
-    this.code = code;
-    this.message = messageOrError || code;
+class UserError extends Error {
+    constructor(code, messageOrError) {
+        assert.strictEqual(typeof code, 'string');
+        super(messageOrError || code);
+        this.name = 'UserError';
+        this.code = code;
+    }
 }
-util.inherits(UserError, Error);
 
 UserError.NOT_FOUND = 'not found';
 UserError.NOT_AUTHORIZED = 'not authorized';
@@ -34,28 +33,16 @@ function assertMongoUserSource(source, isProduction) {
     return effective;
 }
 
-/**
- * Resolves account repository from AUTH_USER_SOURCE.
- * Runtime exclusively targets MongoUserRepository ('mongo').
- */
-function createRepositoryFromEnv() {
-    assertMongoUserSource();
-    return new MongoUserRepository();
-}
-
 function getRepository() {
-    if (!repository) repository = createRepositoryFromEnv();
+    if (!repository) {
+        assertMongoUserSource();
+        repository = new MongoUserRepository();
+    }
     return repository;
 }
 
 function setRepository(value) {
     repository = value;
-}
-
-function initRepository(source) {
-    if (source) process.env.AUTH_USER_SOURCE = source;
-    repository = createRepositoryFromEnv();
-    return repository;
 }
 
 async function profile(userId, full) {
@@ -65,7 +52,7 @@ async function profile(userId, full) {
     return getRepository().get(userId).then(function (user) {
         if (!user) throw new UserError(UserError.NOT_FOUND);
         return {
-            id: user.id || user.username || userId,
+            id: user.id,
             username: user.username,
             displayName: user.displayName,
             email: user.email,
@@ -80,14 +67,10 @@ async function profile(userId, full) {
 async function resolveUser(identifier) {
     assert.strictEqual(typeof identifier, 'string');
 
-    var repo = getRepository();
-    return repo.get(identifier).then(function (user) {
-        if (user || repo instanceof MongoUserRepository) return user;
-        return repo.getByUsername(identifier);
-    }).then(function (user) {
+    return getRepository().get(identifier).then(function (user) {
         if (!user) throw new UserError(UserError.NOT_FOUND);
         return {
-            id: user.id || user.username || identifier,
+            id: user.id,
             username: user.username || identifier,
             displayName: user.displayName || user.username,
             email: user.email
@@ -167,6 +150,5 @@ module.exports = {
     MongoUserRepository: MongoUserRepository,
     assertMongoUserSource: assertMongoUserSource,
     getRepository: getRepository,
-    setRepository: setRepository,
-    initRepository: initRepository
+    setRepository: setRepository
 };

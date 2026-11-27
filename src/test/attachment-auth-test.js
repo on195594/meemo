@@ -265,21 +265,5 @@ describe('Attachment Authorization (RF-104)', function () {
                     done();
                 });
         });
-
-        it('confirms deprecated /api/public/:userId/files/:fileId returns 404', function (done) {
-            request(app)
-                .get('/api/public/alice/files/' + alicePrivateFile)
-                .expect(404)
-                .end(function (err, res) {
-                    expect(err).to.be(null);
-                    request(app)
-                        .get('/api/public/alice/files/' + alicePublicFile)
-                        .expect(404)
-                        .end(function (err2, res2) {
-                            expect(err2).to.be(null);
-                            done();
-                        });
-                });
-        });
     });
 });

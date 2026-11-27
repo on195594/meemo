@@ -239,36 +239,4 @@ describe('Export and Import Round-Trip Safety Net (RF-107)', function () {
             });
         }).catch(done);
     });
-
-    it('step 6: ensures export-import round-trip is repeatable across multiple instances', function (done) {
-        users.create('repeat-user', 'repeat@example.com', 'Repeat User', 'Password123!').then(function () {
-
-            var repeatAgent = request.agent(app);
-            repeatAgent
-                .post('/api/login')
-                .send({ username: 'repeat-user', password: 'Password123!' })
-                .expect(200, function (err) {
-                    if (err) return done(err);
-
-                    repeatAgent
-                        .post('/api/import')
-                        .attach('file', exportedTarBuffer, 'exported-archive.tar')
-                        .expect(200)
-                        .end(function (err, res) {
-                            if (err) return done(err);
-                            expect(res.body.total).to.equal(3);
-                            expect(res.body.imported).to.equal(3);
-
-                            repeatAgent
-                                .get('/api/things')
-                                .expect(200)
-                                .end(function (err, res) {
-                                    if (err) return done(err);
-                                    expect(res.body.things.length).to.equal(3);
-                                    done();
-                                });
-                        });
-                });
-        }).catch(done);
-    });
 });

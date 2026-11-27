@@ -26,7 +26,6 @@ describe('Read-only thing presentation (VR-203)', function () {
         client = await MongoClient.connect(config.databaseUrl);
         db = client.db();
         config.db = db;
-        things.resetCache();
         originalEnrichUrls = ssrf.enrichUrls;
         ssrf.enrichUrls = function () {
             enrichmentCalls++;

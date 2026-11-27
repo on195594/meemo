@@ -43,7 +43,7 @@ function json(body: unknown, status = 200): Response {
 
 const WALLPAPER = 'data:image/png;base64,iVBORw0KGgo=';
 
-function backend(settings: Record<string, unknown> = { showTagSidebar: false }) {
+function backend(settings: Record<string, unknown> = {}) {
   const state: { current: 'a' | 'b' | null; rejectNextThings: boolean; emptyThings: boolean } = {
     current: 'a',
     rejectNextThings: false,
@@ -256,17 +256,8 @@ describe('App authenticated note flows', () => {
     expect(wrapper.get('.clear-all-link').text()).toBe('Clear search');
   });
 
-  it('renders notes inside a masonry layout', async () => {
-    const { fetchMock } = backend();
-    const rendered = await renderApp(fetchMock);
-    wrapper = rendered.wrapper;
-
-    expect(wrapper.find('.m3-notes-masonry').exists()).toBe(true);
-    expect(wrapper.find('.note-card').exists()).toBe(true);
-  });
-
   it('applies loaded theme and wallpaper on boot and clears wallpaper on logout', async () => {
-    const { fetchMock } = backend({ showTagSidebar: false, theme: 'dark', backgroundImageDataUrl: WALLPAPER });
+    const { fetchMock } = backend({ theme: 'dark', backgroundImageDataUrl: WALLPAPER });
     wrapper = (await renderApp(fetchMock)).wrapper;
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     expect(wrapper.get('.theme-toggle-btn').attributes('aria-label')).toContain('Dark');

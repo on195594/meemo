@@ -211,7 +211,6 @@ async function handleSave() {
     theme: formTheme.value,
     wide: formWide.value,
     wideNavbar: formWideNavbar.value,
-    ...(settings.value.showTagSidebar !== undefined ? { showTagSidebar: settings.value.showTagSidebar } : {}),
     publicBackground: formPublicBackground.value,
     keepPositionAfterEdit: formKeepPosition.value,
     backgroundImageDataUrl: formBackgroundUrl.value,

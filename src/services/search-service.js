@@ -129,9 +129,7 @@ function buildSearchFilter(filterStr, mode) {
 function buildQuery(options) {
     options = options || {};
     var conditions = options.deleted ? [{ deletedAt: { $exists: true } }] : [];
-    if (!options.deleted) conditions.push(options.archived ? { archived: true } : {
-        $or: [{ archived: false }, { archived: { $exists: false } }]
-    });
+    if (!options.deleted) conditions.push({ archived: !!options.archived });
     var searchCondition = buildSearchFilter(options.filter, options.mode);
     if (searchCondition) conditions.push(searchCondition);
     if (options.sticky) conditions.push({ sticky: true });

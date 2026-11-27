@@ -32,10 +32,6 @@ function conflictError() {
     return revisionError('revision_conflict', 'Thing revision conflict');
 }
 
-function resetCache() {
-    // Kept for test isolation hooks that reset database handles between suites.
-}
-
 function getUnifiedCollection() {
     if (!config.db) throw new Error('MongoDB database is not connected');
     return config.db.collection('things');
@@ -153,25 +149,6 @@ function postProcess(userId, thing) {
     thing.color = noteColors.normalizeNoteColor(thing.color);
 }
 
-function normalizeQueryForIndex(condition) {
-    if (!condition || typeof condition !== 'object') return condition;
-    if (Array.isArray(condition)) return condition.map(normalizeQueryForIndex);
-    if (Array.isArray(condition.$or) && condition.$or.length === 2) {
-        var hasFalse = condition.$or.some(function (c) { return c && c.archived === false; });
-        var hasMissing = condition.$or.some(function (c) {
-            return c && c.archived && typeof c.archived === 'object' && c.archived.$exists === false;
-        });
-        if (hasFalse && hasMissing && Object.keys(condition).length === 1) {
-            return { archived: false };
-        }
-    }
-    var normalized = {};
-    for (var key of Object.keys(condition)) {
-        normalized[key] = normalizeQueryForIndex(condition[key]);
-    }
-    return normalized;
-}
-
 function createListCursor(userId, query, skip, limit) {
     assert.strictEqual(typeof userId, 'string');
     assert.strictEqual(typeof query, 'object');
@@ -180,8 +157,7 @@ function createListCursor(userId, query, skip, limit) {
     var activeCondition = queryHasDeleted(query) ? {} : { deletedAt: { $exists: false } };
     var conditions = [ownerCondition];
     if (Object.keys(activeCondition).length) conditions.push(activeCondition);
-    var normalizedQuery = normalizeQueryForIndex(query);
-    if (Object.keys(normalizedQuery).length) conditions.push(normalizedQuery);
+    if (query && Object.keys(query).length) conditions.push(query);
     var unifiedQuery = conditions.length === 1 ? conditions[0] : { $and: conditions };
     var hasText = queryHasText(unifiedQuery);
     var cursor = getUnifiedCollection().find(unifiedQuery);
@@ -514,7 +490,5 @@ module.exports = {
     purge: purge,
     ensureIndexes: ensureIndexes,
     getUnifiedCollection: getUnifiedCollection,
-    resetCache: resetCache,
-    queryHasText: queryHasText,
-    normalizeQueryForIndex: normalizeQueryForIndex
+    queryHasText: queryHasText
 };

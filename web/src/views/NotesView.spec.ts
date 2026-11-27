@@ -317,15 +317,6 @@ describe('Keep-style notes workspace', () => {
     expect(wrapper.findAll('.note-card')).toHaveLength(4);
   });
 
-  it('keeps the sidebar clean with only primary navigation items', async () => {
-    const { fetchMock } = backend();
-    const rendered = await renderApp(fetchMock);
-    wrapper = rendered.wrapper;
-
-    const items = wrapper.findAll('.sidebar-item').map((item) => item.text());
-    expect(items).toEqual(['Notes', 'Archive', 'Trash']);
-  });
-
   it('moves a note to Trash without confirmation and restores it from the snackbar Undo', async () => {
     const { fetchMock } = backend();
     wrapper = (await renderApp(fetchMock)).wrapper;

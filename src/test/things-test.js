@@ -191,6 +191,13 @@ describe('Things', function () {
             var tags = logic.extractTags(test);
             expect(tags.length).to.equal(0);
         });
+
+        it('keeps tag extraction equivalent when URLs are precomputed', function () {
+            var content = 'See https://example.com/#fragment and #Work';
+            ['', '#中文 #Work', content, 'https://example.com/#anchor', '#one #one'].forEach(function (body) {
+                expect(logic.extractTags(body, logic.extractURLs(body))).to.eql(logic.extractTags(body));
+            });
+        });
     });
 
     describe('richContent',  function () {
@@ -349,6 +356,27 @@ describe('Things', function () {
             var sharedRes = await request(app).get('/api/public/shared/things/' + id).expect(200);
             expect(sharedRes.body.thing._id).to.equal(id);
             expect(sharedRes.body.thing.content).to.equal('Shared note body');
+        });
+
+        it('derives exact owner-isolated tag usage through add, edit/archive, and delete', async function () {
+            var first = await logic.add('tag-owner-a', '#same #same', []);
+            await logic.add('tag-owner-b', '#same', []);
+            expect(await logic.getTags('tag-owner-a')).to.eql([
+                { ownerId: 'tag-owner-a', name: 'same', usage: 2 }
+            ]);
+
+            var updatedFirst = await logic.put(
+                'tag-owner-a', first._id, '#other', [], false, false, true, false, undefined, first.revision
+            );
+            expect(await logic.getTags('tag-owner-a')).to.eql([
+                { ownerId: 'tag-owner-a', name: 'other', usage: 1 }
+            ]);
+            expect(await logic.getTags('tag-owner-b')).to.eql([
+                { ownerId: 'tag-owner-b', name: 'same', usage: 1 }
+            ]);
+
+            await logic.del('tag-owner-a', first._id, updatedFirst.revision);
+            expect(await logic.getTags('tag-owner-a')).to.eql([]);
         });
     });
 });

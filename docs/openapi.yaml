@@ -1497,23 +1497,6 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /api/public/{userId}/files/{fileId}:
-    get:
-      tags: [public]
-      summary: Legacy public file endpoint (disabled)
-      description: Always returns 404 to avoid authorization bypass. Use `/api/files/{userId}/{thingId}/{identifier}` instead.
-      deprecated: true
-      parameters:
-        - $ref: '#/components/parameters/UserIdPath'
-        - name: fileId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '404':
-          $ref: '#/components/responses/NotFound'
-
   /api/users:
     get:
       tags: [public]
@@ -1623,21 +1606,3 @@ paths:
                 $ref: '#/components/schemas/HealthReadyResponse'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
-
-  /api/healthcheck:
-    get:
-      tags: [health]
-      summary: Legacy healthcheck endpoint (deprecated)
-      deprecated: true
-      responses:
-        '200':
-          description: Legacy health status
-          headers:
-            X-Deprecated:
-              schema:
-                type: string
-                example: /api/healthcheck is deprecated, use /api/health/live or /api/health/ready
-          content:
-            application/json:
-              schema:
-                type: object

@@ -3,16 +3,14 @@
 var HttpError = require('../responses.js').HttpError;
 
 function auth(req, res, next) {
-    if (!req.session || (!req.session.username && !req.session.userId)) {
+    if (!req.session || !req.session.userId) {
         return next(new HttpError(401, 'Unauthorized', 'authentication_required'));
     }
 
-    var userId = req.session.userId || req.session.username;
-    var username = req.session.username || req.session.userId;
-
+    var userId = String(req.session.userId);
     req.user = {
-        id: String(userId),
-        username: String(username)
+        id: userId,
+        username: String(req.session.username || userId)
     };
     next();
 }

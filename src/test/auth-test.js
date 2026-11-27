@@ -234,12 +234,8 @@ describe('Authentication & Registration Policy (RF-101)', function () {
         });
 
         describe('atomic first-user registration (RF-715)', function () {
-            var previousAuthUserSource;
-
             beforeEach(async function () {
-                previousAuthUserSource = process.env.AUTH_USER_SOURCE;
                 process.env.REGISTRATION_MODE = 'first-user';
-                users.initRepository('mongo');
                 await Promise.all([
                     config.db.collection('users').deleteMany({}),
                     config.db.collection('system_config').deleteMany({})
@@ -251,9 +247,6 @@ describe('Authentication & Registration Policy (RF-101)', function () {
                     config.db.collection('users').deleteMany({}),
                     config.db.collection('system_config').deleteMany({})
                 ]);
-                if (previousAuthUserSource === undefined) delete process.env.AUTH_USER_SOURCE;
-                else process.env.AUTH_USER_SOURCE = previousAuthUserSource;
-                users.initRepository();
                 process.env.REGISTRATION_MODE = 'open';
                 resetUsers();
             });

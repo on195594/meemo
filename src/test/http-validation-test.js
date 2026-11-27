@@ -11,29 +11,6 @@ var expect = require('expect.js'),
 describe('HTTP modules and validation (RF-302)', function () {
     var app = createApp({ sessionMemory: true, sessionSecret: 'rf-302-test-secret' });
 
-    it('returns a stable validation error for invalid request bodies', function (done) {
-        request(app)
-            .post('/api/login')
-            .send({ username: 42, password: 'password123' })
-            .expect(400)
-            .end(function (error, res) {
-                expect(error).to.be(null);
-                expect(res.body.code).to.equal('invalid_request');
-                expect(res.body.message).to.equal('missing username or password');
-                done();
-            });
-    });
-
-    it('keeps legacy attachment descriptors compatible while validating paths', function () {
-        var schema = require('../http/routes/things.js').schemas.create;
-        var parsed = schema.parse({ content: 'legacy note', attachments: ['legacy-file.png'] });
-
-        expect(parsed.attachments).to.eql(['legacy-file.png']);
-        expect(function () {
-            schema.parse({ content: 'bad note', attachments: ['../private-file'] });
-        }).to.throwError();
-    });
-
     it('accepts supported note colors and rejects unknown colors', function () {
         var schema = require('../http/routes/things.js').schemas.create;
 

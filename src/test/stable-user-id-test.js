@@ -15,14 +15,11 @@ var config = require('../config.js');
 var users = require('../users.js');
 var appModule = require('../../app.js');
 var createApp = appModule.createApp;
-var things = require('../database/things.js');
-var tags = require('../database/tags.js');
 var settings = require('../database/settings.js');
 
 describe('Stable User ID and Decoupling (RF-203)', function () {
     var dbClient;
     var app;
-    var prevAuthSource = process.env.AUTH_USER_SOURCE;
     var prevAttachmentDir = config.attachmentDir;
     var testAttachmentDir = '/tmp/meemo-rf203-attachments-' + process.pid;
 
@@ -32,7 +29,6 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
     var bobAgent;
 
     before(async function () {
-        process.env.AUTH_USER_SOURCE = 'mongo';
         config.attachmentDir = testAttachmentDir;
 
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
@@ -40,14 +36,11 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
 
         dbClient = await MongoClient.connect(config.databaseUrl);
         config.db = dbClient.db();
-        things.resetCache();
-        tags.resetCache();
         settings.resetCache();
 
         // Clean users collection
         await config.db.collection('users').deleteMany({});
 
-        users.initRepository('mongo');
         app = createApp({ sessionMemory: true });
 
         // Register Alice and Bob in MongoDB
@@ -65,11 +58,7 @@ describe('Stable User ID and Decoupling (RF-203)', function () {
     });
 
     after(async function () {
-        if (prevAuthSource === undefined) delete process.env.AUTH_USER_SOURCE;
-        else process.env.AUTH_USER_SOURCE = prevAuthSource;
-
         config.attachmentDir = prevAttachmentDir;
-        users.initRepository('mongo');
 
         fs.rmSync(testAttachmentDir, { recursive: true, force: true });
 

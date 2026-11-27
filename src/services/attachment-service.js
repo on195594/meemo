@@ -109,10 +109,10 @@ async function authorize(rawUserId, thingId, identifier, session) {
         });
         if (!attachment) throw serviceError('not_found', 'attachment not found');
 
-        var isOwner = session && (
-            (session.userId && (session.userId === targetUserId || session.userId === rawUserId)) ||
+        var isOwner = !!(session && session.userId && (
+            session.userId === targetUserId || session.userId === rawUserId ||
             (session.username && (session.username === targetUsername || session.username === rawUserId))
-        );
+        ));
         if (!isOwner && !thing.public && !thing.shared) throw serviceError('forbidden', 'not allowed');
 
         return {
@@ -132,51 +132,37 @@ function addReference(references, root, identifier) {
     references.add(identifier);
 }
 
-async function referenceCollectionNames() {
-    if (!config.db) throw new Error('MongoDB database is not connected');
-    var collectionInfos = await config.db.listCollections({}, { nameOnly: true }).toArray();
-    return (collectionInfos || []).map(function (collection) { return collection.name; }).filter(function (name) {
-        return name === 'things' || name.slice(-7) === '_things';
-    }).sort();
-}
-
 async function scanReferences() {
-    var collectionNames = await referenceCollectionNames();
+    if (!config.db) throw new Error('MongoDB database is not connected');
     // Identifiers are UUID storage keys. Treat a reference in any user root as
     // globally live so incomplete stable-ID/username mappings cannot cause loss.
     var references = new Set();
-    for (var collectionName of collectionNames) {
-        var legacyRoot = collectionName === 'things' ? null : collectionName.slice(0, -7);
-        var cursor = config.db.collection(collectionName).find({}, { projection: { ownerId: 1, attachments: 1 } });
-        try {
-            for await (var document of cursor) {
-                if (document.attachments === undefined || document.attachments === null) continue;
-                if (!Array.isArray(document.attachments)) throw new Error('Invalid attachments in database collection: ' + collectionName);
-                if (!document.attachments.length) continue;
-                var root = legacyRoot || (document.ownerId === undefined || document.ownerId === null ? '' : String(document.ownerId));
-                if (!root) throw new Error('Missing attachment owner in database collection: ' + collectionName);
-                document.attachments.forEach(function (attachment) {
-                    var identifier = typeof attachment === 'string' ? attachment : attachment && attachment.identifier;
-                    addReference(references, root, identifier);
-                });
-            }
-        } finally {
-            await cursor.close();
+    var cursor = config.db.collection('things').find({}, { projection: { ownerId: 1, attachments: 1 } });
+    try {
+        for await (var document of cursor) {
+            if (document.attachments === undefined || document.attachments === null) continue;
+            if (!Array.isArray(document.attachments)) throw new Error('Invalid attachments in database collection: things');
+            if (!document.attachments.length) continue;
+            var root = (document.ownerId === undefined || document.ownerId === null) ? '' : String(document.ownerId);
+            if (!root) throw new Error('Missing attachment owner in database collection: things');
+            document.attachments.forEach(function (attachment) {
+                var identifier = typeof attachment === 'string' ? attachment : attachment && attachment.identifier;
+                addReference(references, root, identifier);
+            });
         }
+    } finally {
+        await cursor.close();
     }
     return references;
 }
 
-/** Check one candidate across all owner roots, including legacy string descriptors; DB failures abort GC. */
+/** Check one candidate in `things`, including legacy string descriptors; DB failures abort GC. */
 async function hasReference(identifier) {
-    var collectionNames = await referenceCollectionNames();
-    for (var collectionName of collectionNames) {
-        var reference = await config.db.collection(collectionName).findOne({
-            $or: [{ 'attachments.identifier': identifier }, { attachments: identifier }]
-        }, { projection: { _id: 1 } });
-        if (reference) return true;
-    }
-    return false;
+    if (!config.db) throw new Error('MongoDB database is not connected');
+    var reference = await config.db.collection('things').findOne({
+        $or: [{ 'attachments.identifier': identifier }, { attachments: identifier }]
+    }, { projection: { _id: 1 } });
+    return !!reference;
 }
 
 async function garbageCollect(options) {

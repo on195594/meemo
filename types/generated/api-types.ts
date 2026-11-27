@@ -1518,42 +1518,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/public/{userId}/files/{fileId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Legacy public file endpoint (disabled)
-         * @deprecated
-         * @description Always returns 404 to avoid authorization bypass. Use `/api/files/{userId}/{thingId}/{identifier}` instead.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description User identifier (stable ObjectId hex string or username) */
-                    userId: components["parameters"]["UserIdPath"];
-                    fileId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                404: components["responses"]["NotFound"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/users": {
         parameters: {
             query?: never;
@@ -1789,46 +1753,6 @@ export interface paths {
                     };
                 };
                 503: components["responses"]["ServiceUnavailable"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/healthcheck": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Legacy healthcheck endpoint (deprecated)
-         * @deprecated
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Legacy health status */
-                200: {
-                    headers: {
-                        "X-Deprecated"?: string;
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
             };
         };
         put?: never;

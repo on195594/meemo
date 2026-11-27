@@ -112,13 +112,7 @@ async function exportData(userId) {
 
 async function createExport(userId, username) {
     var attachmentFolder = await storage.exportDirectory(userId, username);
-    var result;
-    try {
-        result = await exportData(userId);
-    } catch (error) {
-        if (!username || username === userId) throw error;
-        result = await exportData(username);
-    }
+    var result = await exportData(userId);
 
     var attachmentIdentifiers = Array.from(new Set(result.things.reduce(function (all, thing) {
         return all.concat((thing.attachments || []).map(function (attachment) {

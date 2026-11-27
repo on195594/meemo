@@ -83,7 +83,6 @@ describe('MCP read/write tools and OAuth isolation', function () {
         dbClient = await MongoClient.connect(config.databaseUrl, { monitorCommands: true });
         db = dbClient.db();
         config.db = db;
-        things.resetCache();
         await things.ensureIndexes();
         app = createApp({ sessionMemory: true, sessionSecret: 'synthetic-mcp-session',
             logger: logger.createLogger({ enabled: true, stream: function (entry) { logs.push(JSON.stringify(entry)); } }),

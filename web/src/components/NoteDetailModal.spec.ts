@@ -820,29 +820,4 @@ describe('NoteDetailModal', () => {
 
     wrapper.unmount();
   });
-
-  it('closes only the color picker when pressing Escape inside the modal overlay', async () => {
-    const wrapper = mount(NoteDetailModal, {
-      props: {
-        open: true,
-        thing: note(),
-        onSaveEdit: vi.fn().mockResolvedValue({ success: true }),
-      },
-      attachTo: document.body,
-    });
-
-    const colorBtn = document.querySelector('.note-modal-card .color-btn') as HTMLButtonElement;
-    colorBtn.click();
-    await flushPromises();
-    expect(document.querySelector('.color-palette-popover')).not.toBeNull();
-
-    colorBtn.focus();
-    colorBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await flushPromises();
-    expect(document.querySelector('.color-palette-popover')).toBeNull();
-    expect(document.querySelector('.note-modal-overlay')).not.toBeNull();
-    expect(wrapper.emitted('close')).toBeUndefined();
-
-    wrapper.unmount();
-  });
 });

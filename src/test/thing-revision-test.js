@@ -10,9 +10,8 @@ var MongoClient = require('mongodb').MongoClient;
 var ObjectId = require('mongodb').ObjectId;
 var config = require('../config.js');
 var things = require('../database/things.js');
-var migration = require('../../scripts/migrate-thing-revisions.js');
 
-describe('Thing revision CAS and migration (M1)', function () {
+describe('Thing revision CAS (M1)', function () {
     var client;
     var previousDb;
     var db;
@@ -24,7 +23,6 @@ describe('Thing revision CAS and migration (M1)', function () {
         client = await MongoClient.connect(config.databaseUrl);
         db = client.db();
         config.db = db;
-        things.resetCache();
     });
 
     after(async function () {
@@ -69,57 +67,6 @@ describe('Thing revision CAS and migration (M1)', function () {
         expect(restored.public).to.be(false);
         expect((await things.getAll(owner, {}, 0, 10)).length).to.equal(1);
     });
-
-    it('backfills only missing revisions and is safe to rerun', async function () {
-        var oldId = new ObjectId();
-        var currentId = new ObjectId();
-        await db.collection('things').insertMany([
-            { _id: oldId, ownerId: owner, content: 'old' },
-            { _id: currentId, ownerId: owner, content: 'current', revision: 7 }
-        ]);
-
-        var options = migration.parseArgs([
-            '--dry-run', '--mongo-url', config.databaseUrl, '--expect-database', db.databaseName
-        ]);
-        var dryRun = await migration.run(options);
-        expect(dryRun.before.missing).to.equal(1);
-        expect(dryRun.after.missing).to.equal(1);
-        expect((await db.collection('things').findOne({ _id: oldId })).revision).to.be(undefined);
-
-        options = migration.parseArgs([
-            '--apply', '--mongo-url', config.databaseUrl, '--expect-database', db.databaseName
-        ]);
-        var applied = await migration.run(options);
-        expect(applied.after.missing).to.equal(0);
-        expect((await db.collection('things').findOne({ _id: oldId })).revision).to.equal(1);
-
-        var rerun = await migration.run(options);
-        expect(rerun.before.missing).to.equal(0);
-        expect((await db.collection('things').findOne({ _id: currentId })).revision).to.equal(7);
-    });
-
-    it('rejects invalid revisions and mismatched database targets', async function () {
-        var invalidId = new ObjectId();
-        await db.collection('things').insertOne({
-            _id: invalidId, ownerId: owner, content: 'invalid', revision: 0
-        });
-        var options = migration.parseArgs([
-            '--apply', '--mongo-url', config.databaseUrl, '--expect-database', db.databaseName
-        ]);
-        var error;
-        try {
-            await migration.run(options);
-        } catch (runError) {
-            error = runError;
-        }
-        expect(error).to.be.ok();
-        expect(error.message).to.contain('Invalid Thing revisions');
-        expect(function () {
-            migration.parseArgs([
-                '--dry-run', '--mongo-url', config.databaseUrl, '--expect-database', 'wrong-db'
-            ]);
-        }).to.throwError(/does not match/);
-    });
 });
 
 describe('HTTP revision CAS on PUT, DELETE, and restore', function () {
@@ -135,7 +82,6 @@ describe('HTTP revision CAS on PUT, DELETE, and restore', function () {
         client = await MongoClient.connect(config.databaseUrl);
         db = client.db();
         config.db = db;
-        things.resetCache();
         await require('../users.js').create('restoreuser', 'restore@example.com', 'Restore User', 'password123');
         var app = require('../http/app.js')({ sessionMemory: true, sessionSecret: 'restore-http-test-secret' });
         agent = require('supertest').agent(app);

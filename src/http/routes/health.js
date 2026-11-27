@@ -20,20 +20,13 @@ async function ready(req, res, next) {
     next(new HttpSuccess(200, Object.assign({ status: 'ready' }, stats)));
 }
 
-function healthcheck(req, res, next) {
-    res.setHeader('X-Deprecated', '/api/healthcheck is deprecated, use /api/health/live or /api/health/ready');
-    next(new HttpSuccess(200, {}));
-}
-
 function registerRoutes(router) {
     router.get('/api/health/live', live);
     router.get('/api/health/ready', asyncHandler(ready));
-    router.get('/api/healthcheck', healthcheck);
 }
 
 module.exports = {
     registerRoutes: registerRoutes,
     live: live,
-    ready: ready,
-    healthcheck: healthcheck
+    ready: ready
 };

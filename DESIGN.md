@@ -72,121 +72,58 @@ components:
 
 ## Overview
 
-Meemo's visual design combines the tactile, effortless spatial organization of Google Keep with the refined structural hierarchy of Material Design 3 (M3). It is designed to feel like a responsive, private digital scratchpad that disappears during thought capture and cleanly surfaces structure during review.
-
-Key attributes:
-- **Card-centric canvas**: Notes are independent surfaces arranged on a responsive masonry canvas.
-- **12-Tone Keep Color System**: Google Keep's current note palette in light and dark, used as organizational fills behind default text color.
-- **Quiet Chrome**: 1px outlines at rest, a soft two-layer shadow on hover; card controls appear only on hover or focus.
-- **Keyboard-first Ergonomics**: Clear focus rings and persistent search navigation.
+Meemo pairs Material Design 3 structural tokens with a Google Keep-inspired spatial note canvas: independent note cards in a responsive masonry layout, the 12-tone Keep color palette, 1px resting outlines with soft hover shadows, and keyboard-first focus/search ergonomics.
 
 ## Colors
 
-Meemo relies on two complementary palettes: the Material 3 structural palette and the Google Keep 12-color note palette. Color tokens are explicitly declared for light mode and dark mode (`:root[data-theme="dark"]` and `@media (prefers-color-scheme: dark)`) for universal browser compatibility. When a custom background image is active, an ambient canvas tint (`.has-custom-bg`) provides contrast protection to ensure WCAG AA/AAA readability.
+Light and dark themes are declared on `:root[data-theme="dark"]` and `@media (prefers-color-scheme: dark)`. Custom background images apply `.has-custom-bg` canvas tinting for readable contrast.
 
-### Structural Surface & Accent Tokens
-- `primary`: `#0b57d0` (Light) / `#a8c7fa` (Dark) — Links, focus rings, primary auth buttons, avatar.
-- `keep-accent`: `#fbbc04` — Snackbar action text (Undo). Not used for focus rings: it is below 3:1 on white.
-- `keep-nav-active`: `#feefc3` (Light) / `#41331c` (Dark) — Active sidebar item pill.
+### Structural tokens
+- `primary`: `#0b57d0` (Light) / `#a8c7fa` (Dark) — Links, focus rings, primary buttons, avatar.
+- `keep-accent`: `#fbbc04` — Snackbar Undo label (not used for focus rings; below 3:1 on white).
+- `keep-nav-active`: `#feefc3` (Light) / `#41331c` (Dark) — Active sidebar pill.
 - `keep-snackbar`: `#323232` (Light) / `#e8eaed` (Dark) — Snackbar surface.
-- `surface`: `#ffffff` (Light) / `#202124` (Dark) — App canvas background.
-- `surface-container`: `#ffffff` (Light) / `#202124` (Dark) — Default note card and dialog base.
-- `surface-container-high`: `#f1f3f4` (Light) / `#525355` (Dark) — Resting search box.
+- `surface` / `surface-container`: `#ffffff` (Light) / `#202124` (Dark) — App canvas, default cards, dialogs.
+- `surface-container-high`: `#f1f3f4` (Light) / `#525355` (Dark) — Search box.
 - `on-surface`: `#202124` (Light) / `#e8eaed` (Dark) — Primary reading text.
-- `on-surface-variant`: `#5f6368` (Light) / `#9aa0a6` (Dark) — Icons, placeholders, section labels. On colored notes it is overridden to `on-surface` at 87% (min 4.6:1 across all Keep fills), because the gray drops below 4.5:1 on fills like dark Fog and light Peach.
-- `outline-variant` / `note-border-color`: `#e0e0e0` (Light) / `#5f6368` (Dark) — Default-card outline and header divider. Colored cards drop the outline.
+- `on-surface-variant`: `#5f6368` (Light) / `#9aa0a6` (Dark) — Secondary labels/icons; overridden on colored notes to 87% `on-surface` (min 4.6:1 contrast across all Keep fills).
+- `outline-variant` / `note-border-color`: `#e0e0e0` (Light) / `#5f6368` (Dark) — Default-card border and dividers (omitted on colored cards).
 
-### Google Keep 12-Color Note Palette
-Note colors are background fills read with `--md-sys-color-on-surface` (dark text in light mode, light text in dark mode):
-- Default: `#ffffff` (Dark: `#202124`)
-- Coral: `#faafa8` (Dark: `#77172e`)
-- Peach: `#f39f76` (Dark: `#692b17`)
-- Sand: `#fff8b8` (Dark: `#7c4a03`)
-- Mint: `#e2f6d3` (Dark: `#264d3b`)
-- Sage: `#b4ddd3` (Dark: `#0c625d`)
-- Fog: `#d4e4ed` (Dark: `#256377`)
-- Storm: `#aeccdc` (Dark: `#284255`)
-- Dusk: `#d3bfdb` (Dark: `#472e5b`)
-- Blossom: `#f6e2dd` (Dark: `#6c394f`)
-- Clay: `#e9e3d4` (Dark: `#4b443a`)
-- Chalk: `#efeff1` (Dark: `#232427`)
+### 12-Color Note Palette
+Note fills are read with `--md-sys-color-on-surface` (Light / Dark hexes):
+Default (`#ffffff` / `#202124`), Coral (`#faafa8` / `#77172e`), Peach (`#f39f76` / `#692b17`), Sand (`#fff8b8` / `#7c4a03`), Mint (`#e2f6d3` / `#264d3b`), Sage (`#b4ddd3` / `#0c625d`), Fog (`#d4e4ed` / `#256377`), Storm (`#aeccdc` / `#284255`), Dusk (`#d3bfdb` / `#472e5b`), Blossom (`#f6e2dd` / `#6c394f`), Clay (`#e9e3d4` / `#4b443a`), Chalk (`#efeff1` / `#232427`).
 
 ## Typography
 
-System and multilingual CJK font stack (`--md-sys-typescale-font`) throughout with subpixel anti-aliasing and legibility optimizations; code uses `--md-sys-typescale-font-mono`. Font sizes come from the M3 type scale tokens in `web/src/styles/tokens.css` (`--md-sys-typescale-{display,headline,title,body,label}-{large,medium,small}`).
+Multilingual system/CJK sans stack (`--md-sys-typescale-font`), monospace code (`--md-sys-typescale-font-mono`), and M3 type scale tokens in `web/src/styles/tokens.css`.
 
 ## Layout
 
-- **Header Bar**: Full-width, 64px, 1px bottom divider. Hamburger, logo, search box (max 720px, 8px radius, turns white with shadow on focus), grid/list toggle, theme toggle (icon only), avatar.
-- **Sidebar**: Notes, Archive, Trash. Desktop: 80px icon rail that peeks open on hover, or 280px when expanded via the hamburger (remembered per browser). Below 768px: overlay drawer with scrim; focus moves into it, Tab stays inside, and Escape or a scrim click closes it and returns focus to the menu button. Navigation writes the existing `tag` / `archived` / `deleted` route query.
-- **Masonry Grid**: Height-balanced columns of fixed 240px cards with 16px gaps, centered. When the stream itself is narrower than 600px (phones, or a narrow window with the sidebar expanded) columns become flexible with a 160px minimum and 8px gaps — two columns on a typical phone. Each item goes to the currently shortest column using bounded height estimates of the displayed body (`web/src/utils/masonry.ts`); ties fall back to left-to-right order, so reading order is approximate rather than strict row order. List view is a single 600px column.
-- **Composer**: 600px, centered. Collapsed: "Take a note…" with New list and image shortcuts. Expanded: Title, auto-growing body, toolbar, and a `Close` text button. Close, Escape or a click outside saves a non-empty draft; a failed save keeps the draft open. It stays mounted (hidden) in Archive/Trash so a draft survives view switches.
-- **Modal Layer**: Note dialog `min(600px, 100%)` (full screen below 600px); auth/import 440-480px, settings 500px, cheatsheet 540px.
-- **Snackbar**: Bottom-left, 4px radius, auto-dismisses (6s with Undo, 3s otherwise). Archive and Trash actions offer Undo.
+- **Header bar**: 64px full width, 1px bottom divider, hamburger, logo, search box (max 720px, 8px radius, focus shadow), grid/list toggle, theme toggle, avatar.
+- **Sidebar**: Notes, Archive, Trash (`tag` / `archived` / `deleted` route queries). Desktop: 80px icon rail (hover peek) or remembered 280px expanded sidebar; `< 768px`: modal overlay drawer with focus trap and Escape/scrim dismissal.
+- **Masonry grid**: Fixed 240px cards with 16px gaps (switching to flexible `>= 160px` columns / 8px gaps when stream `< 600px`), placing items into the shortest column from bounded height estimates (`web/src/utils/masonry.ts`); ties break left-to-right. List view uses a 600px single column.
+- **Composer**: 600px centered; collapsed quick actions or expanded title/body/toolbar; saves non-empty drafts on Close/Escape/outside click (retains draft on error and across tab switches).
+- **Modals & snackbar**: Note dialog `min(600px, 100%)` (full screen `< 600px`), auth/import 440–480px, settings 500px, cheatsheet 540px. Bottom-left snackbar auto-dismisses (6s with Undo, 3s otherwise).
 
-## Elevation & Depth
+## Elevation & shapes
 
-- Resting cards: no shadow, 1px outline (default color only).
-- `--keep-shadow-hover`: hovered or focused cards (with `translateY(-2px)` tactile lift and `z-index: 1` elevation), focused search box.
-- `--keep-shadow-raised`: composer, color popovers, peeking sidebar rail.
-- `--keep-shadow-dialog`: note dialog and mobile drawer.
-
-The older `--md-sys-elevation-*` tokens remain for auth, settings, and import dialogs.
-
-## Shapes
-
-- `--keep-card-radius` (8px): Note cards, composer, note dialog, search box, color popovers.
-- `xs` (4px): Snackbar, text buttons (`Close`), code blocks.
-- `full` (9999px): Icon buttons, label chips, color swatches, avatar, sidebar active pill (right side only).
-- `2xl` (28px): Remaining M3 dialogs (auth, settings, import, cheatsheet).
+- **Elevation**: Resting default cards use a 1px outline; `--keep-shadow-hover` lifts hovered/focused cards (`translateY(-2px)`) and focused search; `--keep-shadow-raised` for composer/popovers/peeking rail; `--keep-shadow-dialog` for note dialog and mobile drawer; `--md-sys-elevation-*` for auth, settings, and import dialogs.
+- **Shapes**: `--keep-card-radius` (`8px`) for cards, composer, note dialog, search, popovers; `4px` (`xs`) for snackbar, text buttons, code blocks; `9999px` (`full`) for icon buttons, chips, swatches, avatars, active sidebar pills; `28px` (`2xl`) for auth/settings/import/cheatsheet modals.
 
 ## Components
 
-### Note Card
-- Card surface tinted with the note's color; colored cards drop the outline. Hovering/focusing cards dissolves the outline into a subtle elevation shadow.
-- A leading `# Heading` renders as the title (16px/500); internal Markdown headings follow a clear hierarchy (h2: 15px, h3+: 14px); body text is 14px. Clickable stream cards clip at 400px with a cross-browser fade mask. Text selection on cards does not trigger modal navigation.
-- Image attachments sit edge-to-edge at the top; other attachments are compact badge chips.
-- Hover/focus reveals the pin (top-right), the selection check (top-left, outside the corner), and the toolbar (color, More). Archive/unarchive, make a copy, public/private and Delete note live in More, keeping the card toolbar minimal and reducing accidental taps. Pinned notes retain their pin at rest. On touch devices the toolbar and pin are always visible, and long-press initiates multi-select mode.
-- No timestamp on editable cards; read-only cards (Trash, shared, and public views) show it in the footer.
-- Checklist items toggle in place with enlarged touch hit targets; clicking anywhere else, or Enter on the focused card, opens the dialog.
-
-### Note Dialog
-- Opens ready to edit: Title input and auto-growing body textarea (Markdown source). No preview toggle.
-- Footer: color, More on the left; `Close` on the right. Archive/unarchive, make a copy, public/private and Delete note live in More. Close, Escape or a backdrop click saves with revision checks and stays open if the save fails. Escape inside a color or More popup closes only that popup, restores its trigger focus, and does not save the draft.
-- Read-only notes (Trash, public stream) render Markdown instead of the editor.
-
-### Action Menus & Color Popovers
-- Make a copy creates a private, unpinned, unarchived note in Notes, retaining content, color and attachment references. In the detail dialog it copies the current draft without saving or closing the original; failures keep the draft and allow retry. Copy actions for the same note are disabled while pending.
-- Note More and account options share `ActionMenu.vue`: menu roles, initial focus, Up/Down wrapping, Home/End, first-letter navigation, Escape focus restoration, and native Tab traversal. Clicking or focusing outside dismisses without stealing focus.
-- Menus and all three color palettes use shared viewport-clamped positioning: flip above when needed, track scrolling/resizing, and stay inside an 8px viewport gutter.
-- `--keep-control-size`: 40px icon/swatch hit areas, 44px on coarse pointers; swatches retain a 28px color circle. Card titles reserve pin space without narrowing the note body.
-
-### Search Box
-- Shows the `/` shortcut hint when empty, a clear `×` when populated; results show a "Results for …" line with Clear search.
-
-### Label Chips
-- Inline `#tags` render as small rounded chips inside the card body and filter the stream on click. Labels are not listed in the sidebar.
-
-### Color Picker
-- 12 circular swatches in a 4-column popover below the trigger; the Default swatch has a ring.
-- Active swatch exposed with `aria-pressed`; arrow keys, Home/End and Escape supported.
-
-### Snackbar
-- Dark surface with an accent-colored `Undo` and a dismiss button; `role="status"`.
+- **Note Card**: Edge-to-edge top image banners, file chips, inline `#tag` filter chips, checklists toggleable in place, title (`# Heading`, 16px/500) reserving pin space, 400px CSS body fade clip, hover/focus pin + selection check + color/More toolbar (always visible on touch devices; long-press starts multi-select). Timestamps show on read-only cards (Trash, shared, public).
+- **Note Dialog**: Opens directly in Markdown editor mode (read-only rendered view for Trash/public). Close, Escape, or backdrop click saves with CAS; Escape inside open color/More popovers closes only that popover and restores trigger focus.
+- **Action Menus & Popovers**: Shared `ActionMenu.vue` (WAI-ARIA menu keyboard nav + focus restoration) and `usePopoverPosition.ts` (viewport-clamped positioning tracking scroll/resize); 40px/44px touch targets with 28px color circles; active swatch marked `aria-pressed`.
 
 ## Do's and Don'ts
 
 ### Do
-- Use CSS custom property tokens (`var(--md-sys-color-*)`, `var(--note-color-*)`) for all colors and background fills.
-- Use `scaleX()` and GPU transforms for progress animations to prevent layout recalculations.
-- Ensure all text against custom note colors meets WCAG AA contrast (>= 4.5:1).
-- Keep interactive controls accessible via keyboard (`tabindex`, focus rings, `aria-label`).
-- Respect `prefers-reduced-motion` settings.
+- Use CSS token variables (`var(--md-sys-color-*)`, `var(--note-color-*)`) across components and modals.
+- Animate with transform/opacity (`scaleX`) and respect `prefers-reduced-motion`.
+- Maintain WCAG AA text contrast (`>= 4.5:1`), `UiIcon` vectors, keyboard accessibility, and Escape dismissal on overlays.
 
 ### Don't
-- Don't use heavy, asymmetrical colored left-border side-tabs (`border-left: 4px solid ...`) on cards; use tonal fills or uniform borders.
-- Don't show card controls at rest on hover-capable devices; reveal them on hover or focus.
-- Don't use emoji as icons; use `UiIcon`.
-- Don't hardcode light hex colors in modals or components without dark mode tokens.
-- Don't animate layout properties (`width`, `height`, `padding`, `margin`) directly when transform/opacity can achieve the effect.
-- Don't trap focus without providing `Escape` dismiss handling.
+- Don't use asymmetrical colored left borders (`border-left: 4px`) on cards or hardcode un-tokenized light colors.
+- Don't expose card action controls at rest on hover-capable devices or use emoji as UI icons.
+- Don't trap keyboard focus without Escape handling.

@@ -37,14 +37,8 @@ async function getThing(rawUserId, thingId) {
 }
 
 async function getAll(rawUserId, query, skip, limit) {
-    return resolve(rawUserId).then(async function (target) {
-        try {
-            return await things.getAllPublic(target.id, query, skip, limit);
-        } catch (error) {
-            if (target.username !== target.id) return things.getAllPublic(target.username, query, skip, limit);
-            throw error;
-        }
-    });
+    var target = await resolve(rawUserId);
+    return things.getAllPublic(target.id, query, skip, limit);
 }
 
 async function listUsers() {
@@ -63,18 +57,11 @@ async function profile(rawUserId) {
 }
 
 async function feed(rawUserId) {
-    return resolve(rawUserId).then(async function (target) {
-        if (!target.user) throw notFound();
-        var config = await settings.get(target.id);
-        var result;
-        try {
-            result = await things.getAllPublic(target.id, {}, 0, 50);
-        } catch (error) {
-            if (target.username === target.id) throw error;
-            result = await things.getAllPublic(target.username, {}, 0, 50);
-        }
-        return { user: target.user, settings: config, things: result };
-    });
+    var target = await resolve(rawUserId);
+    if (!target.user) throw notFound();
+    var config = await settings.get(target.id);
+    var result = await things.getAllPublic(target.id, {}, 0, 50);
+    return { user: target.user, settings: config, things: result };
 }
 
 module.exports = {

@@ -10,21 +10,12 @@ var expect = require('expect.js'),
     os = require('os'),
     path = require('path'),
     config = require('../config.js'),
-    users = require('../users.js'),
     attachments = require('../services/attachment-service.js'),
     gcCli = require('../../scripts/gc-attachments.js');
 
 function fakeDb(collections, failure, stats) {
     stats = stats || { scans: 0, arrays: 0, closed: 0, probes: [] };
     return {
-        listCollections: function () {
-            return {
-                toArray: function () {
-                    if (failure === 'listCollections') return Promise.reject(new Error('database scan failed'));
-                    return Promise.resolve(Object.keys(collections).map(function (name) { return { name: name }; }));
-                }
-            };
-        },
         collection: function (name) {
             return {
                 find: function () {
@@ -69,7 +60,6 @@ function writeFile(root, userRoot, identifier, modifiedAt) {
 describe('Attachment orphan GC (RF-711)', function () {
     var originalDb;
     var originalAttachmentDir;
-    var originalRepository;
     var originalListAttachments;
     var tempDir;
     var now = Date.UTC(2026, 0, 2);
@@ -79,32 +69,30 @@ describe('Attachment orphan GC (RF-711)', function () {
     beforeEach(function () {
         originalDb = config.db;
         originalAttachmentDir = config.attachmentDir;
-        originalRepository = users.getRepository();
         originalListAttachments = require('../storage/local-storage.js').listAttachments;
         tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'meemo-attachment-gc-'));
         config.attachmentDir = tempDir;
-        users.setRepository({
-            list: function () {
-                return Promise.resolve([{ id: 'alice-id', username: 'alice' }]);
-            }
-        });
     });
 
     afterEach(function () {
         config.db = originalDb;
         config.attachmentDir = originalAttachmentDir;
-        users.setRepository(originalRepository);
         require('../storage/local-storage.js').listAttachments = originalListAttachments;
         fs.rmSync(tempDir, { recursive: true, force: true });
     });
 
     it('detects per-user current and legacy orphans, honors grace, and deletes only eligible orphans', async function () {
         config.db = fakeDb({
-            things: [{
-                ownerId: 'alice-id',
-                attachments: [{ identifier: 'current-reference.bin' }]
-            }],
-            alice_things: [{ attachments: ['legacy-reference.bin'] }]
+            things: [
+                {
+                    ownerId: 'alice-id',
+                    attachments: [{ identifier: 'current-reference.bin' }]
+                },
+                {
+                    ownerId: 'alice-id',
+                    attachments: ['legacy-reference.bin']
+                }
+            ]
         });
 
         var currentReference = writeFile(tempDir, 'alice-id', 'current-reference.bin', old);
@@ -183,8 +171,7 @@ describe('Attachment orphan GC (RF-711)', function () {
         expect(fs.existsSync(orphan)).to.be(true);
     });
 
-    it('protects references when user aliases are omitted by the repository', async function () {
-        users.setRepository({ list: function () { return Promise.resolve([]); } });
+    it('protects references stored under legacy username directories regardless of owner mapping', async function () {
         config.db = fakeDb({
             things: [{ ownerId: 'disabled-stable-id', attachments: [{ identifier: 'disabled-reference.bin' }] }]
         });
@@ -218,14 +205,16 @@ describe('Attachment orphan GC (RF-711)', function () {
     });
 
     ['object', 'legacy string'].forEach(function (descriptorType) {
-        it('protects a late ' + descriptorType + ' reference in a newly discovered legacy collection', async function () {
+        it('protects a late ' + descriptorType + ' reference added during enumeration', async function () {
             var collections = { things: [] };
             config.db = fakeDb(collections);
             var referenced = writeFile(tempDir, 'alice-id', 'late-reference.bin', old);
             require('../storage/local-storage.js').listAttachments = async function () {
                 var files = await originalListAttachments();
-                collections.bob_things = [{ attachments: [descriptorType === 'object' ?
-                    { identifier: 'late-reference.bin' } : 'late-reference.bin'] }];
+                collections.things.push({
+                    ownerId: 'bob-id',
+                    attachments: [descriptorType === 'object' ? { identifier: 'late-reference.bin' } : 'late-reference.bin']
+                });
                 return files;
             };
 
@@ -237,7 +226,7 @@ describe('Attachment orphan GC (RF-711)', function () {
     });
 
     it('fails closed on database scan errors without deleting files', async function () {
-        config.db = fakeDb({}, 'listCollections');
+        config.db = fakeDb({}, 'things');
         var orphan = writeFile(tempDir, 'alice', 'orphan.bin', old);
 
         var error;
@@ -273,5 +262,18 @@ describe('Attachment orphan GC (RF-711)', function () {
     it('defaults the CLI to dry-run and rejects conflicting modes', function () {
         expect(gcCli.parseArgs([]).mode).to.equal('dry-run');
         expect(function () { gcCli.parseArgs(['--dry-run', '--apply']); }).to.throwError();
+    });
+
+    it('structures attachment GC completion and failure records', function () {
+        var completed = gcCli.completionRecord({ mode: 'dry-run', filesScanned: 4, orphansFound: 2, eligibleForDeletion: 1, deleted: 0 });
+        var failed = gcCli.failureRecord(new Error('scan failed'), 'apply');
+
+        expect(completed.event).to.equal('attachment_gc_completed');
+        expect(completed.storageBackend).to.equal('local');
+        expect(completed.filesScanned).to.equal(4);
+        expect(failed.event).to.equal('attachment_gc_failed');
+        expect(failed.storageBackend).to.equal('local');
+        expect(failed.mode).to.equal('apply');
+        expect(failed.error.code).to.equal('attachment_gc_error');
     });
 });

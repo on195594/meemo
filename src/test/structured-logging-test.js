@@ -221,4 +221,22 @@ describe('Structured Logging & Request Context (RF-401)', function () {
         expect(logs[0].error.message).to.equal('Database connection failed');
         expect(logs[0].error.code).to.equal('db_error');
     });
+
+    it('records error level and durationMs on 5xx middleware responses', function () {
+        var EventEmitter = require('events');
+        var logs = [];
+        var customLogger = logger.createLogger({ forceEnable: true, stream: function (entry) { logs.push(entry); } });
+        var response = new EventEmitter();
+        response.statusCode = 503;
+        response.locals = { errorCode: 'service_unavailable' };
+        response.setHeader = function () {};
+
+        customLogger.middleware({ headers: {}, method: 'GET', path: '/failed' }, response, function () {});
+        response.emit('finish');
+
+        expect(logs[0].event).to.equal('http_request');
+        expect(logs[0].status).to.equal(503);
+        expect(logs[0].level).to.equal('error');
+        expect(logs[0].durationMs).to.be.a('number');
+    });
 });

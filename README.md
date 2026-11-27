@@ -1,17 +1,15 @@
 # Meemo
 
-Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks. It uses username/password authentication, MongoDB for application data, accounts, and sessions, and the local filesystem for attachments.
+Meemo is a self-hosted manager for notes, ideas, links, bookmarks, and tasks backed by Express, Vue 3, MongoDB, and filesystem attachment storage.
 
 ## Features
 
-- Google Keep-inspired expanded note viewing and editing modal dialog with responsive backdrop, real-time 12-color theming, and auto-save
-- Markdown notes with tags, wikilinks, task lists, and MongoDB `$text` full-text search with relevance scoring
-- Fast list previews capped at 4,000 characters or 40 lines; open a note to read or edit its complete content (standalone note links always show the full note)
-- Attachments, archive, sticky notes, note copying ("Make a copy"), public sharing, stable private note links, and a reversible trash
-- Public feeds and RSS with canonical note URLs
-- Portable `.tar` import and export containing JSON notes and attachments
-- Local username/password accounts with bcrypt password hashes stored exclusively in MongoDB
-- Docker Compose deployment with health checks and graceful shutdown
+- Google Keep-inspired card stream and expanded note editor with 12-color theming, checklists, hashtags, wikilinks, and auto-save
+- Fast 4,000-char / 40-line list previews with MongoDB `$text` search and relevance scoring
+- Attachments, archive, pinned notes, note duplication ("Make a copy"), public sharing/RSS, private links, and reversible Trash
+- Portable `.tar` import/export containing JSON notes and attachment files
+- Local username/password accounts (bcrypt + MongoDB sessions) and optional, default-disabled MCP + OAuth assistant access
+- Installable PWA offline shell with session-fenced cache invalidation and Docker Compose deployment
 
 ## Quick start
 
@@ -22,77 +20,52 @@ export SESSION_SECRET="$(openssl rand -hex 32)"
 docker compose up --build -d
 ```
 
-Open <http://localhost:3000>, register an account, and sign in. View logs with `docker compose logs -f` and stop the stack with `docker compose down`.
+Open <http://localhost:3000>, register an account, and sign in. Use `docker compose logs -f` for logs and `docker compose down` to stop (`docker compose down -v` deletes both `meemo_data` and `mongodb_data` volumes).
 
-> Registration is configurable via `REGISTRATION_MODE` (`open`, `first-user`, or `disabled`). Put Meemo behind an access-controlled network or reverse proxy if account creation must be restricted.
-
-## Authentication and storage
-
-Meemo supports username/password authentication with accounts stored exclusively in MongoDB (`AUTH_USER_SOURCE=mongo`). Legacy file and fallback repositories have been retired. Successful logins create server-side sessions stored in MongoDB with decoupled, stable user IDs.
-
-The Compose stack uses two named volumes:
-
-- `meemo_data`: attachment files stored on disk
-- `mongodb_data`: accounts, notes, tags, settings, sessions, and optional MCP authorization state
-
-Set a stable, strong `SESSION_SECRET`. Development without it generates a process-local secret, invalidating existing sessions after restart. Production startup fails when the secret is missing.
-
-Running `docker compose down -v` permanently deletes both volumes and all Meemo data.
+For public hosting or reverse proxy setup, set `APP_ORIGIN="https://meemo.example.com"` and adapt [`docs/nginx-reverse-proxy.conf`](docs/nginx-reverse-proxy.conf) for TLS and gzip/brotli compression.
 
 ## Configuration
 
 | Variable | Application default | Compose value | Purpose |
 | --- | --- | --- | --- |
-| `PORT` | `3000` (or `VITE_DEV_PORT`) | Image default (`3000`) | Container HTTP port |
-| `BIND_ADDRESS` | `0.0.0.0` | Image default (`0.0.0.0`) | HTTP listen address |
+| `PORT` | `3000` (or `VITE_DEV_PORT`) | `3000` | Container HTTP port |
+| `BIND_ADDRESS` | `0.0.0.0` | `0.0.0.0` | HTTP listen address |
 | `MONGODB_URL` | `mongodb://127.0.0.1:27017/meemo` | `mongodb://mongodb:27017/meemo` | MongoDB connection URL |
-| `APP_ORIGIN` | `http://localhost` (RSS); unset otherwise | `http://localhost:3000` | Public origin for RSS/wikilinks and HTTPS production session cookie `Secure` flag |
-| `ATTACHMENT_DIR` | `./storage` | `/app/data/storage` | Attachment directory |
-| `AUTH_USER_SOURCE` | `mongo` | `mongo` | Account repository: `mongo` (exclusive target) |
-| `SESSION_SECRET` | Random in development; required in production | Value of host `SESSION_SECRET` | Session signing secret |
-| `REGISTRATION_MODE` | `open` in development; `first-user` in production | `first-user` | Registration policy: `open`, `first-user`, or `disabled` |
-| `TRUST_PROXY` | `loopback, uniquelocal` | Not set (app default) | Express `trust proxy` policy (`true`/`1`, `false`/`0`, or hop/subnet spec) |
-| `CORS_ORIGIN` | Unset | Not set | Optional comma-separated allowed origins for credentialed CORS |
-| `URL_ENRICHMENT_ENABLED` | `false` | Not set (app default) | Outbound URL metadata fetch (disabled by default for SSRF safety) |
-| `MAX_ATTACHMENT_SIZE` | `10485760` (10MB) | Not set (app default) | Maximum attachment upload size in bytes |
-| `MAX_IMPORT_SIZE` | `52428800` (50MB) | Not set (app default) | Maximum import archive size in bytes |
-| `SHUTDOWN_TIMEOUT_MS` | `15000` | Not set (app default) | Graceful shutdown timeout in milliseconds |
-| `MONGO_MAX_POOL_SIZE` | `50` | Not set (app default) | Maximum MongoDB connection pool size |
-| `MONGO_MIN_POOL_SIZE` | `1` | Not set (app default) | Minimum MongoDB connection pool size |
-| `MONGO_TIMEOUT_MS` | `3000` | Not set (app default) | MongoDB server selection timeout in milliseconds |
-| `LOGIN_RATE_LIMIT_WINDOW_MS` | `60000` | Not set (app default) | Login rate-limit window in milliseconds |
-| `LOGIN_RATE_LIMIT_MAX` | `10` | Not set (app default) | Maximum failed login attempts per IP/account per window |
-| `REGISTER_RATE_LIMIT_MAX` | `60` | Not set (app default) | Maximum registration requests per IP per minute |
-| `TRANSFER_RATE_LIMIT_MAX` | `60` | Not set (app default) | Maximum import/export requests per IP per minute |
-| `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |
-| `MCP_ENABLED` | `false` | Not forwarded | Only the exact value `true` enables MCP; grants control read/write access |
-| `MCP_PUBLIC_URL` | Unset | Not forwarded | Required fixed HTTPS bare origin in full or setup mode; HTTP loopback allowed in development |
-| `MCP_REDIRECT_URIS` | Unset | Not forwarded | Required exact approved HTTPS callback URLs, comma-separated without spaces |
-| `MCP_ALLOWED_ORIGINS` | Public origin only | Not forwarded | Additional approved HTTPS browser origins, comma-separated without spaces |
-| `MCP_BOOTSTRAP_UNTIL` | Unset | Not forwarded | Setup-only UTC deadline within 30 minutes; requires `MCP_ENABLED=false`, denies all registration/access and expires automatically |
-| `MCP_PROTOCOL_DEADLINE_MS` | `15000` | Not forwarded | Absolute timeout in milliseconds for `/mcp` protocol requests |
+| `APP_ORIGIN` | `http://localhost` (RSS); unset otherwise | `http://localhost:3000` | Public origin for RSS/wikilinks and HTTPS production `Secure` cookies |
+| `ATTACHMENT_DIR` | `./storage` | `/app/data/storage` | Filesystem attachment directory |
+| `AUTH_USER_SOURCE` | `mongo` | `mongo` | Exclusive account store (`mongo`) |
+| `SESSION_SECRET` | Random in dev; required in prod | Host `SESSION_SECRET` | Session signing secret |
+| `REGISTRATION_MODE` | `open` in dev; `first-user` in prod | `first-user` | Account registration: `open`, `first-user`, or `disabled` |
+| `TRUST_PROXY` | `loopback, uniquelocal` | App default | Express `trust proxy` setting |
+| `CORS_ORIGIN` | Unset | Unset | Optional comma-separated credentialed CORS origins |
+| `URL_ENRICHMENT_ENABLED` | `false` | App default | Outbound URL metadata probe (disabled for SSRF safety) |
+| `MAX_ATTACHMENT_SIZE` | `10485760` (10MB) | App default | Max attachment upload bytes |
+| `MAX_IMPORT_SIZE` | `52428800` (50MB) | App default | Max import `.tar` archive bytes |
+| `SHUTDOWN_TIMEOUT_MS` | `15000` | App default | Graceful HTTP shutdown timeout (ms) |
+| `MONGO_MAX_POOL_SIZE` | `50` | App default | MongoDB max connection pool size |
+| `MONGO_MIN_POOL_SIZE` | `1` | App default | MongoDB min connection pool size |
+| `MONGO_TIMEOUT_MS` | `3000` | App default | MongoDB server selection timeout (ms) |
+| `LOGIN_RATE_LIMIT_WINDOW_MS` | `60000` | App default | Login rate-limit window (ms) |
+| `LOGIN_RATE_LIMIT_MAX` | `10` | App default | Max failed logins per IP per window |
+| `REGISTER_RATE_LIMIT_MAX` | `60` | App default | Max registrations per IP per minute |
+| `TRANSFER_RATE_LIMIT_MAX` | `60` | App default | Max import/export requests per IP per minute |
+| `MEEMO_PORT` | — | `3000` | Host port mapped to container port `3000` |
+| `MCP_ENABLED` | `false` | Not forwarded | Exact `'true'` enables MCP + OAuth assistant access |
+| `MCP_PUBLIC_URL` | Unset | Not forwarded | Fixed HTTPS origin in MCP full/setup mode |
+| `MCP_REDIRECT_URIS` | Unset | Not forwarded | Exact approved HTTPS callback URIs (comma-separated, no spaces) |
+| `MCP_ALLOWED_ORIGINS` | Public origin only | Not forwarded | Optional comma-separated HTTPS browser origins |
+| `MCP_BOOTSTRAP_UNTIL` | Unset | Not forwarded | Setup-only UTC deadline (`<= 30m`); requires `MCP_ENABLED=false` |
+| `MCP_PROTOCOL_DEADLINE_MS` | `15000` | Not forwarded | Timeout (ms) for `/mcp` protocol requests |
 
-`.env.example` documents non-secret configuration keys. Node does not automatically load `.env`; export variables or pass them explicitly to the container. In particular, the repository Compose file does not forward MCP keys: adding them to a host `.env` alone does not enable the feature. See [MCP configuration](docs/GEMINI_ASSISTANT.md#enable-deliberately).
-
-For a public hostname or reverse proxy:
-
-```sh
-export APP_ORIGIN="https://meemo.example.com"
-export SESSION_SECRET="$(openssl rand -hex 32)"
-docker compose up --build -d
-```
-
-Adapt [`docs/nginx-reverse-proxy.conf`](docs/nginx-reverse-proxy.conf) for TLS termination, compression, and static asset caching on your host.
+See `.env.example` for non-secret keys. Node does not load `.env` automatically; pass environment variables explicitly (`docker-compose.yml` does not forward MCP keys).
 
 ## Gemini assistant (optional)
 
-Meemo exposes default-disabled MCP + OAuth for Gemini custom apps. Supported tools are `search_notes`, `get_note`, `batch_get_notes`, `list_tags`, `create_note`, `update_note`, `delete_note`, and `batch_delete_notes` with optimistic concurrency control (`expectedRevision`). Search can include complete Markdown bodies with `include_content: true`; batch reads/deletions accept up to 20 notes per call. No Gemini API key is needed. Users explicitly approve account-level private-note access, valid until revoked, and can revoke their own connections in **Settings → Manage assistant connections**. Retrieved content may be sent to Google.
-
-See [configuration, protocol limits, privacy and recovery](docs/GEMINI_ASSISTANT.md) before setting `MCP_ENABLED=true`, a fixed HTTPS `MCP_PUBLIC_URL`, and exact reviewed `MCP_REDIRECT_URIS` in the Node/container environment. If callbacks are not yet known, use the [short-lived callback discovery procedure](docs/GEMINI_ASSISTANT.md#discover-the-actual-gemini-callbacks-safely), not placeholder allowlists. Real-client acceptance passed maintainer manual acceptance (recorded 2026-10-22); local automated tests do not replace client acceptance when protocol settings or tools change. Enabling or deploying requires separate authorization.
+Meemo supports optional, default-disabled MCP v2 + OAuth 2.1 access (`search_notes`, `get_note`, `batch_get_notes`, `list_tags`, `create_note`, `update_note`, `delete_note`, `batch_delete_notes`) managed under **Settings → Manage assistant connections**. See [Gemini assistant](docs/GEMINI_ASSISTANT.md) for [safe callback discovery](docs/GEMINI_ASSISTANT.md#discover-the-actual-gemini-callbacks-safely), [deliberate enablement](docs/GEMINI_ASSISTANT.md#enable-deliberately), budgets, and recovery.
 
 ## Development
 
-Requirements: Node.js 24 or newer, npm, and Docker.
+Requirements: Node.js 24+, npm, and Docker.
 
 ```sh
 npm ci
@@ -101,73 +74,34 @@ npm run build
 ./localdevelopment
 ```
 
-`npm run build` compiles Vue 3 source into ignored `web/dist/` (disposable staging), then copies it to ignored `public/` (the Express runtime copy). `npm run build:web` only produces `web/dist/`; it does not update the Express-served frontend. Frontend behavior tests use Vitest; backend and contract tests use Mocha through `npm test`, which starts and removes a temporary MongoDB container and its anonymous data volumes. `./localdevelopment` starts a reusable development MongoDB container and the application.
-
-For a change, run the [relevant checks](CONTRIBUTING.md#validation). For the complete local gate, run `npm run verify` once: it checks generated API types, frontend types/tests/build, backend tests, and isolated Compose integration. There is no need to run those constituent commands again for the same candidate unless a failure or subsequent change warrants it.
-
-Before enabling revision-protected writes on an existing database, stop all Thing writers and run `npm run migrate:thing-revisions -- --dry-run --mongo-url <url> --expect-database <name>`, then apply and verify with the same explicit database name. The migration only fills missing revisions with `1` and refuses invalid existing values.
-
-To run only the Node.js process, provide MongoDB separately and use `npm start`.
-
-See [Architecture](docs/ARCHITECTURE.md) for tag authority, concurrency, and offline maintenance boundaries.
+- `npm run build` compiles `web/` into `web/dist/` and copies into `public/` (`npm run build:web` updates only `web/dist/`).
+- Run `npm test` for Mocha backend/Mongo tests (starts a temporary `mongo:8` container), `npm --prefix web test` for Vitest frontend tests, or targeted checks in [Contribution guide](CONTRIBUTING.md#validation). Run `npm run verify` only when the full CI quality + Compose integration gate is needed.
+- To run Node against an external MongoDB instance, use `npm start`.
 
 ## Production deployment
 
-On the current host, MongoDB is independently deployed and shared with travel-cards. `/home/lin/meemo` contains the existing production Compose configuration, which uses `meemo:latest`; the repository Compose stack is a standalone setup.
-
-From a clean, committed checkout, run `./deploy.sh` when deployment is authorized. It builds once with the commit label, updates only Meemo with `--no-deps --no-build`, waits up to 60 seconds for health, and verifies the running image. Failure restores the previous image and returns nonzero. The old app stays online during the build; container replacement causes a short interruption.
-
-Reuse relevant test results. Routine updates do not run database backups, freezes, restore rehearsals or the RC publishing workflow. See [Deployment and releases](docs/RELEASE_CHECKLIST.md) for the short flow and separately scoped data operations.
-
-## Repository and production directories
-
-Keep source code and production state in separate directories:
-
-- Use the Git checkout for source, tests, project documentation, and image builds.
-- Use a separate production operations directory for the active Compose configuration and persistent state. `deploy.sh` currently targets `/home/lin/meemo`; it is not a portable deployment entry point.
-- Runtime accounts live in MongoDB. Retained legacy account files are migration/rollback evidence, not an active authentication source.
-
-Build and test from the repository. Operate the deployed containers from the production directory. Keep backups and migration evidence outside both directories, and never copy credentials, account data, attachments, database files, or recovery artifacts into the repository.
+Production MongoDB is independently deployed on the host (`/home/lin/meemo` Compose config; shared with travel-cards). From a clean committed checkout when deployment is authorized, run `./deploy.sh` to build `meemo:latest` and replace only the `meemo` container with automatic health verification and rollback. Keep source/build work in the Git checkout, production config/data in `/home/lin/meemo`, and backups/recovery artifacts outside both. See [Deployment and releases](docs/RELEASE_CHECKLIST.md) and [Architecture](docs/ARCHITECTURE.md).
 
 ## Project structure
 
 | Path | Contents |
 | --- | --- |
-| `app.js` | Runtime composition root and server entry point (`startServer`) |
-| `src/lifecycle.js` | MongoDB pool lifecycle and graceful shutdown sequencing |
-| `src/http/` | Injected Express app factory, session/upload setup, domain routes, optional MCP v2 protocol/tool & OAuth 2.1 handlers, validation, and uniform HTTP errors |
-| `src/services/` | Promise-first authentication, things, search, attachments, sharing, RSS rendering, settings, health, import/export, and MCP auth/note services |
-| `src/storage/` | Local filesystem attachment adapter and short-lived MCP callback bootstrap store |
-| `src/database/` | MongoDB persistence for things, tags, settings, users, `system_config` markers, and optional TTL-backed `mcp_*` state; sessions use `connect-mongo` in `src/http/session.js` |
-| `src/users.js` | MongoDB account operations and bcrypt password handling |
-| `types/` | TypeScript domain definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`) |
-| `scripts/` | Frontend build, quality/Compose verification, Thing revision backfill, and attachment GC |
-| `src/test/` | Backend and contract tests run by Mocha |
-| `web/` | Vue 3 + Vite + TypeScript application and Vitest behavior tests; route query owns note filters |
-| `docs/` | [Documentation index](docs/README.md), current contracts/runbooks, roadmaps, and review snapshots |
-| `public/`, `web/dist/` | Generated frontend output; rebuild rather than edit |
-| `PRODUCT.md` | Target users, product scope, and accessibility commitments |
-| `DESIGN.md` | Material Design 3 and Google Keep tokens, color palette, and layout specs |
-| `runTests`, `localdevelopment` | Root development/test entry points |
-| `Dockerfile`, `start.sh`, `docker-compose.yml`, `deploy.sh` | Container startup and deployment entry points |
-| `.github/` | Continuous integration and repository configuration |
+| `app.js`, `src/lifecycle.js` | Runtime startup (`startServer`), MongoDB pool lifecycle, graceful shutdown |
+| `src/http/` | Express app, sessions, uploads, REST routes, Zod validation, optional MCP v2 + OAuth 2.1 handlers |
+| `src/services/` | Domain logic (auth, notes, search, attachments, sharing, RSS, settings, health, import/export, MCP) |
+| `src/database/` | MongoDB persistence (`things`, `settings`, `users`, `mcp_*`) |
+| `src/storage/` | Filesystem attachments and temporary MCP setup callback storage |
+| `src/users.js` | User account operations and bcrypt hashing |
+| `types/generated/` | Generated OpenAPI TypeScript types (`npm run api:generate`) |
+| `scripts/` | Frontend build, orphan attachment GC, quality/Compose verification |
+| `src/test/` | Mocha backend & contract tests |
+| `web/` | Vue 3 + Vite + TypeScript frontend and Vitest tests |
+| `docs/` | [Documentation index](docs/README.md), OpenAPI spec, architecture, and runbooks |
+| `public/`, `web/dist/` | Generated build artifacts (do not hand-edit or commit) |
 
-Do not commit generated `public/`, `web/dist/`, `node_modules/`, `web/node_modules/`, account files, attachments, or database data.
+## Docs & license
 
-## Contributing and security
+- [Documentation index](docs/README.md) · [Architecture](docs/ARCHITECTURE.md) · [Design system](DESIGN.md) · [Contribution guide](CONTRIBUTING.md)
+- [Gemini assistant](docs/GEMINI_ASSISTANT.md) · [Backup and restore](docs/BACKUP_RESTORE.md) · [Release checklist](docs/RELEASE_CHECKLIST.md) · [Security policy](SECURITY.md)
 
-- [Documentation index](docs/README.md)
-- [Product specification](PRODUCT.md)
-- [Design system](DESIGN.md)
-- [Contribution guide](CONTRIBUTING.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Long-term architecture](docs/LONG_TERM_ARCHITECTURE.md)
-- [Backup and restore](docs/BACKUP_RESTORE.md)
-- [Release checklist](docs/RELEASE_CHECKLIST.md)
-- [Dependency security](docs/DEPENDENCY_SECURITY.md)
-- [Gemini assistant (MCP)](docs/GEMINI_ASSISTANT.md)
-- [Security policy](SECURITY.md)
-
-## License
-
-Meemo is available under the [MIT License](LICENSE).
+Meemo is licensed under the [MIT License](LICENSE).

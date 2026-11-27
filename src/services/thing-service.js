@@ -1,9 +1,7 @@
 'use strict';
 
-var debug = require('debug')('services:things'),
-    search = require('./search-service.js'),
+var search = require('./search-service.js'),
     ssrf = require('../ssrf.js'),
-    tags = require('../database/tags.js'),
     things = require('../database/things.js');
 
 var TYPE_IMAGE = 'image';
@@ -230,56 +228,6 @@ async function getTags(userId, options) {
     return things.getTagUsage(userId, options);
 }
 
-async function cleanupTags() {
-    var repairedAt = Date.now();
-    var saved = await tags.getUnifiedCollection().find({}).toArray();
-    var metadata = new Map();
-    saved.forEach(function (tag) {
-        metadata.set(JSON.stringify([tag.ownerId, tag.name]), tag);
-    });
-
-    var thingsCol = things.getUnifiedCollection();
-    var allThings = await thingsCol.find({ deletedAt: { $exists: false } }).toArray();
-    for (var thing of allThings) {
-        if (typeof thing.ownerId !== 'string' || typeof thing.content !== 'string') {
-            throw new Error('Thing owner or content prevents exact tag reconstruction');
-        }
-        var extracted = extractTags(thing.content);
-        if (JSON.stringify(thing.tags) !== JSON.stringify(extracted)) {
-            // CAS: update only if content has not changed concurrently
-            await thingsCol.updateOne(
-                { _id: thing._id, ownerId: thing.ownerId, content: thing.content, revision: thing.revision },
-                { $set: { tags: extracted }, $inc: { revision: 1 } }
-            );
-        }
-    }
-
-    var aggregated = await thingsCol.aggregate([
-        { $match: { deletedAt: { $exists: false } } },
-        { $unwind: '$tags' },
-        { $group: { _id: { ownerId: '$ownerId', name: '$tags' }, usage: { $sum: 1 } } },
-        { $sort: { '_id.ownerId': 1, '_id.name': 1 } }
-    ]).toArray();
-
-    var reconstructed = aggregated.map(function (item) {
-        var identity = JSON.stringify([item._id.ownerId, item._id.name]);
-        var existing = metadata.get(identity);
-        var record = {
-            ownerId: item._id.ownerId,
-            name: item._id.name,
-            usage: item.usage,
-            createdAt: existing && existing.createdAt || repairedAt,
-            modifiedAt: repairedAt
-        };
-        if (existing && existing.usage === record.usage && existing.modifiedAt != null) {
-            record.modifiedAt = existing.modifiedAt;
-        }
-        return record;
-    });
-    debug('Reconstruct all tags projection atomically via rename');
-    await tags.replaceAll(reconstructed);
-}
-
 module.exports = {
     getAll: getAll,
     getAllPublic: getAllPublic,
@@ -295,7 +243,6 @@ module.exports = {
     extractURLs: extractURLs,
     extractTags: extractTags,
     facelift: facelift,
-    cleanupTags: cleanupTags,
     buildSearchFilter: search.buildSearchFilter,
     TYPE_IMAGE: TYPE_IMAGE,
     TYPE_UNKNOWN: TYPE_UNKNOWN

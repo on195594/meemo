@@ -8,8 +8,10 @@
 var expect = require('expect.js'),
     request = require('supertest'),
     config = require('../config.js'),
+    health = require('../services/health-service.js'),
     appModule = require('../../app.js'),
-    createApp = appModule.createApp;
+    createApp = appModule.createApp,
+    startServer = appModule.startServer;
 
 describe('Health & Runtime Contract', function () {
     var app;
@@ -33,10 +35,25 @@ describe('Health & Runtime Contract', function () {
         }
     });
 
-    describe('createApp', function () {
+    describe('createApp and production hardening', function () {
         it('succeeds when in production mode with SESSION_SECRET', function () {
             var prodApp = createApp({ isProduction: true, sessionSecret: 'secret123456789012345678901234567890', sessionMemory: true });
             expect(prodApp).to.be.ok();
+        });
+
+        it('throws immediately in createApp and startServer when NODE_ENV=production and SESSION_SECRET is missing', async function () {
+            expect(function () {
+                createApp({ isProduction: true, sessionSecret: '' });
+            }).to.throwError(/FATAL: SESSION_SECRET is required/);
+
+            var threw = false;
+            try {
+                await startServer({ isProduction: true, sessionSecret: '' });
+            } catch (err) {
+                threw = true;
+                expect(err.message).to.contain('FATAL: SESSION_SECRET is required');
+            }
+            expect(threw).to.be(true);
         });
     });
 
@@ -51,18 +68,14 @@ describe('Health & Runtime Contract', function () {
                     done();
                 });
         });
-    });
 
-    describe('GET /api/healthcheck (legacy)', function () {
-        it('returns 200 and sets X-Deprecated header', function (done) {
-            request(app)
-                .get('/api/healthcheck')
-                .expect(200)
-                .end(function (err, res) {
-                    expect(err).to.be(null);
-                    expect(res.headers['x-deprecated']).to.contain('deprecated');
-                    done();
-                });
+        it('reports bounded process memory fields for health responses', function () {
+            var stats = health.processStats();
+            expect(stats.uptimeSeconds).to.be.a('number');
+            expect(stats.memory.rssBytes).to.be.a('number');
+            expect(stats.memory.heapUsedBytes).to.be.a('number');
+            expect(stats.memory.heapTotalBytes).to.be.a('number');
+            expect(stats.memory.externalBytes).to.be.a('number');
         });
     });
 

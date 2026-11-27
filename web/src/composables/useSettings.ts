@@ -43,7 +43,6 @@ interface AppSettings {
   wide?: boolean;
   wideNavbar?: boolean;
   publicBackground?: boolean;
-  showTagSidebar?: boolean;
   keepPositionAfterEdit?: boolean;
   backgroundImageDataUrl?: string;
 }
@@ -54,7 +53,6 @@ const defaultSettings: AppSettings = {
   wide: false,
   wideNavbar: false,
   publicBackground: false,
-  showTagSidebar: true,
   keepPositionAfterEdit: false,
   backgroundImageDataUrl: '',
 };

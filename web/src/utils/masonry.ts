@@ -70,40 +70,6 @@ export function estimateItemHeight(item: unknown): number {
   return height;
 }
 
-// Bounded heuristic masonry: places each item into the shortest column using CSS-bounded height estimates.
-// Preserves left-to-right row order when item heights are equal.
-export function distributeColumns<T>(
-  items: readonly T[],
-  columnCount: number,
-  getHeight?: (item: T) => number
-): T[][] {
-  const n = Math.max(1, Math.floor(columnCount) || 1);
-  // Always n columns so short sections (e.g. two pinned notes) stay left-aligned with the grid.
-  const columns: T[][] = Array.from({ length: n }, () => []);
-  if (items.length === 0) return columns;
-
-  const colHeights = new Array(n).fill(0);
-
-  for (const item of items) {
-    const rawH = getHeight ? getHeight(item) : estimateItemHeight(item);
-    const height = Number.isFinite(rawH) && rawH > 0 ? rawH : 100;
-
-    let shortest = 0;
-    let minH = colHeights[0];
-    for (let c = 1; c < n; c++) {
-      if (colHeights[c] < minH) {
-        minH = colHeights[c];
-        shortest = c;
-      }
-    }
-
-    columns[shortest].push(item);
-    colHeights[shortest] += height;
-  }
-
-  return columns;
-}
-
 export function columnCountFor(width: number, cardWidth: number, gap: number): number {
   return Math.max(1, Math.floor((width + gap) / (cardWidth + gap)));
 }

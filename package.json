@@ -4,7 +4,6 @@
   "private": true,
   "description": "A personal ideas, notes or links manager",
   "main": "app.js",
-  "types": "types/index.d.ts",
   "scripts": {
     "build": "node scripts/build-frontend.js",
     "build:web": "npm --prefix web run build",
@@ -13,8 +12,7 @@
     "api:generate": "openapi-typescript docs/openapi.yaml --default-non-nullable false -o types/generated/api-types.ts",
     "verify:quality": "node scripts/verify.js --quality",
     "verify:integration": "bash scripts/verify-integration.sh",
-    "verify": "node scripts/verify.js",
-    "migrate:thing-revisions": "node scripts/migrate-thing-revisions.js"
+    "verify": "node scripts/verify.js"
   },
   "repository": {
     "type": "git",

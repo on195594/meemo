@@ -17,7 +17,6 @@ var assert = require('assert'),
 
 var userParams = z.object({ userId: validation.safePathSegment });
 var thingParams = userParams.extend({ thingId: validation.objectId });
-var legacyFileParams = userParams.extend({ fileId: validation.safePathSegment });
 var listQuery = z.object({
     filter: z.string().max(1000).optional(),
     mode: z.enum(['regex', 'text']).optional().default('regex'),
@@ -40,10 +39,6 @@ async function getAll(req, res, next) {
     var query = things.buildSearchFilter(req.query.filter, req.query.mode) || {};
     var result = await sharing.getAll(req.params.userId, query, req.query.skip, req.query.limit);
     next(new HttpSuccess(200, { things: result }));
-}
-
-function getFile(req, res, next) {
-    next(new HttpError(404, 'not found'));
 }
 
 async function listUsers(req, res, next) {
@@ -115,7 +110,6 @@ function streamPage(req, res, next) {
 }
 
 function registerRoutes(router) {
-    router.get('/api/public/:userId/files/:fileId', validate({ params: legacyFileParams }), getFile);
     router.get('/api/public/:userId/things', validate({ params: userParams, query: listQuery }), asyncHandler(getAll));
     router.get('/api/public/:userId/things/:thingId', validate({ params: thingParams }), asyncHandler(getThing));
     router.get('/api/rss/:userId', validate({ params: userParams }), asyncHandler(getRSS));

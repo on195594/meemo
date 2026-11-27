@@ -46,14 +46,12 @@ describe('API Contract and Progressive Types (RF-305)', function () {
             { path: '/api/import', methods: ['post'] },
             { path: '/api/public/{userId}/things', methods: ['get'] },
             { path: '/api/public/{userId}/things/{thingId}', methods: ['get'] },
-            { path: '/api/public/{userId}/files/{fileId}', methods: ['get'] },
             { path: '/api/users', methods: ['get'] },
             { path: '/api/users/{userId}', methods: ['get'] },
             { path: '/api/rss/{userId}', methods: ['get'] },
             { path: '/public/{userId}', methods: ['get'] },
             { path: '/api/health/live', methods: ['get'] },
-            { path: '/api/health/ready', methods: ['get'] },
-            { path: '/api/healthcheck', methods: ['get'] }
+            { path: '/api/health/ready', methods: ['get'] }
         ];
 
         requiredEndpoints.forEach(function (endpoint) {

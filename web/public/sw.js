@@ -5,7 +5,7 @@ const SHELL = 'meemo-shell-' + VERSION;
 const DATA = 'meemo-data-v2'; // isolate requests still running in the pre-fix worker
 const INVALID_DATA = '/__meemo_offline_invalid__';
 const NAVIGATION_TIMEOUT_MS = 2500;
-const BYPASS = /^\/(mcp|oauth|\.well-known|assistant|api\/(mcp|files|export|import|login|logout|register|health|healthcheck))(\/|$)/;
+const BYPASS = /^\/(mcp|oauth|\.well-known|assistant|api\/(mcp|files|export|import|login|logout|register|health))(\/|$)/;
 
 function strategyFor(request) {
   const url = new URL(request.url);

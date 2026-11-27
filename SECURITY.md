@@ -6,6 +6,15 @@ Do not disclose suspected vulnerabilities in a public issue. Use GitHub's privat
 
 Include the affected version or commit, reproduction steps, impact, and any suggested mitigation. Avoid accessing data that is not yours, disrupting a running service, or publishing exploit details before a fix is available.
 
+## Dependency checks
+
+Audit production dependencies directly with live package registries rather than relying on static logs:
+
+```sh
+npm audit --omit=dev
+npm --prefix web audit --omit=dev
+```
+
 ## Supported versions
 
 Security fixes are made on the current `master` branch. Older releases are not maintained separately; deploy the latest release or current container build.

@@ -36,7 +36,6 @@ describe('MongoDB $text Full-Text Index and Search (Task 3)', function () {
         if (dbClient) {
             await dbClient.close();
         }
-        databaseThings.resetCache();
     });
 
     describe('search-service query building and detection', function () {

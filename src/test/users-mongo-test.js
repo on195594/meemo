@@ -146,4 +146,16 @@ describe('MongoDB User Repository (RF-202)', function () {
             await assert.rejects(users.verify('idontexist', 'wrongpassword'), { code: 'not found' });
         });
     });
+
+    describe('AUTH_USER_SOURCE guard', function () {
+        it('rejects non-mongo authUserSource in production and unsupported values', function () {
+            var createApp = require('../../app.js').createApp;
+            expect(function () {
+                createApp({ isProduction: true, sessionSecret: 'test-secret', authUserSource: 'file' });
+            }).to.throwError(/FATAL: AUTH_USER_SOURCE must be mongo when NODE_ENV=production/);
+            expect(function () {
+                users.assertMongoUserSource('unsupported-source', false);
+            }).to.throwError(/Unsupported AUTH_USER_SOURCE/);
+        });
+    });
 });
