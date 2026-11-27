@@ -9,23 +9,29 @@ var assert = require('assert'),
 function MongoUserRepository(db) {
     this._db = db || null;
     this._indexesCreated = false;
+    this._indexPromise = null;
 }
 
 function isDuplicateKey(error) {
     return error.code === 11000 || (error.message && error.message.indexOf('E11000') !== -1);
 }
 
+async function hasUniqueUsernameIndex(collection) {
+    if (typeof collection.indexes !== 'function') return false;
+    var indexes = await collection.indexes().catch(function () { return []; });
+    return indexes.some(function (idx) {
+        return idx && idx.unique === true && idx.key &&
+            idx.key.usernameNorm === 1 && Object.keys(idx.key).length === 1;
+    });
+}
+
 MongoUserRepository.prototype.getCollection = function () {
     var collection = (this._db || config.db).collection('users');
     var self = this;
 
-    if (!this._indexesCreated) {
-        this._indexesCreated = true;
-        collection.createIndex({ usernameNorm: 1 }, { unique: true }).catch(function (error) {
-            if (error.codeName !== 'IndexOptionsConflict') {
-                console.error('Warning: could not create users.usernameNorm unique index:', error);
-            }
-            self._indexesCreated = false;
+    if (!this._indexesCreated && !this._indexPromise) {
+        this.ensureIndexes().catch(function (error) {
+            console.error('Warning: could not create users.usernameNorm unique index:', error);
         });
     }
     return collection;
@@ -33,18 +39,29 @@ MongoUserRepository.prototype.getCollection = function () {
 
 MongoUserRepository.prototype.ensureIndexes = async function () {
     var self = this;
-    try {
-        var db = self._db || config.db;
-        if (!db) throw new Error('MongoDB database is not connected');
-        await db.collection('users').createIndex({ usernameNorm: 1 }, { unique: true });
-        self._indexesCreated = true;
-    } catch (error) {
-        if (error.codeName === 'IndexOptionsConflict') {
+    var db = self._db || config.db;
+    if (!db) throw new Error('MongoDB database is not connected');
+    var collection = db.collection('users');
+    if (!self._indexPromise) {
+        self._indexPromise = collection.createIndex({ usernameNorm: 1 }, { unique: true }).then(function () {
             self._indexesCreated = true;
-            return;
-        }
-        throw error;
+        }).catch(async function (error) {
+            var isConflict = error && (
+                error.codeName === 'IndexOptionsConflict' ||
+                error.codeName === 'IndexKeySpecsConflict' ||
+                error.code === 85 ||
+                error.code === 86
+            );
+            if (isConflict && await hasUniqueUsernameIndex(collection)) {
+                self._indexesCreated = true;
+                return;
+            }
+            self._indexesCreated = false;
+            self._indexPromise = null;
+            throw error;
+        });
     }
+    return self._indexPromise;
 };
 
 MongoUserRepository.prototype.claimFirstUserRegistration = async function () {
@@ -105,29 +122,29 @@ MongoUserRepository.prototype.create = async function (userData) {
     assert(userData && typeof userData === 'object');
     assert.strictEqual(typeof userData.username, 'string');
 
-    return this.getByUsername(userData.username).then(function (existing) {
-        if (existing) throw new Error('user exists');
+    var collection = self.getCollection();
+    if (!self._indexesCreated) await self.ensureIndexes();
 
-        var doc = {
-            username: userData.username,
-            usernameNorm: userData.username.toLowerCase(),
-            displayName: userData.displayName,
-            email: userData.email,
-            passwordHash: userData.passwordHash,
-            createdAt: typeof userData.createdAt === 'number' ? userData.createdAt : Date.now(),
-            status: userData.status || 'active'
-        };
-        if (userData.id && ObjectId.isValid(userData.id)) doc._id = new ObjectId(userData.id);
+    var doc = {
+        username: userData.username,
+        usernameNorm: userData.username.toLowerCase(),
+        displayName: userData.displayName,
+        email: userData.email,
+        passwordHash: userData.passwordHash,
+        createdAt: typeof userData.createdAt === 'number' ? userData.createdAt : Date.now(),
+        status: userData.status || 'active'
+    };
+    if (userData.id && ObjectId.isValid(userData.id)) doc._id = new ObjectId(userData.id);
 
-        return self.getCollection().insertOne(doc).then(function (result) {
-            return Object.assign({}, doc, { id: String(result.insertedId || doc._id) });
-        });
-    }).catch(function (error) {
+    try {
+        var result = await collection.insertOne(doc);
+        return Object.assign({}, doc, { id: String(result.insertedId || doc._id) });
+    } catch (error) {
         if (isDuplicateKey(error)) {
             throw new Error('user exists');
         }
         throw error;
-    });
+    }
 };
 
 MongoUserRepository.prototype.list = async function () {

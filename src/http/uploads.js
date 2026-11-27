@@ -1,7 +1,9 @@
 'use strict';
 
-var multer = require('multer'),
+var fs = require('fs'),
+    multer = require('multer'),
     os = require('os'),
+    path = require('path'),
     responses = require('./responses.js');
 
 function createUploadMiddleware(uploadInstance) {
@@ -30,17 +32,26 @@ function uploadLimits(fileSize) {
     };
 }
 
+function ensurePrivateUploadDir() {
+    var owner = typeof process.geteuid === 'function' ? process.geteuid() : process.pid;
+    var dir = path.join(os.tmpdir(), 'meemo-uploads-' + owner);
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.chmodSync(dir, 0o700);
+    return dir;
+}
+
 function createUploads() {
     var maxAttachmentSize = parseInt(process.env.MAX_ATTACHMENT_SIZE, 10) || (10 * 1024 * 1024);
     var maxImportSize = parseInt(process.env.MAX_IMPORT_SIZE, 10) || (50 * 1024 * 1024);
+    var uploadDir = ensurePrivateUploadDir();
 
     return {
         attachmentUpload: createUploadMiddleware(multer({
-            storage: multer.memoryStorage(),
+            dest: uploadDir,
             limits: uploadLimits(maxAttachmentSize)
         }).any()),
         importUpload: createUploadMiddleware(multer({
-            dest: os.tmpdir(),
+            dest: uploadDir,
             limits: uploadLimits(maxImportSize)
         }).any())
     };

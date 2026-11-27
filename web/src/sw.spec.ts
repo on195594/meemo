@@ -410,4 +410,19 @@ describe('service worker', () => {
     expect(await (await sw.request(get('/api/things'))).text()).toBe('v2');
     expect(await (await sw.request(get('/api/things?skip=10'))).text()).toBe('page2');
   });
+
+  it('trims an oversized data cache down to 60 entries in one update', async () => {
+    const caches = fakeCaches();
+    const open = caches.open.bind(caches);
+    const cacheKeys = async (store: Map<string, Response>) => [...store.keys()];
+    vi.spyOn(caches, 'open').mockImplementation(async (name) => {
+      const c = await open(name);
+      return { ...c, keys: () => cacheKeys(caches.stores.get(name)!) } as any;
+    });
+    const prefilled = await caches.open(dataCache);
+    for (let i = 0; i < 65; i++) await prefilled.put(get(`/api/things?p=${i}`), new Response(`p${i}`));
+    const { sw } = load(vi.fn().mockResolvedValue(new Response('latest')), caches);
+    await sw.request(get('/api/things?p=new'));
+    expect(caches.stores.get(dataCache)!.size).toBe(60);
+  });
 });

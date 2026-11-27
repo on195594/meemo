@@ -489,23 +489,36 @@ describe('Import Safety and Consistency (RF-106)', function () {
             });
         });
 
-        it('tracks and removes an insert when its post-insert read fails', async function () {
-            var originalGet = things.get;
-            things.get = function () { return Promise.reject(new Error('forced post-insert read failure')); };
+        it('tracks and removes committed prefix when an ordered insertMany batch fails midway', async function () {
+            var thingsCol = things.getUnifiedCollection();
+            var ObjectId = require('mongodb').ObjectId;
+            var preId = new ObjectId();
+            await thingsCol.insertOne({ _id: preId, ownerId: 'other-owner', content: 'collision' });
+            var originalInsertManyFull = things.insertManyFull;
+            things.insertManyFull = function (userId, items, onPreparedDocs) {
+                items[1]._id = preId;
+                return originalInsertManyFull.call(things, userId, items, onPreparedDocs);
+            };
             var outcome;
             try {
-                outcome = await logic.importData(testUserId, { things: [{ content: 'post-read failure' }] }).then(function (result) {
+                outcome = await logic.importData(testUserId, {
+                    things: [
+                        { content: 'prefix committed' },
+                        { content: 'mid-batch duplicate id failure' },
+                        { content: 'tail never inserted' }
+                    ]
+                }).then(function (result) {
                     return { error: null, result: result };
                 }, function (error) {
                     return { error: error, result: undefined };
                 });
             } finally {
-                things.get = originalGet;
+                things.insertManyFull = originalInsertManyFull;
+                await thingsCol.deleteOne({ _id: preId });
             }
 
             expect(outcome.error).to.be.ok();
-            expect(outcome.error.message).to.contain('forced post-insert read failure');
-            expect(await things.getUnifiedCollection().countDocuments({ ownerId: testUserId })).to.equal(0);
+            expect(await thingsCol.countDocuments({ ownerId: testUserId })).to.equal(0);
         });
 
         it('does not mutate persisted tag projection when an import fails', async function () {
@@ -519,12 +532,9 @@ describe('Import Safety and Consistency (RF-106)', function () {
                 marker: 'preserve'
             });
             var before = await tagCollection.findOne({ ownerId: testUserId, name: 'existing' });
-            var originalInsertFull = things.insertFull;
-            var insertCalls = 0;
-            things.insertFull = function () {
-                insertCalls++;
-                if (insertCalls === 2) return Promise.reject(new Error('forced second insert failure'));
-                return originalInsertFull.apply(things, arguments);
+            var originalInsertManyFull = things.insertManyFull;
+            things.insertManyFull = function () {
+                return Promise.reject(new Error('forced batch insert failure'));
             };
 
             var outcome;
@@ -540,7 +550,7 @@ describe('Import Safety and Consistency (RF-106)', function () {
                     return { error: error, result: undefined };
                 });
             } finally {
-                things.insertFull = originalInsertFull;
+                things.insertManyFull = originalInsertManyFull;
             }
 
             var after = await tagCollection.findOne({ ownerId: testUserId, name: 'existing' });
@@ -561,11 +571,8 @@ describe('Import Safety and Consistency (RF-106)', function () {
                 modifiedAt: 222,
                 marker: 'before'
             });
-            var originalInsertFull = things.insertFull;
-            var insertCalls = 0;
-            things.insertFull = function () {
-                insertCalls++;
-                if (insertCalls !== 2) return originalInsertFull.apply(things, arguments);
+            var originalInsertManyFull = things.insertManyFull;
+            things.insertManyFull = function () {
                 return Promise.all([
                     tagCollection.updateOne({ ownerId: testUserId, name: 'existing' }, {
                         $inc: { usage: 3 },
@@ -592,7 +599,7 @@ describe('Import Safety and Consistency (RF-106)', function () {
                     return { error: error, result: undefined };
                 });
             } finally {
-                things.insertFull = originalInsertFull;
+                things.insertManyFull = originalInsertManyFull;
             }
 
             var existing = await tagCollection.findOne({ ownerId: testUserId, name: 'existing' });

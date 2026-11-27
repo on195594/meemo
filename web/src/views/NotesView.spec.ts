@@ -275,8 +275,15 @@ describe('Keep-style notes workspace', () => {
     });
     wrapper = (await renderApp(fetchMock)).wrapper;
     const card = (id: string) => wrapper!.get(`[data-note-id="${id}"]`);
-    const columns = () => wrapper!.findAll('.masonry-column').map(column =>
-      column.findAll('.note-card').map(card => card.attributes('data-note-id')));
+    const columns = () => {
+      const colCount = mode === 'grid' ? 2 : 1;
+      const cols: string[][] = Array.from({ length: colCount }, () => []);
+      for (const el of wrapper!.findAll('.note-card')) {
+        const col = mode === 'grid' ? Number(el.attributes('data-column') || 0) : 0;
+        cols[col]?.push(el.attributes('data-note-id')!);
+      }
+      return cols;
+    };
     expect(columns()).toEqual(mode === 'grid' ? [['tall'], ['editable', 'selected', 'tail']] : [['tall', 'editable', 'selected', 'tail']]);
     const original = card('editable').element;
     await card('selected').get('.card-select-btn').trigger('click');
@@ -286,7 +293,7 @@ describe('Keep-style notes workspace', () => {
     expect(card('selected').classes()).toContain('is-selected');
     expect(document.activeElement).toBe(card('editable').get('.color-btn').element);
     expect(card('editable').find('.color-palette-popover').exists()).toBe(false);
-    if (mode === 'grid') expect(card('editable').element).not.toBe(original);
+    expect(card('editable').element).toBe(original);
     expect(columns()).toEqual(mode === 'grid' ? [['editable', 'selected', 'tail'], ['tall']] : [['editable', 'tall', 'selected', 'tail']]);
 
     await wrapper.get('[aria-label="Clear selection"]').trigger('click');

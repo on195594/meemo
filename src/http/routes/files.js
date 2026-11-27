@@ -17,7 +17,7 @@ var fileParams = z.object({
 
 async function add(req, res, next) {
     var file = req.file || (req.files && req.files[0]);
-    if (!file || !file.buffer) throw new HttpError(400, 'missing file');
+    if (!file || (!file.buffer && !file.path)) throw new HttpError(400, 'missing file');
     next(new HttpSuccess(201, await attachments.save(req.user.id, file)));
 }
 

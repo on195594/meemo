@@ -689,4 +689,23 @@ describe('useNotes behavior', () => {
     expect(result.success).toBe(true);
     expect(store.things.value).toEqual([]);
   });
+
+  it('revalidates all loaded pages in chunks when fetchMore runs after a mutation beyond 50 notes', async () => {
+    const remote = Array.from({ length: 125 }, (_, i) => note(String(i)));
+    apiMock.list.mockImplementation(async ({ skip, limit }) => ({ things: remote.slice(skip, skip + limit) }));
+    const store = useNotes();
+    await store.fetchNotes();
+    while (store.things.value.length < 105 && store.hasMore.value) await store.fetchMore();
+    expect(store.things.value).toHaveLength(105);
+
+    const created = note('new', { modifiedAt: 2 });
+    remote.unshift(created);
+    apiMock.create.mockResolvedValue({ thing: created });
+    await store.createNote(created.content);
+
+    await store.fetchMore();
+    expect(store.things.value).toHaveLength(121);
+    expect(store.things.value[0]._id).toBe('new');
+    expect(store.hasMore.value).toBe(true);
+  });
 });

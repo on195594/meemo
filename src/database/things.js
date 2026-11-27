@@ -102,16 +102,25 @@ async function ensureTextIndex(collection) {
 async function ensureIndexes() {
     if (!config.db) throw new Error('MongoDB database is not connected');
     var collection = config.db.collection('things');
-    await collection.updateMany({ archived: { $exists: false } }, { $set: { archived: false } });
+    var configCol = typeof config.db.collection === 'function' ? config.db.collection('system_config') : null;
+    var backfilled = configCol && typeof configCol.findOne === 'function'
+        ? await configCol.findOne({ _id: 'things-archived-backfilled' }).catch(function () { return null; })
+        : null;
+    if (!backfilled) {
+        await collection.updateMany({ archived: { $exists: false } }, { $set: { archived: false } });
+        if (configCol && typeof configCol.updateOne === 'function') {
+            await configCol.updateOne(
+                { _id: 'things-archived-backfilled' },
+                { $setOnInsert: { completedAt: Date.now() } },
+                { upsert: true }
+            ).catch(function () {});
+        }
+    }
     await Promise.all([
         createIndex(collection, { ownerId: 1, modifiedAt: -1 }),
-        createIndex(collection, { ownerId: 1, sticky: -1, modifiedAt: -1 }),
-        createIndex(collection, { ownerId: 1, archived: 1, modifiedAt: -1 }),
-        createIndex(collection, { ownerId: 1, tags: 1 }),
-        createIndex(collection, { ownerId: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
-        createIndex(collection, { ownerId: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
         createIndex(collection, { ownerId: 1, deletedAt: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
-        createIndex(collection, { ownerId: 1, deletedAt: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 })
+        createIndex(collection, { ownerId: 1, deletedAt: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }),
+        createIndex(collection, { 'attachments.identifier': 1 }, { sparse: true })
     ]);
     await ensureTextIndex(collection);
 }
@@ -267,6 +276,35 @@ async function get(userId, thingId) {
     return result;
 }
 
+async function getAttachmentTarget(userId, thingId) {
+    assert.strictEqual(typeof userId, 'string');
+    assert.strictEqual(typeof thingId, 'string');
+
+    if (!ObjectId.isValid(thingId)) throw new Error('not found');
+    var result = await getUnifiedCollection().findOne(
+        { _id: new ObjectId(thingId), ownerId: userId, deletedAt: { $exists: false } },
+        { projection: { ownerId: 1, attachments: 1, public: 1, shared: 1 } }
+    );
+    if (!result) throw new Error('not found');
+    result._id = String(result._id);
+    if (!result.ownerId) result.ownerId = userId;
+    result.public = !!result.public;
+    result.shared = !!result.shared;
+    return result;
+}
+
+async function getDeleteTarget(userId, thingId) {
+    assert.strictEqual(typeof userId, 'string');
+    assert.strictEqual(typeof thingId, 'string');
+    if (!ObjectId.isValid(thingId)) throw new Error('not found');
+    var result = await getUnifiedCollection().findOne(
+        { _id: new ObjectId(thingId), ownerId: userId, deletedAt: { $exists: false } },
+        { projection: { revision: 1, public: 1, shared: 1 } }
+    );
+    if (!result) throw new Error('not found');
+    return result;
+}
+
 async function getById(thingId) {
     assert.strictEqual(typeof thingId, 'string');
 
@@ -279,20 +317,16 @@ async function getById(thingId) {
 }
 
 async function add(userId, content, tags, attachments, externalContent, color = 'default', assistant) {
-    return insertFull(userId, content, tags, attachments, externalContent, Date.now(), Date.now(), color, assistant).then(function (result) {
-        return get(userId, result._id);
-    });
+    return insertFull(userId, content, tags, attachments, externalContent, Date.now(), Date.now(), color, assistant);
 }
 
 async function addFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color = 'default') {
-    return insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color).then(function (result) {
-        return get(userId, result._id);
-    });
+    return insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color);
 }
 
-async function insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color = 'default', assistant) {
+function buildThingDoc(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color = 'default', assistant) {
     if (!noteColors.isValidNoteColor(color)) {
-        return Promise.reject(noteColors.invalidNoteColorError());
+        throw noteColors.invalidNoteColorError();
     }
 
     assert.strictEqual(typeof userId, 'string');
@@ -317,12 +351,41 @@ async function insertFull(userId, content, tags, attachments, externalContent, c
         color: color
     };
     if (assistant) doc.assistant = assistant;
+    return doc;
+}
 
+async function insertFull(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color = 'default', assistant) {
+    var doc = buildThingDoc(userId, content, tags, attachments, externalContent, createdAt, modifiedAt, color, assistant);
     var result = await getUnifiedCollection().insertOne(doc);
     if (!result) throw new Error('no result returned');
     doc._id = result.insertedId.toString();
     postProcess(userId, doc);
     return doc;
+}
+
+async function insertManyFull(userId, items, onPreparedDocs) {
+    if (!items.length) return [];
+    var docs = items.map(function (item) {
+        var doc = buildThingDoc(
+            userId,
+            item.content,
+            item.tags,
+            item.attachments,
+            item.externalContent,
+            item.createdAt,
+            item.modifiedAt,
+            item.color
+        );
+        doc._id = item._id instanceof ObjectId ? item._id : new ObjectId();
+        return doc;
+    });
+    if (typeof onPreparedDocs === 'function') onPreparedDocs(docs);
+    var result = await getUnifiedCollection().insertMany(docs, { ordered: true });
+    docs.forEach(function (doc, index) {
+        doc._id = String((result && result.insertedIds && result.insertedIds[index]) || doc._id);
+        postProcess(userId, doc);
+    });
+    return docs;
 }
 
 async function put(userId, thingId, content, tags, attachments, externalContent, isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant) {
@@ -438,10 +501,13 @@ module.exports = {
     getSnapshot: getSnapshot,
     getSnapshots: getSnapshots,
     get: get,
+    getAttachmentTarget: getAttachmentTarget,
+    getDeleteTarget: getDeleteTarget,
     getById: getById,
     add: add,
     addFull: addFull,
     insertFull: insertFull,
+    insertManyFull: insertManyFull,
     put: put,
     del: del,
     restore: restore,

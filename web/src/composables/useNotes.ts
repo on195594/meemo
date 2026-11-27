@@ -106,10 +106,12 @@ export function useNotes() {
 
   function invalidatePagination(): void {
     const restartReset = isLoading.value;
-    paginationInvalidated = true;
     const requestGeneration = ++notesRequestGeneration;
-    hasMore.value = true;
     isLoadingMore.value = false;
+    if (hasMore.value || restartReset || skip.value > limit.value) {
+      paginationInvalidated = true;
+      hasMore.value = true;
+    }
     if (restartReset) {
       // Keep the reset loading; coalesce mutations and yield to newer filters/session resets.
       void Promise.resolve().then(() => {
@@ -119,9 +121,11 @@ export function useNotes() {
   }
 
   async function fetchNotes(reset = true): Promise<void> {
+    const wasInvalidated = !reset && paginationInvalidated;
     reset = reset || paginationInvalidated;
     const generation = userGeneration;
     const requestGeneration = reset ? ++notesRequestGeneration : notesRequestGeneration;
+    const prevLoadedCount = things.value.length;
     if (reset) {
       paginationInvalidated = false;
       skip.value = 0;
@@ -135,14 +139,38 @@ export function useNotes() {
 
     try {
       const filter = activeFilter.value || undefined;
-      const listParams: Parameters<typeof api.things.list>[0] = {
+      const baseParams = {
         filter,
         archived: isArchived.value,
-        skip: skip.value,
-        limit: limit.value,
+        ...(isDeleted.value ? { deleted: true } : {}),
       };
-      if (isDeleted.value) listParams.deleted = true;
-      const res = await api.things.list(listParams);
+
+      if (wasInvalidated && prevLoadedCount > 0) {
+        const targetCount = prevLoadedCount + limit.value;
+        const merged = new Map<string, Thing>();
+        let currentSkip = 0;
+        let exhausted = false;
+
+        while (currentSkip < targetCount) {
+          const chunkLimit = Math.min(100, targetCount - currentSkip);
+          const res = await api.things.list({ ...baseParams, skip: currentSkip, limit: chunkLimit });
+          if (generation !== userGeneration || requestGeneration !== notesRequestGeneration) return;
+          const fetchedThings = res.things || [];
+          for (const thing of fetchedThings) merged.set(thing._id, thing);
+          currentSkip += fetchedThings.length;
+          if (fetchedThings.length < chunkLimit) {
+            exhausted = true;
+            break;
+          }
+        }
+
+        things.value = [...merged.values()];
+        skip.value = currentSkip;
+        hasMore.value = !exhausted;
+        return;
+      }
+
+      const res = await api.things.list({ ...baseParams, skip: skip.value, limit: limit.value });
 
       if (generation !== userGeneration || requestGeneration !== notesRequestGeneration) return;
 

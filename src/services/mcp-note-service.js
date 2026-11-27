@@ -75,6 +75,11 @@ async function updateNote(userId, params, client) {
     if (isArchived !== !!existing.archived) previous.archived = !!existing.archived;
     if (isSticky !== !!existing.sticky) previous.sticky = !!existing.sticky;
 
+    var precomputed = newContent === existing.content ? {
+        tags: Array.isArray(existing.tags) ? existing.tags : [],
+        externalContent: Array.isArray(existing.externalContent) ? existing.externalContent : []
+    } : undefined;
+
     var result = await thingService.put(
         userId,
         params.id,
@@ -86,7 +91,8 @@ async function updateNote(userId, params, client) {
         isSticky,
         newColor,
         params.expectedRevision,
-        marker('update', client, previous)
+        marker('update', client, previous),
+        precomputed
     );
     return {
         id: String(result._id),
@@ -95,7 +101,7 @@ async function updateNote(userId, params, client) {
 }
 
 async function deleteNote(userId, params, client) {
-    var existing = await things.get(userId, params.id);
+    var existing = await things.getDeleteTarget(userId, params.id);
     if ((existing.revision || 1) !== params.expectedRevision) {
         var conflict = new Error('Thing revision conflict');
         conflict.code = 'revision_conflict';
@@ -111,14 +117,43 @@ async function deleteNote(userId, params, client) {
 }
 
 async function batchDeleteNotes(userId, params, client) {
-    var result = { deleted: [], errors: [] };
-    for (var item of params.items) {
-        try {
-            await deleteNote(userId, item, client);
-            result.deleted.push(item.id);
-        } catch (error) {
-            result.errors.push({ id: item.id, code: error.message === 'not found' ? 'not_found' : (error.code || error.errorCode || 'tool_failed') });
+    var items = params.items;
+    var outcomes = new Array(items.length);
+    var lastById = new Map();
+    var cursor = 0;
+
+    async function runOne(index) {
+        var item = items[index];
+        var prior = lastById.get(item.id);
+        var task = (prior ? prior.catch(function () {}) : Promise.resolve()).then(async function () {
+            try {
+                await deleteNote(userId, item, client);
+                outcomes[index] = { ok: true, id: item.id };
+            } catch (error) {
+                outcomes[index] = {
+                    ok: false,
+                    id: item.id,
+                    code: error.message === 'not found' ? 'not_found' : (error.code || error.errorCode || 'tool_failed')
+                };
+            }
+        });
+        lastById.set(item.id, task);
+        await task;
+    }
+
+    async function worker() {
+        while (cursor < items.length) {
+            var index = cursor++;
+            await runOne(index);
         }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(4, items.length) }, worker));
+
+    var result = { deleted: [], errors: [] };
+    for (var i = 0; i < outcomes.length; i++) {
+        if (outcomes[i].ok) result.deleted.push(outcomes[i].id);
+        else result.errors.push({ id: outcomes[i].id, code: outcomes[i].code });
     }
     return result;
 }

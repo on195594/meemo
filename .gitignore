@@ -7,4 +7,7 @@ dist/
 /database/
 users.json
 .users.json
+.env
+.env.*
+!.env.example
 .playwright-mcp/

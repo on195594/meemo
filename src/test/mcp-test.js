@@ -240,6 +240,32 @@ describe('MCP read/write tools and OAuth isolation', function () {
         assert.equal(denied.redirect.searchParams.get('error'), 'access_denied');
         assert.equal(denied.redirect.searchParams.get('code'), null);
         await alice.post('/api/mcp/consent').set('X-CSRF-Token', denied.csrfToken).send({ request: denied.request, allow: true }).expect(400);
+
+        // Exact redirect_uri match (no loopback port relaxation)
+        var loopbackClient = await protocol(app, 'post', '/oauth/register').send({
+            redirect_uris: [callback], token_endpoint_auth_method: 'none', client_name: 'Loopback Check', grant_types: ['authorization_code']
+        }).expect(201);
+        var mismatch = await protocol(app, 'get', '/oauth/authorize').query({
+            client_id: loopbackClient.body.client_id, redirect_uri: 'https://client.example:8443/oauth/callback',
+            response_type: 'code', code_challenge: challenge(verifier), code_challenge_method: 'S256'
+        }).expect(400);
+        assert.equal(mismatch.headers.location, undefined);
+
+        // Unsupported response_type preserves state (including empty string) in error redirect
+        var unsupported = await protocol(app, 'get', '/oauth/authorize').query({
+            client_id: client.client_id, redirect_uri: callback,
+            response_type: 'token', state: '', code_challenge: challenge(verifier), code_challenge_method: 'S256'
+        }).expect(302);
+        var unsupportedUrl = new URL(unsupported.headers.location);
+        assert.equal(unsupportedUrl.searchParams.get('error'), 'unsupported_response_type');
+        assert.equal(unsupportedUrl.searchParams.get('state'), '');
+
+        // PKCE verifier outside RFC 7636 length/syntax is rejected before hashing
+        var shortVerifier = 'short';
+        var shortChallenge = challenge(shortVerifier);
+        var shortConsent = await consent(app, alice, client, shortVerifier);
+        assert.equal(shortChallenge.length, 43);
+        assert.equal((await exchange(app, client, shortVerifier, shortConsent.redirect.searchParams.get('code'))).status, 400);
     });
 
     it('preserves opaque OAuth state beyond 4096 characters and logs only callback sizes', async function () {

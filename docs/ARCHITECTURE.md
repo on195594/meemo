@@ -8,10 +8,10 @@ Meemo is a small browser application served by Express and backed by MongoDB and
 2. `src/http/app.js` provides the injected `createApp` Express application factory; `src/http/session.js` and `src/http/uploads.js` own session and upload middleware.
 3. `src/http/router.js` composes domain route modules under `src/http/routes/`; Zod schemas validate body, query, and path input before handlers run.
 4. `src/http/responses.js` maps failures to stable API error codes without returning internal stack traces or filesystem paths.
-5. `src/services/` implements authentication, notes, attachments, sharing, settings, health, and import/export behavior without depending on Express.
+11. `src/services/` implements authentication, notes, search, attachments, sharing, RSS rendering (`src/services/rss-renderer.js`), settings, health, import/export, and MCP auth/note behavior without depending on Express.
 6. Runtime, HTTP, services, storage, user repositories, and database modules use Promise-first `async`/`await` without `nodeify` callback adapters (only OS signal attachment in tests retains a completion hook).
-7. `src/database/` reads and writes MongoDB collections (unified collections `things`, `tags`, and `settings` partitioned by `ownerId`, plus `users` and `sessions`).
-8. `src/storage/local-storage.js` owns persistent attachment filesystem access.
+7. `src/database/` reads and writes MongoDB collections (unified collections `things`, `tags`, and `settings` partitioned by `ownerId`, plus `users`, `sessions`, `system_config` markers, and optional TTL-backed `mcp_*` collections).
+8. `src/storage/local-storage.js` owns persistent attachment filesystem access, and `src/storage/mcp-bootstrap.js` handles short-lived setup callback capture.
 9. `src/users.js` handles account operations and passwords through `MongoUserRepository`; legacy file/fallback repositories and the unused `UserRepository` compatibility alias have been removed.
 10. `npm run build` compiles `web/` with Vite into ignored `web/dist/`, then copies the output to ignored `public/`, serving as the modern Vue 3 Single Page Application with client-side routing, Material Design 3 tokens, 12-color note theming, and a Google Keep-inspired expanded note viewing/editing modal dialog.
 
@@ -31,7 +31,7 @@ Interactive login uses username/password authentication. Passwords are stored as
 
 ## Optional MCP assistant
 
-`src/http/app.js` mounts `src/http/mcp.js` protocol routes before static/SPA/session handling and cookie-authenticated connection APIs after session middleware. Enabled mode uses the official MCP SDK's stateless Streamable HTTP and OAuth authorization-code/PKCE handlers; configuration is fixed at startup and defaults off. Reserved protocol/API paths return 404 when disabled rather than falling into SPA routing.
+`src/http/app.js` mounts `src/http/mcp.js` protocol routes before static/SPA/session handling and cookie-authenticated connection APIs after session middleware. Enabled mode uses the official MCP v2 SDK (`@modelcontextprotocol/server`, `@modelcontextprotocol/node`, `@modelcontextprotocol/express`) for stateless Streamable HTTP and Bearer resource verification paired with self-contained Express OAuth 2.1 authorization-code/PKCE handlers in `src/http/mcp-oauth.js` (shared OAuth errors in `src/mcp-errors.js`); configuration is fixed at startup and defaults off. Reserved protocol/API paths return 404 when disabled rather than falling into SPA routing.
 
 A mutually exclusive, absolute-UTC setup window (`MCP_BOOTSTRAP_UNTIL`, maximum 30 minutes) publishes only discovery and a rejection-only registration receiver. It skips the OAuth repository and all note tools. `src/storage/mcp-bootstrap.js` retains only bounded Google callback URLs in private temporary storage and removes them at expiry. Operator review is mandatory before any whitelist change; receipt alone proves neither Google caller identity nor user consent. Expired setup returns to disabled protocol behavior without interrupting ordinary REST.
 
@@ -45,7 +45,7 @@ A mutually exclusive, absolute-UTC setup window (`MCP_BOOTSTRAP_UNTIL`, maximum 
 - Auth, notes, and settings use explicit composable stores. Creates, edits, and Undo place notes against the current view; text search membership is revalidated by the server.
 - The detail dialog retains its last server snapshot and revision when a filtered edit leaves the visible list. Close preserves input typed during an in-flight save. Archive/delete first save the draft, lock editing during the pending mutation, and close only on success; Undo restores the saved content.
 - Note duplication ("Make a copy") creates an independent unpinned, unarchived, private copy in Notes, preserving content, color, and attachment references. In the detail dialog, it duplicates the current draft without forcing a save or closing the original; duplicate requests are locked while in flight.
-- Before upload, `web/src/utils/image.ts` downscales JPEG/PNG/WebP images in the browser to a 2048px long edge (JPEG stays JPEG, PNG/WebP become WebP); the original is not kept, and GIFs or images the browser cannot re-encode smaller upload unchanged.
+- Before upload, `web/src/utils/image.ts` downscales JPEG/PNG/WebP images in the browser to a 2048px long edge (JPEG stays JPEG, PNG/WebP become WebP); the original is not kept, and images already `<= 2048px` and `<= 1,000,000` bytes, GIFs, or images the browser cannot re-encode smaller upload unchanged.
 - Image attachments render as top edge-to-edge banners on cards and in the detail dialog; embedded Markdown, HTML, and bracket filename references to image attachments are stripped from rendered body text to prevent duplicate display.
 - Card More menus and account options use `ActionMenu.vue` with WAI-ARIA menu semantics, roving focus, Escape focus restoration, and outside dismiss. Menus and color pickers share viewport-clamped positioning (`usePopoverPosition.ts`) that tracks window scroll and resize.
 - User/session changes reset scoped state, and request generations prevent stale responses from updating a later user's store.
@@ -64,7 +64,7 @@ Ordinary routes are registered by `src/http/router.js` from `src/http/app.js`:
 
 - `/api/register`, `/api/login`, `/api/logout`: local authentication and session management; a successful login returns the user profile so the client skips a follow-up `/api/profile` request
 - `/api/profile`: authenticated user profile; settings use `/api/settings`
-- `/api/things`, `/api/things/:id/restore`, `/api/files`, `/api/tags`, `/api/settings`: authenticated application API; Thing revisions use CAS and deletes move notes to reversible trash. Owner-only attachments are served `private, no-cache` (never stored by shared proxies; the browser revalidates with the session, usually a 304), so logout and revocation take effect; files of public or shared notes keep `public, max-age=0` so unsharing takes effect
+- `/api/things`, `/api/things/:id/restore`, `/api/files`, `/api/tags`, `/api/settings`: authenticated application API; Thing revisions use CAS and deletes move notes to reversible trash. Owner-only attachments explicitly set `Cache-Control: private, no-cache` (never stored by shared proxies; the browser revalidates with the session, usually a 304), so logout and revocation take effect; files of public or shared notes use `res.sendFile`'s default `public, max-age=0` so unsharing takes effect
 - `/api/import`, `/api/export`: archive transfer with size limits and path traversal protection
 - `/api/public/*`, `/api/rss/*`, `/public/*`, `/shared/*`: public streams, RSS feeds with canonical note URLs, and shared notes; `/note/:thingId` is an authenticated stable private link
 - `/api/health/live`, `/api/health/ready`, `/api/healthcheck`: container and orchestration health probes
@@ -75,11 +75,13 @@ When changing an endpoint, update its route handler, the OpenAPI specification, 
 
 ## Maintenance and tooling
 
-Meemo maintains operations, garbage collection, and verification tooling in `scripts/`:
+Meemo maintains build, operations, garbage collection, and verification tooling in `scripts/`:
 
+- `scripts/build-frontend.js`: Compiles `web/` and copies production assets into `public/`.
 - `scripts/migrate-thing-revisions.js`: Backfills missing Thing revisions, refuses invalid values, and requires an exact target database name.
 - `scripts/gc-attachments.js`: Identifies and removes unreferenced orphan attachments from filesystem storage.
 - `scripts/verify.js`: Comprehensive quality and integration verification orchestrator.
+- `scripts/verify-integration.sh`: Isolated Docker Compose integration smoke test.
 
 The one-off v1-to-v2 legacy collection and file-user migration tooling (`migrate-data-to-v2.js`, `migrate-users-to-mongo.js`, `preflight-legacy-retirement.js`, `verify-production-readiness.js`, `owner-map.js`) has been retired following full production cutover to unified collections.
 
@@ -87,21 +89,23 @@ The one-off v1-to-v2 legacy collection and file-user migration tooling (`migrate
 
 Meemo employs a multi-tiered performance strategy balancing database efficiency, server event-loop capacity, and browser rendering:
 
-1. **MongoDB Compound ESR and Full-Text Indexing**:
+1. **MongoDB Compound ESR, Sparse, and Full-Text Indexing**:
    Queries in `src/database/things.js` follow MongoDB's Equality-Sort-Range (ESR) guideline to eliminate in-memory sort stages:
-   - Default note list feed: `{ ownerId: 1, deletedAt: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }` covers the active/trash state, owner/archive filters, and stable compound sorting.
-   - Tag-filtered feed: `{ ownerId: 1, deletedAt: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }` enables owner/deletion/tag lookups with stable sorting.
+   - Owner timeline (`getAllLean`): `{ ownerId: 1, modifiedAt: -1 }`.
+   - Default note list feed (active and trash): `{ ownerId: 1, deletedAt: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }` covers active/trash state, owner/archive filters, and stable compound sorting.
+   - Tag-filtered feed (active and trash): `{ ownerId: 1, deletedAt: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }` enables owner/deletion/tag lookups with stable sorting.
+   - Attachment orphan GC reference probe: sparse index `{ 'attachments.identifier': 1 }`.
    - Full-text search: `{ ownerId: 1, content: 'text', tags: 'text' }` (`owner_text_content_tags`, weighted `{ tags: 10, content: 5 }`) provides owner-isolated text searches with English Porter stemming and TF-IDF relevance scoring.
-   - Compound `ownerId`-prefixed indexes covering `modifiedAt`, `sticky`, `archived`, and `tags` are initialized concurrently using `Promise.all` at startup.
+   - One-time `archived` field backfill is gated by a `system_config` marker (`things-archived-backfilled`) so normal startups avoid collection scans; indexes and `users` unique index are initialized concurrently at startup, and `connect-mongo` shares the `DatabaseManager` `MongoClient` pool with `touchAfter: 86400`.
 
-2. **Backend Fast-Path Parsing**:
-   Note parsing in `src/services/thing-service.js` avoids unnecessary Markdown-it abstract syntax tree parsing when notes lack candidate URL schemes (`URL_FEATURE_PATTERN`) or hashtags (leading `#` boundary check). Plaintext notes without URLs or tags bypass heavy regex passes and link extractions. Writes extract URLs once and reuse them for tag parsing and SSRF-protected enrichment. Creation renders the document returned by the repository without reading it back again.
+2. **Backend Fast-Path Parsing & Streaming**:
+   Note parsing in `src/services/thing-service.js` avoids unnecessary Markdown-it abstract syntax tree parsing when notes lack candidate URL schemes (`URL_FEATURE_PATTERN`) or hashtags (leading `#` boundary check), and metadata-only updates skip redundant URL/SSRF work. Creations return the inserted repository document directly without a second read, batch imports insert in chunks via `insertManyFull`, and private attachment authorization (`src/services/attachment-service.js`) uses projected lookups (`getAttachmentTarget`) and session owner fast paths. Attachment uploads stream via temp files (`os.tmpdir()`) to read only 12-byte magic headers instead of buffering whole uploads in memory.
 
 3. **Reverse Proxy Offload (Nginx)**:
-   In production, HTTP compression (Gzip/Brotli) and static asset caching are offloaded to an upstream Nginx reverse proxy ([`docs/nginx-reverse-proxy.conf`](nginx-reverse-proxy.conf)). The Node.js application serves uncompressed HTTP responses, saving CPU and event-loop time under high concurrency. Static frontend assets under `/assets/` generated by Vite include content hashes and are served with immutable, long-lived client caching headers (`max-age=31536000, immutable`).
+   In production, HTTP compression (Gzip/Brotli) and static asset caching are offloaded to an upstream Nginx reverse proxy ([`docs/nginx-reverse-proxy.conf`](nginx-reverse-proxy.conf)). The Node.js application serves uncompressed HTTP responses, saving CPU and event-loop time under high concurrency. Static frontend assets under `/assets/` generated by Vite include content hashes and are served with immutable, long-lived client caching headers (`max-age=31536000, immutable`), while HTML and `sw.js` explicitly send `Cache-Control: no-cache`.
 
 4. **Frontend Render Memoization**:
-   The Vue 3 frontend (`web/src/utils/markdown.ts`) caches sanitized HTML in a bounded true LRU `Map` keyed by note content (repositioning entries to most-recently-used on cache hit). It holds at most 500 entries and only caches content of at most 16,384 JavaScript string code units (not a byte limit). In `web/src/views/NotesView.vue`, height-balanced masonry column distribution is memoized via reactive `computed()` properties (`pinnedColumns` and `otherColumns`), eliminating O(N) array recalculations on unrelated render cycles. Components reuse the cached HTML during note list filtering and tab switches. Note cards memoize Markdown separately from search highlighting, including notes above the shared cache limit. Task-list token processing uses one forward pass rather than repeated backward scans. Route components are lazy-loaded using Vue Router dynamic imports.
+   The Vue 3 frontend (`web/src/utils/markdown.ts`) caches sanitized HTML in a bounded true LRU `Map` keyed by note content (repositioning entries to most-recently-used on cache hit). It holds at most 500 entries and only caches content of at most 16,384 JavaScript string code units (not a byte limit). In `web/src/views/NotesView.vue`, flat masonry placements (`pinnedLayout` and `otherLayout` via `layoutMasonry` in `web/src/utils/masonry.ts`) are memoized via reactive `computed()` properties and updated from a `ResizeObserver`, keeping `NoteCard` instances mounted across column moves. Components reuse the cached HTML during note list filtering and tab switches. Note cards memoize Markdown separately from search highlighting, including notes above the shared cache limit. Task-list token processing uses one forward pass rather than repeated backward scans. Route components and heavy overlays (`NoteDetailModal`, `ImageLightbox`) are lazy-loaded; draft persistence uses a leading+trailing 300ms throttle (`createDraftScheduler`).
 
    Run `npm --prefix web exec -- vitest bench --run --root web` from the repository root for uncached 500/2,000-item list rendering benchmarks (including sanitization). Timings are environment-dependent, not CI pass/fail thresholds.
 
@@ -114,7 +118,7 @@ Meemo employs a multi-tiered performance strategy balancing database efficiency,
 
 ## Note list rendering
 
-Saving updates local note state and recalculates the height-balanced masonry columns via memoized `computed()` properties (shortest column first, from bounded estimates of the displayed body). Cards can be remounted when they move between columns. To bound Markdown parsing, sanitization, and DOM work, `NoteCard.vue` limits its body preview to 4,000 UTF-16 code units or 40 lines when an `openDetail` listener is present. It displays an “Open note to read more” hint for truncated previews. Full source remains in state; task toggles operate on that source, not the preview. Detail dialogs and standalone private/shared note pages retain complete content. Search matching remains server-side; list highlighting applies to the visible preview.
+Saving updates local note state and recalculates flat masonry placements via memoized `computed()` properties (shortest column first, from measured card heights or bounded estimates of the displayed body). Cards remain mounted in place when moving between columns. To bound Markdown parsing, sanitization, and DOM work, `NoteCard.vue` limits its body preview to 4,000 UTF-16 code units or 40 lines when an `openDetail` listener is present. It displays an “Open note to read more” hint for truncated previews. Full source remains in state; task toggles operate on that source, not the preview. Detail dialogs and standalone private/shared note pages retain complete content. Search matching remains server-side; list highlighting applies to the visible preview.
 
 ## Build and deployment
 

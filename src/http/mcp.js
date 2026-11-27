@@ -3,19 +3,15 @@
 var express = require('express'),
     crypto = require('crypto'),
     cors = require('cors'),
-    z = require('zod'),
+    z = require('zod/v4'),
     rateLimit = require('express-rate-limit').rateLimit,
-    StreamableHTTPServerTransport = require('@modelcontextprotocol/sdk/server/streamableHttp.js').StreamableHTTPServerTransport,
-    authorizationHandler = require('@modelcontextprotocol/sdk/server/auth/handlers/authorize.js').authorizationHandler,
-    tokenHandler = require('@modelcontextprotocol/sdk/server/auth/handlers/token.js').tokenHandler,
-    clientRegistrationHandler = require('@modelcontextprotocol/sdk/server/auth/handlers/register.js').clientRegistrationHandler,
-    revocationHandler = require('@modelcontextprotocol/sdk/server/auth/handlers/revoke.js').revocationHandler,
-    requireBearerAuth = require('@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js').requireBearerAuth,
+    NodeStreamableHTTPServerTransport = require('@modelcontextprotocol/node').NodeStreamableHTTPServerTransport,
+    requireBearerAuth = require('@modelcontextprotocol/express').requireBearerAuth,
+    mcpOAuth = require('./mcp-oauth.js'),
     auth = require('./middleware/auth.js'),
     authService = require('../services/mcp-auth-service.js'),
     createCaptureStore = require('../storage/mcp-bootstrap.js'),
-    createServer = require('./mcp-tools.js'),
-    OAuthClientMetadataSchema = require('@modelcontextprotocol/sdk/shared/auth.js').OAuthClientMetadataSchema;
+    createServer = require('./mcp-tools.js');
 
 var OAUTH_REDIRECT_HEADER_BYTES = 2 * 1024;
 
@@ -94,7 +90,7 @@ function createMcp(options, logger) {
     protocol.use('/oauth', function (req, res, next) {
         var redirect = res.redirect;
         res.redirect = function (status, target) {
-            var location = typeof status === 'string' ? status : target;
+            var location = typeof status === 'string' ? status : (typeof target === 'string' ? target : '');
             var bytes = Buffer.byteLength(location, 'utf8');
             if (bytes + OAUTH_REDIRECT_HEADER_BYTES > authService.OAUTH_REQUEST_BYTES) {
                 logger.write({ level: 'warn', event: 'mcp_oauth_redirect_rejected', requestId: req.id, redirectUrlBytes: bytes });
@@ -143,53 +139,17 @@ function createMcp(options, logger) {
         return { protocol: protocol, browser: browser };
     }
     var provider = authService.createProvider(settings, logger);
-    var registrationReasons = new Map([
-        ['Redirect URI is not allowed', 'redirect_uri_not_allowed'],
-        ['Only authorization_code is supported', 'unsupported_grant_types'],
-        ['Only code responses are supported', 'unsupported_response_types'],
-        ['Unsupported client authentication', 'unsupported_client_authentication'],
-        ['Client capacity reached', 'client_capacity_reached']
-    ]);
-    protocol.use('/oauth/register', function (req, res, next) {
-        if (req.method !== 'POST') return next();
-        var sendJson = res.json;
-        res.json = function (body) {
-            if (res.statusCode >= 400 && body && typeof body.error === 'string') {
-                var metadata = req.body || {};
-                var uris = Array.isArray(metadata.redirect_uris) ? metadata.redirect_uris : null;
-                var method = metadata.token_endpoint_auth_method;
-                // Log only known field names and enum values, never descriptions or submitted URLs.
-                logger.write({
-                    level: res.statusCode >= 500 ? 'error' : 'warn', event: 'mcp_registration_rejected', requestId: req.id,
-                    errorCode: body.error,
-                    reason: registrationReasons.get(body.error_description) || (body.error === 'invalid_client_metadata' ? 'metadata_validation_failed' : body.error),
-                    metadataFields: Object.keys(OAuthClientMetadataSchema.shape).filter(function (key) { return Object.hasOwn(metadata, key); }),
-                    authMethod: method === undefined ? 'unspecified' : ['none', 'client_secret_post', 'client_secret_basic', 'client_secret_jwt', 'private_key_jwt', 'tls_client_auth', 'self_signed_tls_client_auth'].includes(method) ? method : 'other',
-                    grantTypes: Array.isArray(metadata.grant_types) ? metadata.grant_types.slice(0, 10).map(function (grant) {
-                        return ['authorization_code', 'refresh_token', 'client_credentials', 'password', 'implicit'].includes(grant) ? grant : 'other';
-                    }) : null,
-                    redirectUriCount: uris ? uris.length : null,
-                    unapprovedRedirectUriCount: uris ? uris.filter(function (uri) { return !settings.redirectUris.includes(uri); }).length : null
-                });
-            }
-            return sendJson.call(this, body);
-        };
-        // The SDK validates standard metadata; the provider stores only fields it uses.
-        if (!req.body || (req.body.client_name && (typeof req.body.client_name !== 'string' || req.body.client_name.length > 100))) {
-            return res.status(400).json({ error: 'invalid_client_metadata' });
-        }
-        next();
-    }, clientRegistrationHandler({ clientsStore: provider.clientsStore, rateLimit: false }));
-    protocol.use('/oauth/authorize', authorizationHandler({ provider: provider, rateLimit: false }));
-    // The SDK compares client_secret values; normalize the incoming secret to its stored hash.
-    protocol.use(['/oauth/token', '/oauth/revoke'], function (req, res, next) {
-        if (req.body && typeof req.body.client_secret === 'string') req.body.client_secret = authService.hash(req.body.client_secret);
-        next();
-    });
-    protocol.use('/oauth/token', tokenHandler({ provider: provider, rateLimit: false }));
-    protocol.use('/oauth/revoke', revocationHandler({ provider: provider, rateLimit: false }));
+    protocol.use('/oauth/register', mcpOAuth.createRegistrationHandler({
+        clientsStore: provider.clientsStore, settings: settings, logger: logger
+    }));
+    protocol.use('/oauth/authorize', mcpOAuth.createAuthorizationHandler({ provider: provider }));
+    protocol.use('/oauth/token', mcpOAuth.createTokenHandler({ provider: provider, hash: authService.hash }));
+    protocol.use('/oauth/revoke', mcpOAuth.createRevocationHandler({ provider: provider, hash: authService.hash }));
 
-    var bearer = requireBearerAuth({ verifier: provider, requiredScopes: [], resourceMetadataUrl: metadataUrl, expectedResource: settings.publicUrl + '/mcp' });
+    var bearer = requireBearerAuth({
+        verifier: provider, requiredScopes: [], resourceMetadataUrl: metadataUrl,
+        expectedResource: new URL(settings.publicUrl + '/mcp')
+    });
     var inFlight = 0;
     protocol.use('/mcp', bearer, limit(60, function (req) { return req.auth.clientId; }), limit(60, function (req) { return req.auth.extra.userId; }), function (req, res, next) {
         if (res.destroyed) return;
@@ -204,7 +164,7 @@ function createMcp(options, logger) {
             return res.status(400).json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Use a single request with an ID of at most 256 serialized bytes' } });
         }
         var server = createServer(logger, req.id);
-        var transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+        var transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
         res.on('close', function () { server.close().catch(function () {}); });
         await server.connect(transport);
         if (res.destroyed) { await server.close(); return; }

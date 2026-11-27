@@ -27,7 +27,9 @@
   },
   "readme": "README.md",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/express": "2.0.2",
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
     "bcrypt": "^6.0.0",
     "connect-lastmile": "^2.2.0",
     "connect-mongo": "^5.1.0",

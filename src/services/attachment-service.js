@@ -1,11 +1,13 @@
 'use strict';
 
 var crypto = require('crypto'),
+    fs = require('fs').promises,
     config = require('../config.js'),
     ObjectId = require('mongodb').ObjectId,
     path = require('path'),
     isSafePathSegment = require('../path-segment.js'),
     storage = require('../storage/local-storage.js'),
+    thingsDb = require('../database/things.js'),
     things = require('./thing-service.js'),
     users = require('../users.js'),
     UserError = users.UserError;
@@ -36,8 +38,35 @@ function safeExtension(detectedType) {
     return '.bin';
 }
 
+async function readFileHeader(filePath) {
+    var handle = await fs.open(filePath, 'r');
+    try {
+        var header = Buffer.alloc(12);
+        var readResult = await handle.read(header, 0, 12, 0);
+        return header.subarray(0, readResult.bytesRead);
+    } finally {
+        await handle.close();
+    }
+}
+
 async function save(userId, file) {
-    var detectedType = detectImageType(file.buffer);
+    var detectedType;
+    if (file.path) {
+        try {
+            detectedType = detectImageType(await readFileHeader(file.path));
+            var isImageFromPath = Boolean(detectedType && file.mimetype && file.mimetype.indexOf('image/') === 0);
+            var keyFromPath = crypto.randomUUID() + safeExtension(detectedType);
+            await storage.saveAttachmentFromPath(userId, keyFromPath, file.path);
+            return {
+                identifier: keyFromPath,
+                fileName: path.basename(file.originalname || 'attachment'),
+                type: isImageFromPath ? things.TYPE_IMAGE : things.TYPE_UNKNOWN
+            };
+        } finally {
+            await fs.rm(file.path, { force: true }).catch(function () {});
+        }
+    }
+    detectedType = detectImageType(file.buffer);
     var isImage = Boolean(detectedType && file.mimetype && file.mimetype.indexOf('image/') === 0);
     var storageKey = crypto.randomUUID() + safeExtension(detectedType);
     await storage.saveAttachment(userId, storageKey, file.buffer);
@@ -52,21 +81,27 @@ async function authorize(rawUserId, thingId, identifier, session) {
     try {
         if (!ObjectId.isValid(thingId)) throw serviceError('not_found', 'not found');
 
-        var targetUser;
-        try {
-            targetUser = await users.resolveUser(rawUserId);
-        } catch (error) {
-            if (error.code !== UserError.NOT_FOUND) throw error;
+        var targetUserId, targetUsername;
+        if (session && session.userId && (session.userId === rawUserId || session.username === rawUserId)) {
+            targetUserId = session.userId;
+            targetUsername = session.username || rawUserId;
+        } else {
+            var targetUser;
+            try {
+                targetUser = await users.resolveUser(rawUserId);
+            } catch (error) {
+                if (error.code !== UserError.NOT_FOUND) throw error;
+            }
+            targetUserId = targetUser ? targetUser.id : rawUserId;
+            targetUsername = targetUser ? targetUser.username : rawUserId;
         }
 
-        var targetUserId = targetUser ? targetUser.id : rawUserId;
-        var targetUsername = targetUser ? targetUser.username : rawUserId;
         var thing;
         try {
-            thing = await things.get(targetUserId, thingId);
+            thing = await thingsDb.getAttachmentTarget(targetUserId, thingId);
         } catch (error) {
             if (error.message !== 'not found' || targetUsername === targetUserId) throw error;
-            thing = await things.get(targetUsername, thingId);
+            thing = await thingsDb.getAttachmentTarget(targetUsername, thingId);
         }
 
         var attachment = (Array.isArray(thing.attachments) ? thing.attachments : []).find(function (candidate) {

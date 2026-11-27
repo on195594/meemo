@@ -3,13 +3,14 @@
 > 规范性（Normative）长期约束。制定于 2026-09-16，2026-10-23 精简（约束未变，删去重复图示与已完成任务；精简前全文见提交 `d25b511`），2026-10-30 完成过度测试与死代码精简。
 > 当前实现以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准，HTTP 契约以 [openapi.yaml](openapi.yaml) 为准，工作流程以 [AGENTS.md](../AGENTS.md) 为准。
 
-## 当前状态（2026-10-30）
+## 当前状态（2026-11-27）
 
 - 模块化单体：Express + MongoDB + 文件系统附件，单进程；Vue 3 SPA。
-- 在线数据只读写统一集合（`things`、`settings`、`users`、`sessions`）；`things.tags` 是标签事实源，`tags` 集合是迁移投影与维修工件。
+- 在线数据只读写统一集合（`things`、`settings`、`users`、`sessions`、`system_config` 标记，以及启用 MCP 时带 TTL 的 `mcp_*` 集合）；`things.tags` 是标签事实源，`tags` 集合是迁移投影与维修工件。
 - 账号只在 MongoDB；旧 file/fallback 用户源及离线迁移脚本已删除。
-- 移除了未引用的死依赖（如 `safetydance`）及历史多仓储切换空转分支。
-- 过度测试治理：清理历史离线迁移元测试（移除 2400+ 行非业务回归套件），修复人为 15 秒 hang 超时测试，单机测试套件耗时从 65s+ 缩减至 ~22s。
+- 移除了未引用的死依赖（如 `safetydance`、`body-parser`）、历史多仓储切换空转分支，以及退役的 `WorkerManager`、`writeFreeze` 门控、`nodeify`（`src/promise.js`）与 `.impeccable` 配置；后端统一为纯 CommonJS `async`/`await`，并将 MCP 升级至官方 v2 SDK（`@modelcontextprotocol/server`、`@modelcontextprotocol/node`、`@modelcontextprotocol/express`）配合精简的自包含 OAuth 2.1 处理器（`src/http/mcp-oauth.js`）。
+- 性能与分层优化：精简 `things` 冗余多键索引并用 `system_config` 标记门控一次性回填；会话共享 `DatabaseManager` 连接池；附件上传改为临时文件流式读取魔数，RSS 渲染下沉至 `src/services/rss-renderer.js`；前端采用扁平绝对定位瀑布流保持 `NoteCard` 跨列不重建，草稿持久化采用 300ms 前后沿节流，SW 缓存设上限并跳过无脏数据时的重复清缓存。
+- 过度测试治理与前端组件拆分：清理历史离线迁移与重复元测试（移除 2400+ 行非业务回归套件），将大型 Vue 组件拆分为专注组件与 composables（`NoteColorPopover`、`NotesBatchBar`、`useNoteBodyInteraction`、`utils/attachments`）。
 - NoteColor 已有单一定义（`src/note-colors.js` ↔ `web/src/constants/noteColors.ts`）。
 - 可选 MCP（Gemini）读写工具已实现，默认关闭，2026-10-22 真实客户端验收通过；助手写入留下可见、可撤销的 `assistant` 标记（见 §12）。
 - 浏览器端：service worker 提供安装与离线只读（决策记录见 ARCHITECTURE.md「Offline shell」）；图片在浏览器上传前缩小，不保留原图。
@@ -45,7 +46,7 @@ Meemo 是**可自托管、数据可掌控、结构简单、长期可维护、可
 
 ## 4. 代码分层
 
-- 后端：`app.js`（composition root：启动、依赖初始化、Mongo/Worker/HTTP 生命周期、优雅关闭，不含业务规则）→ `src/http/` → `src/services/` → `src/database/` 与 `src/storage/`。
+- 后端：`app.js`（composition root：启动、依赖初始化、Mongo/HTTP 生命周期、优雅关闭，不含业务规则）→ `src/http/` → `src/services/` → `src/database/` 与 `src/storage/`。
 - 前端：`views/` → `components/` → `composables/` → `api/`。
 - 新基础设施依赖从 composition root 创建并通过 factory 参数向下传递；现有共享 `config` 数据库引用可保留，但新模块不扩大对可变全局状态的依赖。
 - **HTTP 层**：路由、认证中间件、解析、Zod 校验、状态码、响应整形、错误映射；不得直接访问 MongoDB 或附件文件系统，不实现或复制业务规则。
@@ -62,7 +63,7 @@ Meemo 是**可自托管、数据可掌控、结构简单、长期可维护、可
 - **NoteColor**：统一枚举；缺失 → `default`，已知值保留，未知值在外部边界拒绝；历史脏值可在读取时显式归一化，但不得继续传播。
 - **modifiedAt**：当前所有完整更新（含仅改颜色）都会刷新 `modifiedAt`；改变此语义须同步 OpenAPI 与排序行为。
 - **并发**：在线写入优先单文档原子操作（`findOneAndUpdate`），而非读-改-写；维护任务需要读-推导-写回时必须 CAS 或等价条件更新，不得覆盖并发用户修改（参考 tag repair）。
-- **Write Freeze** 只用于迁移、破坏性维护和生产就绪验证；普通 CRUD 不得增加 lease 计数、全局互斥或维护锁依赖。
+- **维护写停窗**：运行时 `writeFreeze` 门控已退役；迁移或破坏性维护通过显式停止写者窗口（stop writers）保障一致性，普通 CRUD 不得增加 lease 计数、全局互斥或维护锁依赖。
 
 ## 6. 附件
 
@@ -132,7 +133,7 @@ Webhook、Agent、CLI、移动端等外部工具优先通过 HTTP API（或同�
 - 每引入新的运行进程、数据库、消息中间件、持久化系统、状态框架、UI 框架、构建系统或服务，都是一次 **Architecture Cost Event**，必须写清：问题、现有架构为何无法解决、新组件、失败模式、备份影响、安全影响、回滚、移除路径。说不清就不引入。
 - 只有出现实际证据才进入重大架构评估：Scale（数据库/文件存储形成真实瓶颈、单实例资源持续触顶）、Reliability（单进程故障域无法满足真实 SLA）、Operations（备份恢复时间不可接受）、Product（多实例或大规模异步任务成为必须、语义检索被证明是核心体验）、Team（多团队需要独立发布）。“业界都这么做”不是证据。
 - 涉及新数据库、新运行服务、新持久化系统、API 破坏性变更、认证模型变更、附件后端变更、主要前端状态框架、AI/向量基础设施、备份模型变更时，写一页以内的架构决策：Decision / Problem / Alternatives / Why / Operational Impact / Rollback。
-- **未决**：迁移完全结束后，重新评估 `tags` 投影集合（目前仍被 `cleanupTags` 使用）是否还有必要，无必要即删除。
+- **未决**：迁移完全结束后，重新评估 `tags` 投影集合（目前仅被程序化维护方法 `cleanupTags` 及测试引用，无 CLI/HTTP/启动调用方）是否还有必要，无必要即删除。
 
 ## 18. 变更检查清单
 

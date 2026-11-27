@@ -390,8 +390,7 @@ function onAuthSuccess() {
 }
 
 function handleImportFinished() {
-  showImportModal.value = false;
-  // Trigger a full reload or page event to refresh notes
+  // Keep ImportModal open so the user sees the completion banner and closes via Done.
   window.dispatchEvent(new CustomEvent('meemo:imported'));
 }
 

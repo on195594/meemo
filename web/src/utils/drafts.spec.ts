@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearDrafts, loadDraft, saveDraft } from './drafts';
+import { clearDrafts, createDraftScheduler, loadDraft, saveDraft } from './drafts';
 
 beforeEach(() => localStorage.clear());
 afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); });
@@ -46,5 +46,49 @@ describe('device drafts', () => {
       if (method === 'removeItem') expect(() => saveDraft('note:1', null)).not.toThrow();
       expect(() => clearDrafts()).not.toThrow();
     }
+  });
+
+  it('throttles rapid draft writes and flushes pending edits on demand or timer', () => {
+    vi.useFakeTimers();
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const scheduler = createDraftScheduler(300);
+
+    scheduler.schedule('note:1', { content: 'a' });
+    expect(setItemSpy).toHaveBeenCalledTimes(1);
+
+    scheduler.schedule('note:1', { content: 'ab' });
+    scheduler.schedule('note:1', { content: 'abc' });
+    expect(setItemSpy).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(300);
+    expect(setItemSpy).toHaveBeenCalledTimes(2);
+    expect(loadDraft('note:1')).toEqual({ content: 'abc' });
+
+    scheduler.schedule('note:1', { content: 'abcd' });
+    scheduler.schedule('note:1', { content: 'abcde' });
+    scheduler.flush();
+    expect(loadDraft('note:1')).toEqual({ content: 'abcde' });
+
+    scheduler.schedule('note:1', { content: 'pending' });
+    scheduler.schedule('note:1', null);
+    expect(loadDraft('note:1')).toBeNull();
+    vi.advanceTimersByTime(300);
+    expect(loadDraft('note:1')).toBeNull();
+
+    // Key switch flushes the previous key's pending edit before handling the new key
+    scheduler.schedule('note:1', { content: 'first' });
+    scheduler.schedule('note:1', { content: 'first-updated' });
+    scheduler.schedule('note:2', null);
+    expect(loadDraft('note:1')).toEqual({ content: 'first-updated' });
+
+    // clearDrafts() fences pending timer and explicit flush from resurrecting erased drafts
+    scheduler.schedule('note:2', { content: 'secret-1' });
+    scheduler.schedule('note:2', { content: 'secret-2' });
+    clearDrafts();
+    vi.advanceTimersByTime(300);
+    scheduler.flush();
+    expect(loadDraft('note:2')).toBeNull();
+
+    vi.useRealTimers();
   });
 });

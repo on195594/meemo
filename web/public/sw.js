@@ -50,6 +50,8 @@ async function asset(request) {
 let dataGeneration = 0;
 let authChanges = 0;
 let dataAvailable = false;
+let cacheDirty = true;
+const MAX_DATA_CACHE_ENTRIES = 60;
 let dataOperations = caches.match(INVALID_DATA, { cacheName: SHELL }).then((invalid) => {
   if (dataGeneration === 0) dataAvailable = !invalid;
 }, () => {});
@@ -65,6 +67,10 @@ function invalidateData() {
   const generation = ++dataGeneration;
   dataAvailable = false;
   return withData(async () => {
+    if (!cacheDirty) {
+      if (generation === dataGeneration) dataAvailable = true;
+      return;
+    }
     let shell;
     try {
       // Keep failed cleanup invalid across worker termination, not just in memory.
@@ -76,7 +82,10 @@ function invalidateData() {
     }
     await caches.delete(DATA);
     await shell.delete(INVALID_DATA);
-    if (generation === dataGeneration) dataAvailable = true;
+    if (generation === dataGeneration) {
+      cacheDirty = false;
+      dataAvailable = true;
+    }
   });
 }
 
@@ -107,8 +116,17 @@ async function api(request, cacheable = true) {
   } else if (cacheable && response.ok) {
     await withData(async () => {
       if (!isCurrent(generation)) return;
+      cacheDirty = true;
       const cache = await caches.open(DATA);
-      if (isCurrent(generation)) await cache.put(request, response.clone());
+      if (!isCurrent(generation)) return;
+      await cache.put(request, response.clone());
+      if (typeof cache.keys === 'function') {
+        const keys = await cache.keys();
+        const excess = keys.length - MAX_DATA_CACHE_ENTRIES;
+        for (let i = 0; i < excess; i++) {
+          await cache.delete(keys[i]);
+        }
+      }
     }).catch(() => {});
   }
   return response;

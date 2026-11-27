@@ -92,11 +92,13 @@ async function isSafeUrl(urlString) {
     return checkSafeUrl(urlString);
 }
 
-async function probeUrl(rawUrl, options) {
+function probeUrlWithStatus(rawUrl, options) {
     options = options || {};
 
     return checkSafeUrl(rawUrl).then(function (safeResult) {
-        if (!safeResult.safe || !safeResult.parsed) return { url: options.originalUrl || rawUrl, type: TYPE_UNKNOWN };
+        if (!safeResult.safe || !safeResult.parsed) {
+            return { result: { url: options.originalUrl || rawUrl, type: TYPE_UNKNOWN }, cacheable: true };
+        }
 
         return new Promise(function (resolve) {
             var parsedUrl = safeResult.parsed;
@@ -106,10 +108,10 @@ async function probeUrl(rawUrl, options) {
             var originalUrl = options.originalUrl || rawUrl;
             var finished = false;
 
-            function finish(type) {
+            function finish(type, cacheable) {
                 if (finished) return;
                 finished = true;
-                resolve({ url: originalUrl, type: type || TYPE_UNKNOWN });
+                resolve({ result: { url: originalUrl, type: type || TYPE_UNKNOWN }, cacheable: cacheable !== false });
             }
 
             var transport = parsedUrl.protocol === 'https:' ? https : http;
@@ -133,36 +135,42 @@ async function probeUrl(rawUrl, options) {
             }, function (response) {
                 if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
                     response.destroy();
-                    if (redirectCount >= maxRedirects) return finish(TYPE_UNKNOWN);
+                    if (redirectCount >= maxRedirects) return finish(TYPE_UNKNOWN, true);
 
                     var nextUrl;
                     try {
                         nextUrl = new URL(response.headers.location, rawUrl).href;
                     } catch (error) {
-                        return finish(TYPE_UNKNOWN);
+                        return finish(TYPE_UNKNOWN, true);
                     }
-                    probeUrl(nextUrl, {
+                    probeUrlWithStatus(nextUrl, {
                         timeout: timeout,
                         maxRedirects: maxRedirects,
                         redirectCount: redirectCount + 1,
                         originalUrl: originalUrl
-                    }).then(function (result) { finish(result.type); });
+                    }).then(function (outcome) { finish(outcome.result.type, outcome.cacheable); });
                     return;
                 }
 
                 var contentType = response.headers['content-type'] || '';
                 var isImage = response.statusCode >= 200 && response.statusCode < 300 && contentType.indexOf('image/') === 0;
                 response.destroy();
-                finish(isImage ? TYPE_IMAGE : TYPE_UNKNOWN);
+                finish(isImage ? TYPE_IMAGE : TYPE_UNKNOWN, true);
             });
 
             request.on('timeout', function () {
                 request.destroy();
-                finish(TYPE_UNKNOWN);
+                finish(TYPE_UNKNOWN, false);
             });
-            request.on('error', function () { finish(TYPE_UNKNOWN); });
+            request.on('error', function () { finish(TYPE_UNKNOWN, false); });
             request.end();
         });
+    });
+}
+
+async function probeUrl(rawUrl, options) {
+    return probeUrlWithStatus(rawUrl, options).then(function (outcome) {
+        return outcome.result;
     });
 }
 
@@ -174,22 +182,28 @@ function clearProbeCache() {
     probeCache.clear();
 }
 
-function getCachedProbe(url) {
-    var entry = probeCache.get(url);
+function probeCacheKey(url, options) {
+    var timeout = typeof options.timeout === 'number' ? options.timeout : '';
+    var maxRedirects = typeof options.maxRedirects === 'number' ? options.maxRedirects : '';
+    return timeout === '' && maxRedirects === '' ? url : url + '|' + timeout + '|' + maxRedirects;
+}
+
+function getCachedProbe(key) {
+    var entry = probeCache.get(key);
     if (!entry) return null;
     if (Date.now() - entry.timestamp > PROBE_CACHE_TTL_MS) {
-        probeCache.delete(url);
+        probeCache.delete(key);
         return null;
     }
     return entry.result;
 }
 
-function setCachedProbe(url, result) {
+function setCachedProbe(key, result) {
     if (probeCache.size >= MAX_PROBE_CACHE_SIZE) {
         var oldest = probeCache.keys().next().value;
         if (oldest !== undefined) probeCache.delete(oldest);
     }
-    probeCache.set(url, { timestamp: Date.now(), result: result });
+    probeCache.set(key, { timestamp: Date.now(), result: result });
 }
 
 function isEnrichmentEnabled() {
@@ -211,12 +225,17 @@ async function enrichUrls(urls, options) {
         while (nextIndex < toProbe.length) {
             var index = nextIndex++;
             var targetUrl = toProbe[index];
-            var cached = getCachedProbe(targetUrl);
+            var key = probeCacheKey(targetUrl, options);
+            var cached = getCachedProbe(key);
             if (cached) {
                 results[index] = cached;
+            } else if (module.exports.probeUrl === probeUrl) {
+                var outcome = await probeUrlWithStatus(targetUrl, options);
+                if (outcome.cacheable) setCachedProbe(key, outcome.result);
+                results[index] = outcome.result;
             } else {
                 var res = await module.exports.probeUrl(targetUrl, options);
-                setCachedProbe(targetUrl, res);
+                setCachedProbe(key, res);
                 results[index] = res;
             }
         }

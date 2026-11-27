@@ -22,19 +22,24 @@ UserError.INTERNAL_ERROR = 'internal error';
 
 var repository = null;
 
+function assertMongoUserSource(source, isProduction) {
+    var effective = source || process.env.AUTH_USER_SOURCE || 'mongo';
+    var prod = isProduction !== undefined ? isProduction : (process.env.NODE_ENV === 'production');
+    if (effective !== 'mongo') {
+        if (prod) {
+            throw new Error('FATAL: AUTH_USER_SOURCE must be mongo when NODE_ENV=production');
+        }
+        throw new Error('Unsupported AUTH_USER_SOURCE: ' + effective);
+    }
+    return effective;
+}
+
 /**
  * Resolves account repository from AUTH_USER_SOURCE.
  * Runtime exclusively targets MongoUserRepository ('mongo').
  */
 function createRepositoryFromEnv() {
-    var source = process.env.AUTH_USER_SOURCE || 'mongo';
-    var isProduction = process.env.NODE_ENV === 'production';
-    if (source !== 'mongo') {
-        if (isProduction) {
-            throw new Error('FATAL: AUTH_USER_SOURCE must be mongo when NODE_ENV=production');
-        }
-        throw new Error('Unsupported AUTH_USER_SOURCE: ' + source);
-    }
+    assertMongoUserSource();
     return new MongoUserRepository();
 }
 
@@ -77,7 +82,8 @@ async function resolveUser(identifier) {
 
     var repo = getRepository();
     return repo.get(identifier).then(function (user) {
-        return user || repo.getByUsername(identifier);
+        if (user || repo instanceof MongoUserRepository) return user;
+        return repo.getByUsername(identifier);
     }).then(function (user) {
         if (!user) throw new UserError(UserError.NOT_FOUND);
         return {
@@ -159,6 +165,7 @@ module.exports = {
     verify: verify,
     resolveUser: resolveUser,
     MongoUserRepository: MongoUserRepository,
+    assertMongoUserSource: assertMongoUserSource,
     getRepository: getRepository,
     setRepository: setRepository,
     initRepository: initRepository

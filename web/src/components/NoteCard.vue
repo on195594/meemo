@@ -223,24 +223,24 @@ function toggleColorPicker() {
   showColorPicker.value = true;
 }
 
-async function selectColor(color: NoteColor, closeAfterSave = true) {
+async function selectColor(color: NoteColor) {
   if (isColorSaving.value) return;
   if (color === (props.thing.color || 'default')) {
-    if (closeAfterSave) closeColorPicker(true);
+    closeColorPicker(true);
     return;
   }
   actionError.value = null;
   if (!props.onSaveEdit) {
     emit('update', props.thing._id, { color });
-    if (closeAfterSave) closeColorPicker(true);
+    closeColorPicker(true);
     return;
   }
 
   isColorSaving.value = true;
   try {
     const result = await props.onSaveEdit(props.thing._id, { color });
-    if (result.success && closeAfterSave) closeColorPicker(true);
-    else if (!result.success) actionError.value = result.error || 'Failed to update note color';
+    if (result.success) closeColorPicker(true);
+    else actionError.value = result.error || 'Failed to update note color';
   } catch (error) {
     actionError.value = error instanceof Error ? error.message : 'Failed to update note color';
   } finally {

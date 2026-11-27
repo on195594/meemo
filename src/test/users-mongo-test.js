@@ -75,6 +75,25 @@ describe('MongoDB User Repository (RF-202)', function () {
             await assert.rejects(mongoRepo.create(duplicate), { message: 'user exists' });
         });
 
+        it('rejects conflicting non-unique usernameNorm index instead of allowing duplicate accounts', async function () {
+            var col = config.db.collection('users');
+            await col.dropIndexes();
+            await col.createIndex({ usernameNorm: 1 });
+            var unverifiedRepo = new MongoUserRepository(config.db);
+            try {
+                await assert.rejects(unverifiedRepo.ensureIndexes());
+                await assert.rejects(unverifiedRepo.create({
+                    username: 'conflict_user',
+                    displayName: 'Conflict',
+                    email: 'c@example.com',
+                    passwordHash: 'h'
+                }));
+            } finally {
+                await col.dropIndex('usernameNorm_1').catch(function () {});
+                await mongoRepo.ensureIndexes();
+            }
+        });
+
         it('lists active users and counts correctly', async function () {
             await mongoRepo.create({
                 username: 'user1',

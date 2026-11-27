@@ -1,7 +1,7 @@
 'use strict';
 
-var McpServer = require('@modelcontextprotocol/sdk/server/mcp.js').McpServer,
-    z = require('zod'),
+var McpServer = require('@modelcontextprotocol/server').McpServer,
+    z = require('zod/v4'),
     noteColors = require('../note-colors.js'),
     notes = require('../services/mcp-note-service.js');
 
@@ -60,14 +60,14 @@ function createServer(logger, requestId) {
         server.registerTool(definition[0], {
             description: definition[1], inputSchema: definition[2],
             annotations: definition[4]
-        }, async function (params, extra) {
+        }, async function (params, ctx) {
             var started = Date.now();
             var auth;
             var code = 'ok';
             var count, parsed;
             try {
                 // requireBearerAuth verified this token (grant, client, user) earlier in the same request.
-                auth = extra.authInfo;
+                auth = (ctx && ctx.http && ctx.http.authInfo) || (ctx && ctx.authInfo);
                 if (!auth || !auth.extra || !auth.extra.userId) throw new Error('missing verified auth');
                 var requiredScope = definition[5];
                 if (requiredScope && (!auth.scopes || (!auth.scopes.includes(requiredScope) && !auth.scopes.includes('notes.write')))) {

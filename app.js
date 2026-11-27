@@ -24,13 +24,7 @@ async function startServer(options) {
     if (isProduction && !sessionSecret) {
         throw new Error('FATAL: SESSION_SECRET is required when NODE_ENV=production');
     }
-    var authUserSource = options.authUserSource || process.env.AUTH_USER_SOURCE || 'mongo';
-    if (authUserSource !== 'mongo') {
-        if (isProduction) {
-            throw new Error('FATAL: AUTH_USER_SOURCE must be mongo when NODE_ENV=production');
-        }
-        throw new Error('Unsupported AUTH_USER_SOURCE: ' + authUserSource);
-    }
+    require('./src/users.js').assertMongoUserSource(options.authUserSource, isProduction);
 
     var databaseManager = new lifecycle.DatabaseManager();
     var shutdownManager = new lifecycle.ShutdownManager({
@@ -41,10 +35,11 @@ async function startServer(options) {
     await Promise.all([
         things.ensureIndexes(),
         tags.ensureIndexes(),
-        settings.ensureIndexes()
+        settings.ensureIndexes(),
+        require('./src/users.js').getRepository().ensureIndexes()
     ]);
 
-    var app = createApp(Object.assign({}, options, { shutdownManager: shutdownManager }));
+    var app = createApp(Object.assign({}, options, { client: connection.client, shutdownManager: shutdownManager }));
     var port = options.port !== undefined ? options.port : PORT;
     var bindAddress = options.bindAddress || BIND_ADDRESS;
     var server = await new Promise(function (resolve, reject) {

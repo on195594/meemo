@@ -44,14 +44,37 @@ describe('Thing service avoids redundant work', function () {
         assert.deepStrictEqual(result.attachments, []);
     });
 
-    it('updates while preserving revision and metadata arguments', async function () {
+    it('updates while preserving revision, metadata arguments, and richContent', async function () {
         var received;
-        things.put = async function () { received = Array.from(arguments); return { revision: 8 }; };
+        things.put = async function (userId, thingId, body, tags, attachments, externalContent) {
+            received = Array.from(arguments);
+            return {
+                _id: thingId, ownerId: userId, content: body, tags: tags,
+                attachments: attachments, externalContent: externalContent, revision: 8
+            };
+        };
         var result = await service.put('owner', 'note', content, [], true, false, true, false, 'mint', 7);
         assert.deepStrictEqual(enrichedUrls, ['https://example.com/#fragment']);
         assert.deepStrictEqual(received.slice(0, 5), ['owner', 'note', content, ['work'], []]);
         assert.deepStrictEqual(received.slice(6), [true, false, true, false, 'mint', 7, undefined]);
-        assert.deepStrictEqual(result, { revision: 8 });
+        assert.strictEqual(result.revision, 8);
+        assert(result.richContent.includes('[#work](#search?#work)'));
+    });
+
+    it('skips URL and tag re-extraction on precomputed metadata updates', async function () {
+        things.put = async function (userId, thingId, body, tags, attachments, externalContent) {
+            return {
+                _id: thingId, ownerId: userId, content: body, tags: tags,
+                attachments: attachments, externalContent: externalContent, revision: 9
+            };
+        };
+        var result = await service.put('owner', 'note', content, [], false, false, true, false, 'sage', 8, undefined, {
+            tags: ['work'],
+            externalContent: [{ url: 'https://example.com/#fragment', type: 'unknown' }]
+        });
+        assert.deepStrictEqual(enrichedUrls, []);
+        assert.strictEqual(result.revision, 9);
+        assert(result.richContent.includes('[#work](#search?#work)'));
     });
 
     it('keeps tag extraction equivalent when URLs are precomputed', function () {

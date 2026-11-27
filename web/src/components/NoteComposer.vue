@@ -148,13 +148,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onUnmounted, getCurrentInstance } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, getCurrentInstance } from 'vue';
 import UiIcon from './UiIcon.vue';
 import NoteColorPopover from './NoteColorPopover.vue';
 import { api, type AttachmentDescriptor, type NoteColor } from '../api/client';
 import { joinTitle } from '../utils/noteTitle';
 import { isImageAttachment } from '../utils/markdown';
-import { loadDraft, saveDraft } from '../utils/drafts';
+import { createDraftScheduler, loadDraft } from '../utils/drafts';
 import { shrinkImage } from '../utils/image';
 
 const props = withDefaults(defineProps<{
@@ -202,11 +202,27 @@ watch(draftKey, (key) => {
   attachments.value = Array.isArray(saved.attachments) ? saved.attachments : [];
   selectedColor.value = saved.color || 'default';
 }, { immediate: true });
-watch([title, content, attachments, selectedColor], () => {
-  saveDraft(draftKey.value, hasDraft.value
+const draftScheduler = createDraftScheduler(300);
+watch([title, content, () => attachments.value.length, selectedColor], () => {
+  draftScheduler.schedule(draftKey.value, hasDraft.value
     ? { title: title.value, content: content.value, attachments: attachments.value, color: selectedColor.value }
     : null);
-}, { deep: true });
+});
+function handleVisibilityFlush() {
+  if (document.visibilityState === 'hidden') draftScheduler.flush();
+}
+function handlePageHideFlush() {
+  draftScheduler.flush();
+}
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityFlush);
+  window.addEventListener('pagehide', handlePageHideFlush);
+});
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityFlush);
+  window.removeEventListener('pagehide', handlePageHideFlush);
+  draftScheduler.flush();
+});
 const isExpanded = computed(() => isFocused.value || hasDraft.value);
 
 function autosize() {

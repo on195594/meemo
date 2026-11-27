@@ -1,6 +1,7 @@
 'use strict';
 
-var authService = require('../../services/auth-service.js'),
+var rateLimit = require('express-rate-limit').rateLimit,
+    authService = require('../../services/auth-service.js'),
     UserError = authService.UserError,
     asyncHandler = require('../middleware/async-handler.js'),
     responses = require('../responses.js'),
@@ -9,6 +10,16 @@ var authService = require('../../services/auth-service.js'),
     validation = require('../middleware/validate.js'),
     validate = validation.validate,
     z = validation.z;
+
+var registerRateLimit = rateLimit({
+    windowMs: 60000,
+    limit: function () { return parseInt(process.env.REGISTER_RATE_LIMIT_MAX, 10) || 60; },
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    handler: function (req, res, next) {
+        next(new HttpError(429, 'Too many requests. Please try again later.'));
+    }
+});
 
 var missingRegistrationField = 'missing username, password, email or displayName';
 var registerBody = z.object({
@@ -82,7 +93,7 @@ async function profile(req, res, next) {
 }
 
 function registerRoutes(router, auth) {
-    router.post('/api/register', validate({ body: registerBody }), asyncHandler(register));
+    router.post('/api/register', registerRateLimit, validate({ body: registerBody }), asyncHandler(register));
     router.post('/api/login', validate({ body: loginBody }), asyncHandler(login));
     router.post('/api/logout', asyncHandler(logout));
     router.get('/api/profile', auth, asyncHandler(profile));

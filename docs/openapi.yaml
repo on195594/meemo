@@ -713,6 +713,7 @@ paths:
         - { name: X-CSRF-Token, in: header, required: true, schema: { type: string } }
       responses:
         '204': { description: Revoked, or grant absent/not owned; idempotent }
+        '400': { description: Invalid connection identifier }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: CSRF or Origin invalid }
         '404': { description: MCP disabled }
@@ -923,7 +924,7 @@ paths:
         '202': { description: MCP notification accepted }
         '400': { description: Invalid protocol request }
         '401': { description: Token missing, expired or revoked; WWW-Authenticate contains resource metadata }
-        '403': { description: Invalid Origin/Host or insufficient scope }
+        '403': { description: Invalid Origin or Host }
         '404': { description: MCP disabled }
         '413': { description: Request too large }
         '429': { description: Request rate limit reached }
@@ -951,6 +952,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -1396,6 +1399,8 @@ paths:
                 format: binary
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -1430,6 +1435,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -1586,6 +1593,8 @@ paths:
                 type: string
         '400':
           $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /api/health/live:
     get:

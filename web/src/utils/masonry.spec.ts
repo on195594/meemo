@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { distributeColumns, columnCountFor, estimateItemHeight } from './masonry';
+import { distributeColumns, columnCountFor, estimateItemHeight, layoutMasonry } from './masonry';
 
 describe('masonry', () => {
   it('distributes items in left-to-right row order when heights are uniform', () => {
@@ -100,5 +100,21 @@ describe('masonry', () => {
     expect(columnCountFor(1000, 240, 16)).toBe(3);
     expect(columnCountFor(100, 240, 16)).toBe(1);
     expect(columnCountFor(358, 160, 8)).toBe(2);
+  });
+
+  it('computes flat masonry placements and total height without column buckets', () => {
+    const items = [
+      { id: '1', h: 200 },
+      { id: '2', h: 100 },
+      { id: '3', h: 120 },
+    ];
+    const layout = layoutMasonry(items, 2, 16, (item) => item.h);
+    expect(layout.placements).toEqual([
+      { item: items[0], column: 0, top: 0 },
+      { item: items[1], column: 1, top: 0 },
+      { item: items[2], column: 1, top: 116 },
+    ]);
+    expect(layout.height).toBe(236);
+    expect(layoutMasonry([], 2, 16)).toEqual({ placements: [], height: 0 });
   });
 });

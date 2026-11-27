@@ -1,10 +1,21 @@
 'use strict';
 
-var transfer = require('../../services/import-export-service.js'),
+var rateLimit = require('express-rate-limit').rateLimit,
+    transfer = require('../../services/import-export-service.js'),
     asyncHandler = require('../middleware/async-handler.js'),
     responses = require('../responses.js'),
     HttpError = responses.HttpError,
     HttpSuccess = responses.HttpSuccess;
+
+var transferRateLimit = rateLimit({
+    windowMs: 60000,
+    limit: function () { return parseInt(process.env.TRANSFER_RATE_LIMIT_MAX, 10) || 60; },
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    handler: function (req, res, next) {
+        next(new HttpError(429, 'Too many requests. Please try again later.'));
+    }
+});
 
 async function exportThings(req, res) {
     var stream = await transfer.createExport(req.user.id, req.user.username);
@@ -30,8 +41,8 @@ function isArchiveValidationError(message) {
 }
 
 function registerRoutes(router, auth, upload) {
-    router.get('/api/export', auth, asyncHandler(exportThings));
-    router.post('/api/import', auth, upload, asyncHandler(importThings));
+    router.get('/api/export', auth, transferRateLimit, asyncHandler(exportThings));
+    router.post('/api/import', auth, transferRateLimit, upload, asyncHandler(importThings));
 }
 
 module.exports = {

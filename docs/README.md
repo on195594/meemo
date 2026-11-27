@@ -28,7 +28,7 @@
 - [Codex MCP review and fixes](reviews/2026-10-12-gemini-mcp-codex-review.md): four verified findings repaired, full candidate recheck PASS_WITH_NOTES, local regressions and isolation evidence; not production acceptance.
 
 - [Architecture evolution roadmap](roadmaps/2026-09-18-architecture-evolution.md): staged work and acceptance criteria.
-- [MD3 review and recommendations](reviews/meemo-md3-review-and-fix-recommendations.md): review findings and proposed fixes.
+- [MD3 review and recommendations](reviews/2026-09-16-md3-review-and-fix-recommendations.md): review findings and proposed fixes.
 - [Impeccable UI audit and polish](reviews/2026-10-08-impeccable-ui-audit.md): scoped UI findings, implemented refinements, modal focus hardening, and synthetic browser validation.
 - [Performance optimization snapshot](reviews/2026-09-30-performance-optimization.md): implemented optimizations, synthetic before/after measurements, validation and remaining limits.
 
@@ -38,7 +38,7 @@ Keep new plans in `roadmaps/` and review reports in `reviews/`. These documents 
 
 - Keep runtime source in `src/`, browser source in `web/src/`, tests beside frontend source or in `src/test/`, and automation in `scripts/`.
 - Root entry points (`app.js`, `runTests`, `localdevelopment`, `start.sh`, `deploy.sh`) are intentional. In particular, `start.sh` is the Docker command, not a discarded legacy script.
-- One-off legacy v1-to-v2 migration and preflight tooling has been pruned after full production cutover to unified collections. Operational scripts (attachment GC, revision backfill, and build) remain active under `scripts/`.
+- One-off legacy v1-to-v2 migration and preflight tooling has been pruned after full production cutover to unified collections. Operational scripts (frontend build, quality/Compose verification, revision backfill, and attachment GC) remain active under `scripts/`.
 - `types/api.d.ts` and `types/index.d.ts` form the package's declared TypeScript entry point; generated HTTP types live separately in `types/generated/`.
 - `npm run build` produces staging output in `web/dist/` and the Express-served copy in `public/`. Both are ignored and reproducible; `npm run build:web` updates only the staging output.
 - Keep dependencies, account files, attachments, database files, backups, and migration evidence out of commits. Do not treat ignored local state as disposable temporary files. Clean only identified logs/captures/review scratch copies after preserving conclusions; do not blanket-delete ignored directories, shared `/tmp`, or local data.

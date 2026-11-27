@@ -43,26 +43,34 @@ Running `docker compose down -v` permanently deletes both volumes and all Meemo 
 
 | Variable | Application default | Compose value | Purpose |
 | --- | --- | --- | --- |
-| `PORT` | `3000` | `3000` | Container HTTP port |
-| `BIND_ADDRESS` | `0.0.0.0` | `0.0.0.0` | HTTP listen address |
+| `PORT` | `3000` (or `VITE_DEV_PORT`) | Image default (`3000`) | Container HTTP port |
+| `BIND_ADDRESS` | `0.0.0.0` | Image default (`0.0.0.0`) | HTTP listen address |
 | `MONGODB_URL` | `mongodb://127.0.0.1:27017/meemo` | `mongodb://mongodb:27017/meemo` | MongoDB connection URL |
-| `APP_ORIGIN` | `http://localhost` | `http://localhost:3000` | Public origin used in RSS links |
+| `APP_ORIGIN` | `http://localhost` (RSS); unset otherwise | `http://localhost:3000` | Public origin for RSS/wikilinks and HTTPS production session cookie `Secure` flag |
 | `ATTACHMENT_DIR` | `./storage` | `/app/data/storage` | Attachment directory |
 | `AUTH_USER_SOURCE` | `mongo` | `mongo` | Account repository: `mongo` (exclusive target) |
 | `SESSION_SECRET` | Random in development; required in production | Value of host `SESSION_SECRET` | Session signing secret |
 | `REGISTRATION_MODE` | `open` in development; `first-user` in production | `first-user` | Registration policy: `open`, `first-user`, or `disabled` |
+| `TRUST_PROXY` | `loopback, uniquelocal` | Not set (app default) | Express `trust proxy` policy (`true`/`1`, `false`/`0`, or hop/subnet spec) |
+| `CORS_ORIGIN` | Unset | Not set | Optional comma-separated allowed origins for credentialed CORS |
 | `URL_ENRICHMENT_ENABLED` | `false` | Not set (app default) | Outbound URL metadata fetch (disabled by default for SSRF safety) |
 | `MAX_ATTACHMENT_SIZE` | `10485760` (10MB) | Not set (app default) | Maximum attachment upload size in bytes |
 | `MAX_IMPORT_SIZE` | `52428800` (50MB) | Not set (app default) | Maximum import archive size in bytes |
 | `SHUTDOWN_TIMEOUT_MS` | `15000` | Not set (app default) | Graceful shutdown timeout in milliseconds |
 | `MONGO_MAX_POOL_SIZE` | `50` | Not set (app default) | Maximum MongoDB connection pool size |
 | `MONGO_MIN_POOL_SIZE` | `1` | Not set (app default) | Minimum MongoDB connection pool size |
+| `MONGO_TIMEOUT_MS` | `3000` | Not set (app default) | MongoDB server selection timeout in milliseconds |
+| `LOGIN_RATE_LIMIT_WINDOW_MS` | `60000` | Not set (app default) | Login rate-limit window in milliseconds |
+| `LOGIN_RATE_LIMIT_MAX` | `10` | Not set (app default) | Maximum failed login attempts per IP/account per window |
+| `REGISTER_RATE_LIMIT_MAX` | `60` | Not set (app default) | Maximum registration requests per IP per minute |
+| `TRANSFER_RATE_LIMIT_MAX` | `60` | Not set (app default) | Maximum import/export requests per IP per minute |
 | `MEEMO_PORT` | — | `3000` | Host port mapped to container port 3000 |
 | `MCP_ENABLED` | `false` | Not forwarded | Only the exact value `true` enables MCP; grants control read/write access |
 | `MCP_PUBLIC_URL` | Unset | Not forwarded | Required fixed HTTPS bare origin in full or setup mode; HTTP loopback allowed in development |
 | `MCP_REDIRECT_URIS` | Unset | Not forwarded | Required exact approved HTTPS callback URLs, comma-separated without spaces |
 | `MCP_ALLOWED_ORIGINS` | Public origin only | Not forwarded | Additional approved HTTPS browser origins, comma-separated without spaces |
 | `MCP_BOOTSTRAP_UNTIL` | Unset | Not forwarded | Setup-only UTC deadline within 30 minutes; requires `MCP_ENABLED=false`, denies all registration/access and expires automatically |
+| `MCP_PROTOCOL_DEADLINE_MS` | `15000` | Not forwarded | Absolute timeout in milliseconds for `/mcp` protocol requests |
 
 `.env.example` documents non-secret configuration keys. Node does not automatically load `.env`; export variables or pass them explicitly to the container. In particular, the repository Compose file does not forward MCP keys: adding them to a host `.env` alone does not enable the feature. See [MCP configuration](docs/GEMINI_ASSISTANT.md#enable-deliberately).
 
@@ -127,13 +135,13 @@ Build and test from the repository. Operate the deployed containers from the pro
 | --- | --- |
 | `app.js` | Runtime composition root and server entry point (`startServer`) |
 | `src/lifecycle.js` | MongoDB pool lifecycle and graceful shutdown sequencing |
-| `src/http/` | Injected Express app factory, session/upload setup, domain routes, validation, and uniform HTTP errors |
-| `src/services/` | Promise-first authentication, things, attachments, sharing, settings, health, and import/export behavior |
-| `src/storage/` | Local filesystem attachment adapter |
-| `src/database/` | MongoDB persistence for things, tags, settings, and users; sessions use `connect-mongo` in `src/http/session.js` |
+| `src/http/` | Injected Express app factory, session/upload setup, domain routes, optional MCP v2 protocol/tool & OAuth 2.1 handlers, validation, and uniform HTTP errors |
+| `src/services/` | Promise-first authentication, things, search, attachments, sharing, RSS rendering, settings, health, import/export, and MCP auth/note services |
+| `src/storage/` | Local filesystem attachment adapter and short-lived MCP callback bootstrap store |
+| `src/database/` | MongoDB persistence for things, tags, settings, users, `system_config` markers, and optional TTL-backed `mcp_*` state; sessions use `connect-mongo` in `src/http/session.js` |
 | `src/users.js` | MongoDB account operations and bcrypt password handling |
 | `types/` | TypeScript domain definitions (`types/api.d.ts`) and OpenAPI generated types (`types/generated/api-types.ts`) |
-| `scripts/` | Build/verification entry points, Thing revision migration, and attachment GC |
+| `scripts/` | Frontend build, quality/Compose verification, Thing revision backfill, and attachment GC |
 | `src/test/` | Backend and contract tests run by Mocha |
 | `web/` | Vue 3 + Vite + TypeScript application and Vitest behavior tests; route query owns note filters |
 | `docs/` | [Documentation index](docs/README.md), current contracts/runbooks, roadmaps, and review snapshots |

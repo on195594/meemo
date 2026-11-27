@@ -8,11 +8,11 @@ Meemo is a lightweight Node.js/Express notes app with a Vue 3 frontend, MongoDB 
 
 ## Source Map
 
-- `app.js` & `src/lifecycle.js`: Process lifecycle, worker management, and HTTP/MongoDB startup.
-- `src/http/`: Express routing, input validation, auth middleware, and API handlers.
-- `src/services/`: Domain logic (notes, tags, attachments, sharing, auth, MCP tools).
+- `app.js` & `src/lifecycle.js`: Process lifecycle, MongoDB/HTTP startup, and graceful shutdown.
+- `src/http/`: Express routing, input validation, auth middleware, API handlers, and optional MCP protocol/OAuth/tool endpoints.
+- `src/services/`: Domain logic (notes, search, tags, attachments, sharing, import/export, settings, auth, and MCP auth/note services).
 - `src/database/`: MongoDB persistence layer.
-- `src/storage/`: Filesystem attachments.
+- `src/storage/`: Filesystem attachments and short-lived MCP bootstrap callback storage.
 - `src/users.js`: User accounts and bcrypt password handling.
 - `web/`: Modern Vue 3 + TypeScript frontend (`public/` and `web/dist/` are generated build output; do not hand-edit).
 - `src/test/` & `web/src/`: Backend and frontend test suites.

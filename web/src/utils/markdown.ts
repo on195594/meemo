@@ -317,6 +317,9 @@ export function stripImageAttachmentReferences(
 
   const imageAttachments = attachments.filter(isImageAttachment);
   if (imageAttachments.length === 0) return content;
+  if (!content.includes('[') && !/<img\b/i.test(content)) {
+    return content;
+  }
 
   let result = content;
 

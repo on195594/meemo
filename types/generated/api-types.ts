@@ -79,6 +79,13 @@ export interface paths {
                     };
                     content?: never;
                 };
+                /** @description Invalid connection identifier */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
                 401: components["responses"]["Unauthorized"];
                 /** @description CSRF or Origin invalid */
                 403: {
@@ -634,7 +641,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Invalid Origin/Host or insufficient scope */
+                /** @description Invalid Origin or Host */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -708,6 +715,7 @@ export interface paths {
                 400: components["responses"]["BadRequest"];
                 403: components["responses"]["Forbidden"];
                 409: components["responses"]["Conflict"];
+                429: components["responses"]["TooManyRequests"];
                 500: components["responses"]["InternalError"];
             };
         };
@@ -1347,6 +1355,7 @@ export interface paths {
                     };
                 };
                 401: components["responses"]["Unauthorized"];
+                429: components["responses"]["TooManyRequests"];
                 500: components["responses"]["InternalError"];
             };
         };
@@ -1399,6 +1408,7 @@ export interface paths {
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 413: components["responses"]["PayloadTooLarge"];
+                429: components["responses"]["TooManyRequests"];
                 500: components["responses"]["InternalError"];
             };
         };
@@ -1699,6 +1709,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
+                500: components["responses"]["InternalError"];
             };
         };
         put?: never;

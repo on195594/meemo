@@ -46,7 +46,7 @@
 本节记录新增入口与范围，不覆盖 0.1 中绑定旧提交的历史快照，也不把未提交候选的验证结果视为生产发布证据。提交后须重新运行并绑定该提交的报告。
 
 - **M0-04：** 新增显式 `npm run verify:restore`。在独立 Docker 资源中生成合成完整备份，再恢复 MongoDB、附件和保留镜像；检查文档/索引指纹、owner 隔离、登录、分享/回收站、附件/导出字节、旧会话失效、冻结解除、CAS、重启持久性和另一数据库哨兵。入口拒绝外部目标，不包含生产操作。详见 [恢复验证说明](../BACKUP_RESTORE.md#repeatable-synthetic-restore-verification)。
-- **M3-01：** 新增 `npm run verify:search:relevance`，复用已有 benchmark 应用读取路径。样本集为 18 条合成笔记、30 个查询及显式期望命中/排名；标注由编码代理编写，人工复核仍为 `NOT_RUN`。初次本地候选执行 29 项通过，中文 `$text` 复合词子串漏检保留为 `KNOWN_GAP`，不通过改标签掩盖。详见 [检索样本说明](../SEARCH_BASELINE.md#synthetic-relevance-sample-m3-01)。
+- **M3-01：** 新增 `npm run verify:search:relevance`，复用已有 benchmark 应用读取路径。样本集为 18 条合成笔记、30 个查询及显式期望命中/排名；标注由编码代理编写，人工复核仍为 `NOT_RUN`。初次本地候选执行 29 项通过，中文 `$text` 复合词子串漏检保留为 `KNOWN_GAP`，不通过改标签掩盖。详见历史检索样本说明（`docs/SEARCH_BASELINE.md`，已随精简退役）。
 - **保持不变：** 不修改线上搜索语义、生产数据库/备份/账户/会话，不新增在线服务、依赖、AI 或向量库；恢复验证仍与普通 `npm run verify` 分开执行。既有导入导出回归继续由 `npm test` 覆盖。
 
 ## 1. 决策摘要

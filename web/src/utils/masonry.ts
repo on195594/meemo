@@ -107,3 +107,47 @@ export function distributeColumns<T>(
 export function columnCountFor(width: number, cardWidth: number, gap: number): number {
   return Math.max(1, Math.floor((width + gap) / (cardWidth + gap)));
 }
+
+export interface MasonryPlacement<T> {
+  item: T;
+  column: number;
+  top: number;
+}
+
+export function layoutMasonry<T>(
+  items: readonly T[],
+  columnCount: number,
+  gap: number,
+  getHeight?: (item: T) => number
+): { placements: MasonryPlacement<T>[]; height: number } {
+  const n = Math.max(1, Math.floor(columnCount) || 1);
+  if (items.length === 0) return { placements: [], height: 0 };
+
+  const colHeights = new Array<number>(n).fill(0);
+  const placements: MasonryPlacement<T>[] = new Array(items.length);
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const rawH = getHeight ? getHeight(item) : estimateItemHeight(item);
+    const height = Number.isFinite(rawH) && rawH > 0 ? rawH : 100;
+
+    let shortest = 0;
+    let minH = colHeights[0];
+    for (let c = 1; c < n; c++) {
+      if (colHeights[c] < minH) {
+        minH = colHeights[c];
+        shortest = c;
+      }
+    }
+
+    const top = colHeights[shortest] > 0 ? colHeights[shortest] + gap : 0;
+    placements[i] = { item, column: shortest, top };
+    colHeights[shortest] = top + height;
+  }
+
+  let height = 0;
+  for (let c = 0; c < n; c++) {
+    if (colHeights[c] > height) height = colHeights[c];
+  }
+  return { placements, height };
+}

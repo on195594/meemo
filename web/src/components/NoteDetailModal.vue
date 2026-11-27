@@ -212,7 +212,7 @@ import ActionMenu from './ActionMenu.vue';
 import NoteColorPopover from './NoteColorPopover.vue';
 import { splitTitle, joinTitle } from '../utils/noteTitle';
 import { assistantLabel } from '../utils/assistant';
-import { loadDraft, saveDraft } from '../utils/drafts';
+import { createDraftScheduler, loadDraft } from '../utils/drafts';
 
 const props = withDefaults(
   defineProps<{
@@ -309,9 +309,10 @@ const hasUnsavedChanges = computed(() => {
 // Unsaved edits survive a closed tab or expired session on this device.
 const noteDraftKey = computed(() => (props.draftScope && currentNote.value._id ? `note:${props.draftScope}:${currentNote.value._id}` : null));
 const restoredDraft = ref(false);
+const draftScheduler = createDraftScheduler(300);
 watch([editDraft, hasUnsavedChanges, draftSnapshot], () => {
   if (!props.open) return;
-  saveDraft(noteDraftKey.value, hasUnsavedChanges.value && editDraft.value.trim() ? {
+  draftScheduler.schedule(noteDraftKey.value, hasUnsavedChanges.value && editDraft.value.trim() ? {
     content: editDraft.value,
     baseline: draftSnapshot.value ? {
       content: draftSnapshot.value.content, revision: draftSnapshot.value.revision,
@@ -321,6 +322,7 @@ watch([editDraft, hasUnsavedChanges, draftSnapshot], () => {
 
 // Phones may discard a backgrounded tab, so save when the page is hidden instead of waiting for close.
 function handleVisibilityChange() {
+  draftScheduler.flush();
   if (document.visibilityState === 'hidden' && hasUnsavedChanges.value) saveContent(false);
 }
 
@@ -403,6 +405,7 @@ function scheduleAutoSave(delay = 1000) {
 }
 
 function handleInputBlur() {
+  draftScheduler.flush();
   clearAutoSaveTimer();
   if (hasUnsavedChanges.value && !isSaving.value && !isClosing.value && props.open) {
     saveContent(false);
@@ -535,6 +538,7 @@ async function savePendingDraft(): Promise<boolean> {
 
 async function closeWithSave() {
   if (props.busy || isClosing.value) return;
+  draftScheduler.flush();
   clearAutoSaveTimer();
   isClosing.value = true;
   try {
@@ -559,6 +563,7 @@ function handleBackdropClick() {
 
 function handleWindowKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
+    event.stopPropagation();
     if (showColorPicker.value) {
       event.preventDefault();
       closeColorPicker(true);
@@ -744,6 +749,7 @@ watch(
         });
       }
     } else {
+      draftScheduler.flush();
       document.body.style.overflow = '';
       window.removeEventListener('keydown', handleWindowKeydown);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -768,11 +774,11 @@ watch(
         setDraft(newThing.content || '');
       }
     }
-  },
-  { deep: true }
+  }
 );
 
 onUnmounted(() => {
+  draftScheduler.flush();
   clearAutoSaveTimer();
   document.body.style.overflow = '';
   window.removeEventListener('keydown', handleWindowKeydown);

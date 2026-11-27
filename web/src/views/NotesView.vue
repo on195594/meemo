@@ -68,19 +68,24 @@
           <!-- Pinned Section -->
           <section v-if="pinnedThings.length > 0" class="notes-section" aria-labelledby="pinned-heading">
             <h2 id="pinned-heading" class="section-label">Pinned</h2>
-            <div class="m3-notes-masonry" :class="{ 'is-list': viewMode === 'list', 'is-compact': isCompact }">
-              <div v-for="(column, ci) in pinnedColumns" :key="'pinned-' + ci" class="masonry-column">
+            <div
+              class="m3-notes-masonry"
+              :class="{ 'is-list': useListLayout, 'is-compact': isCompact }"
+              :style="!useListLayout ? { height: `${pinnedLayout.height}px` } : undefined"
+            >
               <NoteCard
-                v-for="thing in column"
-                :key="thing._id"
-                :thing="thing"
+                v-for="entry in pinnedLayout.placements"
+                :key="entry.item._id"
+                :thing="entry.item"
+                :data-column="entry.column"
+                :style="cardPlacementStyle(entry)"
                 :can-edit="!isDeleted"
                 :selectable="isSelectionMode"
-                :selected="selectedIds.has(thing._id)"
+                :selected="selectedIds.has(entry.item._id)"
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
                 :on-duplicate="handleDuplicateNote"
-                :duplicating="copyingIds.has(thing._id)"
+                :duplicating="copyingIds.has(entry.item._id)"
                 :on-restore="isDeleted ? handleRestoreNote : undefined"
                 @open-detail="openNoteModal"
                 @delete="handleDeleteNote"
@@ -92,26 +97,30 @@
                 @tag-click="handleTagClick"
                 @wikilink-click="handleWikilinkClick"
               />
-              </div>
             </div>
           </section>
 
           <!-- Others Section -->
           <section v-if="otherThings.length > 0" class="notes-section" :aria-labelledby="pinnedThings.length > 0 ? 'others-heading' : undefined">
             <h2 v-if="pinnedThings.length > 0" id="others-heading" class="section-label">Others</h2>
-            <div class="m3-notes-masonry" :class="{ 'is-list': viewMode === 'list', 'is-compact': isCompact }">
-              <div v-for="(column, ci) in otherColumns" :key="'other-' + ci" class="masonry-column">
+            <div
+              class="m3-notes-masonry"
+              :class="{ 'is-list': useListLayout, 'is-compact': isCompact }"
+              :style="!useListLayout ? { height: `${otherLayout.height}px` } : undefined"
+            >
               <NoteCard
-                v-for="thing in column"
-                :key="thing._id"
-                :thing="thing"
+                v-for="entry in otherLayout.placements"
+                :key="entry.item._id"
+                :thing="entry.item"
+                :data-column="entry.column"
+                :style="cardPlacementStyle(entry)"
                 :can-edit="!isDeleted"
                 :selectable="isSelectionMode"
-                :selected="selectedIds.has(thing._id)"
+                :selected="selectedIds.has(entry.item._id)"
                 :highlight-query="activeFilter || ''"
                 :on-save-edit="updateNote"
                 :on-duplicate="handleDuplicateNote"
-                :duplicating="copyingIds.has(thing._id)"
+                :duplicating="copyingIds.has(entry.item._id)"
                 :on-restore="isDeleted ? handleRestoreNote : undefined"
                 @open-detail="openNoteModal"
                 @delete="handleDeleteNote"
@@ -123,7 +132,6 @@
                 @tag-click="handleTagClick"
                 @wikilink-click="handleWikilinkClick"
               />
-              </div>
             </div>
           </section>
 
@@ -170,6 +178,7 @@
 
       <!-- Fullscreen Image Lightbox -->
       <ImageLightbox
+        v-if="hasOpenedLightbox"
         :open="isLightboxOpen"
         :images="lightboxImages"
         :initial-index="lightboxIndex"
@@ -211,7 +220,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, inject, type Ref } from 'vue';
+import { ref, shallowRef, computed, watch, nextTick, onMounted, onUnmounted, inject, defineAsyncComponent, type Ref, type CSSProperties } from 'vue';
 import UiIcon from '../components/UiIcon.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from '../composables/useAuth';
@@ -221,9 +230,11 @@ import type { Thing, NoteColor } from '../api/client';
 import NotesBatchBar from '../components/NotesBatchBar.vue';
 import NoteComposer from '../components/NoteComposer.vue';
 import NoteCard from '../components/NoteCard.vue';
-import NoteDetailModal from '../components/NoteDetailModal.vue';
-import ImageLightbox, { type LightboxImage } from '../components/ImageLightbox.vue';
-import { distributeColumns, columnCountFor } from '../utils/masonry';
+import type { LightboxImage } from '../components/ImageLightbox.vue';
+import { layoutMasonry, columnCountFor, estimateItemHeight, type MasonryPlacement } from '../utils/masonry';
+
+const NoteDetailModal = defineAsyncComponent(() => import('../components/NoteDetailModal.vue'));
+const ImageLightbox = defineAsyncComponent(() => import('../components/ImageLightbox.vue'));
 
 const { isAuthenticated, isLoading: authLoading, isFirstUser, user } = useAuth();
 const { settings } = useSettings();
@@ -267,8 +278,9 @@ const viewTitle = computed(() => {
   return 'Notes';
 });
 
+const useListLayout = computed(() => viewMode.value === 'list' || typeof ResizeObserver === 'undefined');
 const gridWidth = computed(() => {
-  if (viewMode.value === 'list') return '600px';
+  if (useListLayout.value) return '600px';
   if (isCompact.value) return '100%';
   return `${columnCount.value * 240 + (columnCount.value - 1) * 16}px`;
 });
@@ -280,7 +292,7 @@ let resizeObserver: ResizeObserver | null = null;
 // Compact mode follows the stream width (not the viewport) so an expanded sidebar can't overflow fixed columns.
 const isCompact = computed(() => streamWidth.value > 0 && streamWidth.value < 600);
 const columnCount = computed(() => {
-  if (viewMode.value === 'list') return 1;
+  if (useListLayout.value) return 1;
   return columnCountFor(streamWidth.value, isCompact.value ? 160 : 240, isCompact.value ? 8 : 16);
 });
 
@@ -297,8 +309,33 @@ const categorizedThings = computed(() => {
 });
 const pinnedThings = computed(() => categorizedThings.value.pinned);
 const otherThings = computed(() => categorizedThings.value.other);
-const pinnedColumns = computed(() => distributeColumns(pinnedThings.value, columnCount.value));
-const otherColumns = computed(() => distributeColumns(otherThings.value, columnCount.value));
+const measuredHeights = shallowRef<Record<string, number>>({});
+const masonryGap = computed(() => (isCompact.value ? 8 : 16));
+function cardHeight(item: Thing): number {
+  return measuredHeights.value[item._id] || estimateItemHeight(item);
+}
+const pinnedLayout = computed(() => layoutMasonry(pinnedThings.value, columnCount.value, masonryGap.value, cardHeight));
+const otherLayout = computed(() => layoutMasonry(otherThings.value, columnCount.value, masonryGap.value, cardHeight));
+
+function cardPlacementStyle(entry: MasonryPlacement<Thing>): CSSProperties | undefined {
+  if (useListLayout.value) return undefined;
+  if (isCompact.value) {
+    const n = columnCount.value;
+    const widthExpr = `calc((100% - ${(n - 1) * 8}px) / ${n})`;
+    return {
+      position: 'absolute',
+      top: `${entry.top}px`,
+      width: widthExpr,
+      left: `calc(${entry.column} * (${widthExpr} + 8px))`,
+    };
+  }
+  return {
+    position: 'absolute',
+    top: `${entry.top}px`,
+    left: `${entry.column * 256}px`,
+    width: '240px',
+  };
+}
 
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
@@ -484,7 +521,9 @@ function setupIntersectionObserver() {
 
   if (typeof IntersectionObserver !== 'undefined') {
     observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting && hasMore.value && !isLoading.value && !isLoadingMore.value) {
+      const target = loadMoreTrigger.value;
+      const hit = entries.some((entry) => (!entry.target || entry.target === target) && entry.isIntersecting);
+      if (hit && hasMore.value && !isLoading.value && !isLoadingMore.value) {
         fetchMore();
       }
     }, { rootMargin: '200px' });
@@ -496,11 +535,13 @@ function setupIntersectionObserver() {
 }
 
 // Fullscreen Image Lightbox
+const hasOpenedLightbox = ref(false);
 const isLightboxOpen = ref(false);
 const lightboxImages = ref<LightboxImage[]>([]);
 const lightboxIndex = ref(0);
 
 function handleImageClick(images: LightboxImage[], index: number) {
+  hasOpenedLightbox.value = true;
   lightboxImages.value = images;
   lightboxIndex.value = index;
   isLightboxOpen.value = true;
@@ -661,10 +702,52 @@ watch(
   },
 );
 
-watch(hasMore, () => {
-  if (loadMoreTrigger.value && observer && hasMore.value) {
-    observer.observe(loadMoreTrigger.value);
+watch([hasMore, loadMoreTrigger], ([more, nextEl], [, prevEl]) => {
+  if (prevEl && prevEl !== nextEl) observer?.unobserve(prevEl);
+  if (nextEl && observer && more) observer.observe(nextEl);
+});
+
+let cardObserver: ResizeObserver | null = null;
+function syncCardObserver() {
+  if (useListLayout.value || !streamRef.value) {
+    cardObserver?.disconnect();
+    return;
   }
+  if (!cardObserver) {
+    cardObserver = new ResizeObserver((entries) => {
+      let next: Record<string, number> | null = null;
+      for (const entry of entries) {
+        const el = entry.target as HTMLElement | undefined;
+        if (!el) continue;
+        const id = el.dataset.noteId;
+        const h = el.offsetHeight;
+        if (id && h > 0 && measuredHeights.value[id] !== h) {
+          if (!next) next = { ...measuredHeights.value };
+          next[id] = h;
+        }
+      }
+      if (next) measuredHeights.value = next;
+    });
+  } else {
+    cardObserver.disconnect();
+  }
+  for (const el of streamRef.value.querySelectorAll('.note-card')) {
+    cardObserver.observe(el);
+  }
+}
+
+watch([things, viewMode], (current) => {
+  const valid = new Set(current[0].map((t) => t._id));
+  const prev = measuredHeights.value;
+  let pruned: Record<string, number> | null = null;
+  for (const id of Object.keys(prev)) {
+    if (!valid.has(id)) {
+      if (!pruned) pruned = { ...prev };
+      delete pruned[id];
+    }
+  }
+  if (pruned) measuredHeights.value = pruned;
+  void nextTick(syncCardObserver);
 });
 
 function handleImportEvent() {
@@ -693,6 +776,7 @@ onUnmounted(() => {
   }
   if (snackbarTimer) clearTimeout(snackbarTimer);
   resizeObserver?.disconnect();
+  cardObserver?.disconnect();
   window.removeEventListener('meemo:imported', handleImportEvent);
   window.removeEventListener('keydown', handleGlobalKeydown);
 });
@@ -962,35 +1046,23 @@ onUnmounted(() => {
   width: 100%;
 }
 
-/* Row-order masonry: fixed 240px Keep columns, centered. */
+/* Flat masonry: fixed 240px Keep columns, centered. */
 .m3-notes-masonry {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 16px;
+  position: relative;
+  width: 100%;
+  max-width: var(--grid-width, 100%);
+  margin: 0 auto;
 }
 
-.masonry-column {
+.m3-notes-masonry.is-list {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  width: 240px;
-  min-width: 0;
-}
-
-.m3-notes-masonry.is-compact,
-.m3-notes-masonry.is-compact .masonry-column {
-  gap: 8px;
-}
-
-.m3-notes-masonry.is-compact .masonry-column {
-  flex: 1 1 0;
-  width: auto;
-}
-
-.m3-notes-masonry.is-list .masonry-column {
-  width: 100%;
   max-width: 600px;
+}
+
+.m3-notes-masonry.is-list.is-compact {
+  gap: 8px;
 }
 
 .notes-section + .notes-section {

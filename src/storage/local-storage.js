@@ -25,6 +25,25 @@ async function saveAttachment(userId, storageKey, buffer) {
     }
 }
 
+async function saveAttachmentFromPath(userId, storageKey, sourcePath) {
+    var target = path.join(await ensureUserDirectory(userId), storageKey);
+    try {
+        await fs.rename(sourcePath, target);
+    } catch (error) {
+        if (error && error.code === 'EXDEV') {
+            try {
+                await fs.copyFile(sourcePath, target);
+            } catch (copyError) {
+                try { await fs.rm(target, { force: true }); } catch (cleanupError) {}
+                throw copyError;
+            }
+            return;
+        }
+        try { await fs.rm(target, { force: true }); } catch (cleanupError) {}
+        throw error;
+    }
+}
+
 async function resolveAttachmentRoot(userId, username, storageKey) {
     var root = userDirectory(userId);
     try {
@@ -120,6 +139,7 @@ async function listAttachments() {
 
 module.exports = {
     saveAttachment: saveAttachment,
+    saveAttachmentFromPath: saveAttachmentFromPath,
     resolveAttachmentRoot: resolveAttachmentRoot,
     exportDirectory: exportDirectory,
     copyAttachment: copyAttachment,

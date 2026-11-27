@@ -15,13 +15,7 @@ function createApp(options) {
     options = options || {};
 
     var isProduction = options.isProduction !== undefined ? options.isProduction : (process.env.NODE_ENV === 'production');
-    var authUserSource = options.authUserSource || process.env.AUTH_USER_SOURCE || 'mongo';
-    if (authUserSource !== 'mongo') {
-        if (isProduction) {
-            throw new Error('FATAL: AUTH_USER_SOURCE must be mongo when NODE_ENV=production');
-        }
-        throw new Error('Unsupported AUTH_USER_SOURCE: ' + authUserSource);
-    }
+    require('../users.js').assertMongoUserSource(options.authUserSource, isProduction);
 
     if (options.db) config.db = options.db;
 
@@ -53,7 +47,7 @@ function createApp(options) {
         lastModified: true,
         setHeaders: function (res, filePath) {
             var rel = path.relative(path.join(__dirname, '../../public'), filePath);
-            if (filePath.endsWith('.html')) {
+            if (filePath.endsWith('.html') || rel === 'sw.js') {
                 res.setHeader('Cache-Control', 'no-cache');
             } else if (rel.startsWith('assets' + path.sep) || (res.req && res.req.path && res.req.path.startsWith('/assets/'))) {
                 res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -67,7 +61,8 @@ function createApp(options) {
     }
 
     app.use('/api/mcp', express.json({ strict: true, limit: '2kb' }));
-    app.use(express.json({ strict: true, limit: '5mb' }));
+    app.use('/api/settings', express.json({ strict: true, limit: '5mb' }));
+    app.use(express.json({ strict: true, limit: '1mb' }));
 
     app.use('/api/health/ready', function (req, res, next) {
         if (options.shutdownManager && options.shutdownManager.isShuttingDown) {

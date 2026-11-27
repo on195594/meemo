@@ -49,7 +49,7 @@ For an authorized backup, identify `MONGO_CONTAINER`, `MEEMO_DATABASE`, the Meem
 
 ## Restore into a clean isolated stack
 
-A restore exercise is separate work. Create fresh MongoDB/application containers and attachment storage with no production mounts or shared MongoDB connection. Load the retained image and restore the selected Meemo database and attachments into these disposable resources. Disable MCP, workers and URL enrichment, and use a separate test session secret.
+A restore exercise is separate work. Create fresh MongoDB/application containers and attachment storage with no production mounts or shared MongoDB connection. Load the retained image and restore the selected Meemo database and attachments into these disposable resources. Disable MCP and URL enrichment, and use a separate test session secret.
 
 Compare document/index fingerprints and attachment hashes with the backup, then verify login, representative notes/attachments, sharing, export and restart persistence. Keep credentials and note contents out of reports. Remove only the resources created for the exercise. A synthetic fixture pass is not proof that a real backup restores correctly.
 
@@ -79,4 +79,4 @@ For an explicitly authorized **data restore**:
 
 The application and production database operate entirely on unified collections (`things`, `users`, `settings`, `sessions`). The legacy file-based authentication and per-user dynamic collections have been fully cut over and retired. Historical one-off migration and preflight tooling (`migrate-data-to-v2.js`, `migrate-users-to-mongo.js`, `verify-production-readiness.js`, `preflight-legacy-retirement.js`, `owner-map.js`) has been pruned from `scripts/` as part of codebase simplification.
 
-Production recovery strictly follows the standard MongoDB dump/restore and attachment volume extraction runbook above. Standalone MongoDB stores `things` as the authoritative single source of truth for tag identity and usage; `/api/tags` aggregates `things.tags` dynamically without requiring cross-collection coordination. Tag repair and projection refresh are managed online via `thingService.cleanupTags`.
+Production recovery strictly follows the standard MongoDB dump/restore and attachment volume extraction runbook above. Standalone MongoDB stores `things` as the authoritative single source of truth for tag identity and usage; `/api/tags` aggregates `things.tags` dynamically without requiring cross-collection coordination. Programmatic tag repair and projection refresh remain available via `thingService.cleanupTags` (invoked explicitly in maintenance/tests rather than an automatic background loop).

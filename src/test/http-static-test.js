@@ -104,5 +104,12 @@ describe('HTTP static serving', function () {
                     done();
                 });
         });
+
+        it('applies no-cache to /sw.js so browser updates are not delayed', function (done) {
+            request(app)
+                .get('/sw.js')
+                .expect(200)
+                .expect('Cache-Control', 'no-cache', done);
+        });
     });
 });

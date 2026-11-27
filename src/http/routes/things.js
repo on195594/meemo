@@ -22,7 +22,8 @@ var attachment = z.union([
 
 var createBody = z.object({
     content: z.string({ required_error: 'content must be a string', invalid_type_error: 'content must be a string' })
-        .min(1, 'content must be a string'),
+        .min(1, 'content must be a string')
+        .max(500000, 'content exceeds maximum length'),
     attachments: z.array(attachment, { invalid_type_error: 'attachments must be an array' }).default([]),
     color: z.enum(noteColors.NOTE_COLORS).optional().default('default')
 });

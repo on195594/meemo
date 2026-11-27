@@ -3,7 +3,7 @@
 var crypto = require('crypto'),
     users = require('../users.js'),
     createRepository = require('../database/mcp.js'),
-    errors = require('@modelcontextprotocol/sdk/server/auth/errors.js');
+    errors = require('../mcp-errors.js');
 
 var OAUTH_REQUEST_BYTES = 16 * 1024;
 var ACCESS_SECONDS = 100 * 365 * 24 * 60 * 60;

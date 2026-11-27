@@ -22,8 +22,10 @@ function createSession(options) {
         sessionStore = options.sessionStore;
     } else if (options.sessionMemory) {
         sessionStore = undefined;
+    } else if (options.client) {
+        sessionStore = MongoStore.create({ client: options.client, touchAfter: 24 * 3600 });
     } else {
-        sessionStore = MongoStore.create({ mongoUrl: options.databaseUrl || config.databaseUrl });
+        sessionStore = MongoStore.create({ mongoUrl: options.databaseUrl || config.databaseUrl, touchAfter: 24 * 3600 });
     }
 
     var secureCookie = isProduction && Boolean(process.env.APP_ORIGIN && process.env.APP_ORIGIN.indexOf('https://') === 0);

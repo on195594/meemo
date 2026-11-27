@@ -183,20 +183,26 @@ async function add(userId, content, attachments, color = 'default', assistant) {
     return addRichContent(userId, [result])[0];
 }
 
-async function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant) {
-    var urls = extractURLs(content);
-    var tagObjects = extractTags(content, urls);
-    var externalContent;
-    try {
-        externalContent = await ssrf.enrichUrls(urls);
-    } catch (error) {
-        console.error('Failed to extract external content:', error);
-        externalContent = [];
+async function put(userId, thingId, content, attachments, isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant, precomputed) {
+    var tagObjects, externalContent;
+    if (precomputed && Array.isArray(precomputed.tags) && Array.isArray(precomputed.externalContent)) {
+        tagObjects = precomputed.tags;
+        externalContent = precomputed.externalContent;
+    } else {
+        var urls = extractURLs(content);
+        tagObjects = extractTags(content, urls);
+        try {
+            externalContent = await ssrf.enrichUrls(urls);
+        } catch (error) {
+            console.error('Failed to extract external content:', error);
+            externalContent = [];
+        }
     }
 
     // The repository still checks owner, deletion state and expectedRevision atomically.
-    return things.put(userId, thingId, content, tagObjects, attachments, externalContent,
+    var updated = await things.put(userId, thingId, content, tagObjects, attachments, externalContent,
         isPublic, isShared, isArchived, isSticky, color, expectedRevision, assistant);
+    return addRichContent(userId, [updated])[0];
 }
 
 async function del(userId, thingId, expectedRevision, assistant) {

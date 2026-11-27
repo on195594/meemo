@@ -121,7 +121,7 @@ System and multilingual CJK font stack (`--md-sys-typescale-font`) throughout wi
 - **Sidebar**: Notes, Archive, Trash. Desktop: 80px icon rail that peeks open on hover, or 280px when expanded via the hamburger (remembered per browser). Below 768px: overlay drawer with scrim; focus moves into it, Tab stays inside, and Escape or a scrim click closes it and returns focus to the menu button. Navigation writes the existing `tag` / `archived` / `deleted` route query.
 - **Masonry Grid**: Height-balanced columns of fixed 240px cards with 16px gaps, centered. When the stream itself is narrower than 600px (phones, or a narrow window with the sidebar expanded) columns become flexible with a 160px minimum and 8px gaps — two columns on a typical phone. Each item goes to the currently shortest column using bounded height estimates of the displayed body (`web/src/utils/masonry.ts`); ties fall back to left-to-right order, so reading order is approximate rather than strict row order. List view is a single 600px column.
 - **Composer**: 600px, centered. Collapsed: "Take a note…" with New list and image shortcuts. Expanded: Title, auto-growing body, toolbar, and a `Close` text button. Close, Escape or a click outside saves a non-empty draft; a failed save keeps the draft open. It stays mounted (hidden) in Archive/Trash so a draft survives view switches.
-- **Modal Layer**: Note dialog `min(600px, 100%)` (full screen below 600px); auth/import 440-480px, cheatsheet 540px.
+- **Modal Layer**: Note dialog `min(600px, 100%)` (full screen below 600px); auth/import 440-480px, settings 500px, cheatsheet 540px.
 - **Snackbar**: Bottom-left, 4px radius, auto-dismisses (6s with Undo, 3s otherwise). Archive and Trash actions offer Undo.
 
 ## Elevation & Depth
@@ -138,7 +138,7 @@ The older `--md-sys-elevation-*` tokens remain for auth, settings, and import di
 - `--keep-card-radius` (8px): Note cards, composer, note dialog, search box, color popovers.
 - `xs` (4px): Snackbar, text buttons (`Close`), code blocks.
 - `full` (9999px): Icon buttons, label chips, color swatches, avatar, sidebar active pill (right side only).
-- `2xl` (28px): Remaining M3 dialogs (auth, settings, import).
+- `2xl` (28px): Remaining M3 dialogs (auth, settings, import, cheatsheet).
 
 ## Components
 
@@ -147,7 +147,7 @@ The older `--md-sys-elevation-*` tokens remain for auth, settings, and import di
 - A leading `# Heading` renders as the title (16px/500); internal Markdown headings follow a clear hierarchy (h2: 15px, h3+: 14px); body text is 14px. Clickable stream cards clip at 400px with a cross-browser fade mask. Text selection on cards does not trigger modal navigation.
 - Image attachments sit edge-to-edge at the top; other attachments are compact badge chips.
 - Hover/focus reveals the pin (top-right), the selection check (top-left, outside the corner), and the toolbar (color, More). Archive/unarchive, make a copy, public/private and Delete note live in More, keeping the card toolbar minimal and reducing accidental taps. Pinned notes retain their pin at rest. On touch devices the toolbar and pin are always visible, and long-press initiates multi-select mode.
-- No timestamp on editable cards; read-only views (shared/public) show it in the footer.
+- No timestamp on editable cards; read-only cards (Trash, shared, and public views) show it in the footer.
 - Checklist items toggle in place with enlarged touch hit targets; clicking anywhere else, or Enter on the focused card, opens the dialog.
 
 ### Note Dialog

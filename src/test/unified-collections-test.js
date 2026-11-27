@@ -58,14 +58,14 @@ describe('Unified Collections Model & Shadow Migration (RF-204)', function () {
 
             var keyPatterns = idxs.map(function (idx) { return JSON.stringify(idx.key); });
 
-            // ownerId + modifiedAt
+            // ownerId + modifiedAt (lean reads)
             expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, modifiedAt: -1 }));
-            // ownerId + sticky + modifiedAt
-            expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, sticky: -1, modifiedAt: -1 }));
-            // ownerId + archived + modifiedAt
-            expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, archived: 1, modifiedAt: -1 }));
-            // ownerId + tags
-            expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, tags: 1 }));
+            // ownerId + deletedAt + archived + sticky + modifiedAt + _id (active & trash feeds)
+            expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, deletedAt: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }));
+            // ownerId + deletedAt + tags + archived + sticky + modifiedAt + _id (tag-filtered feeds)
+            expect(keyPatterns).to.contain(JSON.stringify({ ownerId: 1, deletedAt: 1, tags: 1, archived: 1, sticky: -1, modifiedAt: -1, _id: -1 }));
+            // sparse attachment identifier lookup for orphan GC
+            expect(keyPatterns).to.contain(JSON.stringify({ 'attachments.identifier': 1 }));
         });
 
         it('creates unique compound index on unified tags collection', async function () {

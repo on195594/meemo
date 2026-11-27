@@ -211,9 +211,9 @@ describe('stripImageAttachmentReferences', () => {
   });
 
   it('strips raw HTML img tags referencing image attachment identifier', () => {
-    const content = 'Before <img src="/api/files/me/note1/hash123.jpg" alt="test" /> After';
+    const content = 'Before <img src="/api/files/me/note1/hash123.jpg" alt="test" /> and <Img src="/api/files/me/note1/hash456.png"> After';
     const result = stripImageAttachmentReferences(content, attachments);
-    expect(result).toBe('Before  After');
+    expect(result).toBe('Before  and  After');
   });
 
   it('preserves non-image attachment references and external image markdown', () => {

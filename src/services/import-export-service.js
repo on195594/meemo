@@ -125,22 +125,24 @@ async function createExport(userId, username) {
             return typeof attachment === 'string' ? attachment : attachment.identifier;
         }));
     }, [])));
-    for (var identifier of attachmentIdentifiers) {
-        if (!isSafePathSegment(identifier)) throw new Error('Cannot export invalid attachment identifier: ' + identifier);
-        var attachmentStat;
-        try {
-            attachmentStat = await files.lstat(path.join(attachmentFolder, identifier));
-        } catch (error) {
-            if (error.code === 'ENOENT') throw new Error('Cannot export missing attachment: ' + identifier);
-            throw error;
-        }
-        if (!attachmentStat.isFile()) throw new Error('Cannot export unsupported attachment: ' + identifier);
+    for (var start = 0; start < attachmentIdentifiers.length; start += 16) {
+        await Promise.all(attachmentIdentifiers.slice(start, start + 16).map(async function (identifier) {
+            if (!isSafePathSegment(identifier)) throw new Error('Cannot export invalid attachment identifier: ' + identifier);
+            var attachmentStat;
+            try {
+                attachmentStat = await files.lstat(path.join(attachmentFolder, identifier));
+            } catch (error) {
+                if (error.code === 'ENOENT') throw new Error('Cannot export missing attachment: ' + identifier);
+                throw error;
+            }
+            if (!attachmentStat.isFile()) throw new Error('Cannot export unsupported attachment: ' + identifier);
+        }));
     }
     var stream = tar.pack(attachmentFolder, {
         entries: attachmentIdentifiers,
         finalize: false,
         finish: function (pack) {
-            pack.entry({ name: 'things.json' }, JSON.stringify(result, null, 4));
+            pack.entry({ name: 'things.json' }, JSON.stringify(result));
             pack.finalize();
         },
         map: function (header) {
@@ -168,8 +170,8 @@ async function importData(userId, data) {
 }
 
 async function insertImportedData(userId, data, state) {
-    for (var thing of data.things) {
-        var tagObjects = thingService.extractTags(thing.content);
+    var BATCH_SIZE = 500;
+    var prepared = data.things.map(function (thing) {
         var createdAt = thing.createdAt;
         if (typeof createdAt === 'string') createdAt = (new Date(createdAt)).getTime();
         if (typeof createdAt !== 'number' || isNaN(createdAt)) createdAt = Date.now();
@@ -178,14 +180,39 @@ async function insertImportedData(userId, data, state) {
         if (typeof modifiedAt === 'string') modifiedAt = (new Date(modifiedAt)).getTime();
         if (typeof modifiedAt !== 'number' || isNaN(modifiedAt)) modifiedAt = createdAt;
 
-        var color = thing.color === undefined ? 'default' : thing.color;
-        var result = await things.insertFull(userId, thing.content, tagObjects,
-            Array.isArray(thing.attachments) ? thing.attachments : [],
-            Array.isArray(thing.externalContent) ? thing.externalContent : [], createdAt, modifiedAt, color);
-        if (!result || !result._id) throw new Error('no result returned');
-        state.thingIds.push(result._id);
-        state.thingRevisions[String(result._id)] = result.revision || 1;
-        await things.get(userId, result._id);
+        return {
+            content: thing.content,
+            tags: thingService.extractTags(thing.content),
+            attachments: Array.isArray(thing.attachments) ? thing.attachments : [],
+            externalContent: Array.isArray(thing.externalContent) ? thing.externalContent : [],
+            createdAt: createdAt,
+            modifiedAt: modifiedAt,
+            color: thing.color === undefined ? 'default' : thing.color
+        };
+    });
+
+    for (var start = 0; start < prepared.length; start += BATCH_SIZE) {
+        var chunk = prepared.slice(start, start + BATCH_SIZE);
+        var registered = false;
+        var inserted = await things.insertManyFull(userId, chunk, function (docs) {
+            registered = true;
+            for (var d = 0; d < docs.length; d++) {
+                var preId = String(docs[d]._id);
+                state.thingIds.push(preId);
+                state.thingRevisions[preId] = 1;
+            }
+        });
+        if (!Array.isArray(inserted) || inserted.length !== chunk.length) {
+            throw new Error('no result returned');
+        }
+        if (!registered) {
+            for (var i = 0; i < inserted.length; i++) {
+                var doc = inserted[i];
+                if (!doc || !doc._id) throw new Error('no result returned');
+                state.thingIds.push(doc._id);
+                state.thingRevisions[String(doc._id)] = doc.revision || 1;
+            }
+        }
     }
 }
 
@@ -196,6 +223,7 @@ async function rollbackImportedData(userId, state) {
             var thingId = String(state.thingIds[i]);
             await things.purge(userId, thingId, state.thingRevisions[thingId] || 1);
         } catch (error) {
+            if (error && error.message === 'not found') continue;
             failures.push({ operation: 'remove imported thing', target: String(state.thingIds[i]), error: error });
         }
     }

@@ -139,7 +139,6 @@ const formTitle = ref('Meemo');
 const formTheme = ref<ThemeMode>('auto');
 const formWide = ref(false);
 const formWideNavbar = ref(false);
-const formShowTagSidebar = ref(true);
 const formPublicBackground = ref(false);
 const formKeepPosition = ref(false);
 const formBackgroundUrl = ref('');
@@ -156,7 +155,6 @@ watch(
       formTheme.value = settings.value.theme || getStoredTheme();
       formWide.value = !!settings.value.wide;
       formWideNavbar.value = !!settings.value.wideNavbar;
-      formShowTagSidebar.value = settings.value.showTagSidebar !== false;
       formPublicBackground.value = !!settings.value.publicBackground;
       formKeepPosition.value = !!settings.value.keepPositionAfterEdit;
       formBackgroundUrl.value = settings.value.backgroundImageDataUrl || '';
@@ -213,7 +211,7 @@ async function handleSave() {
     theme: formTheme.value,
     wide: formWide.value,
     wideNavbar: formWideNavbar.value,
-    showTagSidebar: formShowTagSidebar.value,
+    ...(settings.value.showTagSidebar !== undefined ? { showTagSidebar: settings.value.showTagSidebar } : {}),
     publicBackground: formPublicBackground.value,
     keepPositionAfterEdit: formKeepPosition.value,
     backgroundImageDataUrl: formBackgroundUrl.value,
